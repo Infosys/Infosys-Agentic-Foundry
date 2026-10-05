@@ -15,6 +15,7 @@ from src.database.services import AgentService, AgentServiceUtils, WorkflowServi
 from src.config.constants import AgentType, DatabaseName
 from src.utils.secrets_handler import get_user_secrets
 from src.api.dependencies import ServiceProvider # The dependency provider
+from src.api.async_response import supports_async
 # EXPORT:EXCLUDE:START
 from Export_Agent.AgentsExport import AgentExporter
 from Export_Agent.AgentImporter import AgentImporter
@@ -27,13 +28,51 @@ from src.utils.phoenix_manager import ensure_project_registered, traced_project_
 from src.auth.authorization_service import AuthorizationService
 from src.auth.models import UserRole, User
 from src.auth.dependencies import get_current_user
+from src.agentos.hook_code_validator import validate_hook_code, validate_hooks_config
+from src.utils.llm_request_tracker import with_request_tracking
+from src.utils.guardrail_helpers import guardrail_registry
 
 # Create an APIRouter instance for agent-related endpoints
 router = APIRouter(prefix="/agents", tags=["Agents"])
 
+# ---------------------------------------------------------------------------
+# Helper: read additional_paths from disk-based agent_config.json
+# ---------------------------------------------------------------------------
+_AGENT_WORKSPACES_BASE = os.getenv("AGENT_WORKSPACES_BASE", "./agent_workspaces")
+_AGENTOS_FOLDER = "agentos_agents"
+
+
+def _get_additional_paths_from_disk(agent_id: str, department: str = "General") -> list:
+    """Return the ``additional_paths`` list stored in the AgentOS
+    ``agent_config.json`` for *agent_id*, or ``[]`` if not found."""
+    import json
+    from pathlib import Path
+    config_file = (
+        Path(_AGENT_WORKSPACES_BASE) / department / _AGENTOS_FOLDER / agent_id / "agent_config.json"
+    )
+    if not config_file.exists():
+        return []
+    try:
+        cfg = json.loads(config_file.read_text(encoding="utf-8"))
+        return cfg.get("additional_paths", [])
+    except Exception:
+        return []
+
 
 # EXPORT:EXCLUDE:START
+@router.get("/guardrail-types")
+async def get_available_guardrail_types(
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Returns the list of available guardrail types for the agent onboarding dropdown.
+    """
+    return {"guardrail_types": guardrail_registry.get_available_types()}
+
+
 @router.post("/onboard")
+@supports_async("agent_onboard")
+@with_request_tracking("agent_operation")
 async def onboard_agent_endpoint(
     request: Request, 
     onboarding_request: AgentOnboardingRequest,
@@ -67,9 +106,18 @@ async def onboard_agent_endpoint(
     
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="agent_operation")
 
     specialized_agent_service = ServiceProvider.get_specialized_agent_service(agent_type=onboarding_request.agent_type)
+
+    # Validate guardrail_type against the registry
+    requested_guardrail = onboarding_request.guardrail_type or "none"
+    if not guardrail_registry.is_valid(requested_guardrail):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid guardrail_type '{requested_guardrail}'. Use GET /agents/guardrail-types for available options."
+        )
+
     update_session_context(model_used=onboarding_request.model_name,
                            agent_name=onboarding_request.agent_name,
                            agent_type=onboarding_request.agent_type,
@@ -100,7 +148,8 @@ async def onboard_agent_endpoint(
                     user_id=onboarding_request.email_id,
                     department_name=user_data.department_name,
                     tag_ids=onboarding_request.tag_ids,
-                    db_connection_names=onboarding_request.db_connection_names
+                    db_connection_names=onboarding_request.db_connection_names,
+                    guardrail_type=requested_guardrail
                 )
             else:
                 # Convert list format to dict: [{tool_id, tool_version}] → {tool_id: version}
@@ -117,7 +166,8 @@ async def onboard_agent_endpoint(
                     validation_criteria=onboarding_request.validation_criteria,
                     knowledgebase_ids=onboarding_request.knowledgebase_ids,
                     db_connection_names=onboarding_request.db_connection_names,
-                    tool_versions=tool_versions_dict  # Pass tool versions for binding
+                    tool_versions=tool_versions_dict,
+                    guardrail_type=requested_guardrail
                 )
         update_session_context(model_used='Unassigned',
                             agent_name='Unassigned',
@@ -134,6 +184,39 @@ async def onboard_agent_endpoint(
 
     if not result.get("is_created"):
         raise HTTPException(status_code=400, detail=result.get("message"))
+
+    # Write hooks to config.yaml in agent folder (skill agents only)
+    _has_yaml = onboarding_request.hooks and result.get("agentic_application_id")
+    if _has_yaml:
+        # Validate hooks config structure
+        _hook_errors = validate_hooks_config(onboarding_request.hooks)
+        if _hook_errors:
+            error_detail = "; ".join(_hook_errors)
+            raise HTTPException(422, detail=f"Invalid hooks configuration: {error_detail}")
+        try:
+            import yaml as _yaml
+            from pathlib import Path
+            _agent_id = result["agentic_application_id"]
+            _dept = user_data.department_name or "General"
+            _agent_dir = Path(_AGENT_WORKSPACES_BASE) / _dept / _AGENTOS_FOLDER / _agent_id
+            _agent_dir.mkdir(parents=True, exist_ok=True)
+            _config_yaml_path = _agent_dir / "config.yaml"
+            _yaml_config = {}
+            if _config_yaml_path.exists():
+                try:
+                    _yaml_config = _yaml.safe_load(_config_yaml_path.read_text(encoding="utf-8")) or {}
+                except Exception:
+                    _yaml_config = {}
+            if onboarding_request.hooks:
+                _yaml_config["hooks"] = onboarding_request.hooks
+            _config_yaml_path.write_text(
+                _yaml.dump(_yaml_config, default_flow_style=False, allow_unicode=True),
+                encoding="utf-8",
+            )
+            log.info(f"Wrote config.yaml for agent {_agent_id} (hooks={bool(onboarding_request.hooks)})")
+        except Exception as _he:
+            log.warning(f"Could not write config.yaml: {_he}")
+
     return {"status": "success", "result": result}
 # EXPORT:EXCLUDE:END
 
@@ -170,7 +253,7 @@ async def get_all_agents_endpoint(
     
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="agent_operation")
 
     try:
         # If user is SUPER_ADMIN, do not restrict by department; otherwise include department_name
@@ -199,6 +282,12 @@ async def get_all_agents_endpoint(
             for agent in response:
                 agent["knowledgebase_ids"] = []
 
+        # Enrich each agent with additional_paths from disk config
+        for agent in response:
+            aid = agent.get("agentic_application_id", "")
+            dept = agent.get("department_name", "General")
+            agent["additional_paths"] = _get_additional_paths_from_disk(aid, dept)
+
         return response
 
     except Exception as e:
@@ -217,7 +306,7 @@ async def get_agents_details_for_chat_interface_endpoint(
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
     
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="agent_operation")
     
     # If SUPER_ADMIN, do not restrict by department
     if user_data.role == UserRole.SUPER_ADMIN:
@@ -281,7 +370,7 @@ async def get_system_agents_endpoint(
 
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="agent_operation")
 
     agents = await agent_service.get_system_agents(agent_name=agent_name)
 
@@ -301,7 +390,7 @@ async def get_viber_agent_id_endpoint(
     """
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="agent_operation")
 
     all_agents = await agent_service.get_all_agents()
     if all_agents:
@@ -310,6 +399,173 @@ async def get_viber_agent_id_endpoint(
                 return agent["agentic_application_id"]
 
     raise HTTPException(status_code=404, detail="No agent found with name 'Enterprise IAF Orchestrator System Agent'")
+
+
+@router.get("/get/details/{agent_id}")
+async def get_agent_details_endpoint(
+    request: Request, 
+    agent_id: str, 
+    agent_service: AgentService = Depends(ServiceProvider.get_agent_service),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Retrieves detailed information about an agent by its ID for studio display.
+
+    Parameters:
+    ----------
+    request : Request
+        The FastAPI Request object.
+    agent_id : str
+        The ID of the agent to be retrieved.
+    agent_service : AgentService
+        Dependency-injected AgentService instance.
+
+    Returns:
+    -------
+    dict
+        A dictionary containing the agent's detailed information.
+        If the agent is not found, raises an HTTPException with status code 404.
+    """
+    # Check permissions first
+    user_department = user_data.department_name 
+    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "agents", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to view agents.")
+    
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id, agent_id=agent_id)
+
+    # If SUPER_ADMIN, do not pass department_name
+    if user_data.role == UserRole.SUPER_ADMIN:
+        response = await agent_service.get_agent_details_studio(agentic_application_id=agent_id)
+    else:
+        response = await agent_service.get_agent_details_studio(agentic_application_id=agent_id, department_name=user_data.department_name)
+
+    if not response:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    
+    # Fetch mapped KB IDs for this agent
+    try:
+        knowledgebase_service = ServiceProvider.get_knowledgebase_service()
+        kb_ids = await knowledgebase_service.agent_kb_mapping_repo.get_knowledgebase_ids_for_agent(
+            agentic_application_id=agent_id
+        )
+        response["knowledgebase_ids"] = kb_ids if kb_ids else []
+    except Exception as e:
+        log.warning(f"Error fetching KB IDs for agent {agent_id}: {e}")
+        response["knowledgebase_ids"] = []
+    
+    update_session_context(agent_id='Unassigned')
+    return response
+
+
+@router.post("/get/by-list")
+async def get_agents_by_list_endpoint(
+    request: Request, 
+    agent_ids: List[str], 
+    agent_service: AgentService = Depends(ServiceProvider.get_agent_service),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """Retrieves agents by a list of IDs."""
+    # Check permissions first
+    user_department = user_data.department_name 
+    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "agents", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to view agents.")
+    
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="agent_operation")
+    
+    agents = []
+    knowledgebase_service = ServiceProvider.get_knowledgebase_service()
+    
+    for agent_id in agent_ids:
+        if user_data.role == UserRole.SUPER_ADMIN:
+            agent = await agent_service.get_agent(agentic_application_id=agent_id)
+        else:
+            agent = await agent_service.get_agent(agentic_application_id=agent_id, department_name=user_data.department_name)
+        if agent:
+            agent_data = agent[0]  # get_agent returns a list
+            # Fetch mapped KB IDs for this agent
+            try:
+                kb_ids = await knowledgebase_service.agent_kb_mapping_repo.get_knowledgebase_ids_for_agent(
+                    agentic_application_id=agent_id
+                )
+                agent_data["knowledgebase_ids"] = kb_ids if kb_ids else []
+            except Exception as e:
+                log.warning(f"Error fetching KB IDs for agent {agent_id}: {e}")
+                agent_data["knowledgebase_ids"] = []
+            agents.append(agent_data)
+    return agents
+
+
+@router.get("/get/search-paginated")
+async def search_paginated_agents_endpoint(
+    request: Request,
+    agentic_application_type: Optional[Union[str, List[str]]] = Query(None),
+    search_value: Optional[str] = Query(None),
+    page_number: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1),
+    created_by: Optional[str] = Query(None),
+    tag_names: List[str] = Query(None, description="Filter by tag names"),
+    agent_service: AgentService = Depends(ServiceProvider.get_agent_service),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """Searches agents with pagination."""
+    # Check permissions first
+    user_department = user_data.department_name 
+    # if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "agents", user_department):
+    #     raise HTTPException(status_code=403, detail="You don't have permission to view agents.")
+    
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="agent_operation")
+
+    # If SUPER_ADMIN, do not restrict by department; otherwise include department_name
+    if user_data.role == UserRole.SUPER_ADMIN:
+        result = await agent_service.get_agents_by_search_or_page(
+            search_value=search_value,
+            limit=page_size,
+            page=page_number,
+            agentic_application_type=agentic_application_type,
+            created_by=created_by,
+            tag_names=tag_names
+        )
+    else:
+        result = await agent_service.get_agents_by_search_or_page(
+            search_value=search_value,
+            limit=page_size,
+            page=page_number,
+            agentic_application_type=agentic_application_type,
+            created_by=created_by,
+            tag_names=tag_names,
+            department_name=user_department
+        )
+
+    if not result["details"]:
+        raise HTTPException(status_code=404, detail="No agents found matching criteria.")
+    
+    # Add knowledgebase IDs for each agent in the paginated results
+    try:
+        knowledgebase_service = ServiceProvider.get_knowledgebase_service()
+        for agent in result["details"]:
+            agent_id = agent.get("agentic_application_id")
+            if agent_id:
+                kb_ids = await knowledgebase_service.agent_kb_mapping_repo.get_knowledgebase_ids_for_agent(
+                    agentic_application_id=agent_id
+                )
+                agent["knowledgebase_ids"] = kb_ids if kb_ids else []
+            else:
+                agent["knowledgebase_ids"] = []
+    except Exception as e:
+        log.warning(f"Error fetching KB IDs for paginated agents: {e}")
+        for agent in result["details"]:
+            agent["knowledgebase_ids"] = []
+    
+    return result
 
 
 @router.get("/get/{agent_id}")
@@ -441,9 +697,35 @@ async def get_agent_by_id_endpoint(
                     response["file_context_prompt_exists"] = True
                     log.info(f"File-context prompt loaded successfully, length: {len(file_context_prompt)}")
                 else:
-                    response["file_context_management_prompt"] = None
-                    response["file_context_prompt_exists"] = False
-                    log.warning(f"File-context prompt not found at: '{prompt_file_path}'")
+                    # Attempt blob restore if STORAGE_PROVIDER is set
+                    _restored = False
+                    _storage_provider = os.getenv("STORAGE_PROVIDER", "")
+                    if _storage_provider:
+                        try:
+                            from src.storage import get_storage_client
+                            from src.utils.workspace_blob_sync import WorkspaceBlobSync
+                            _client = get_storage_client(_storage_provider)
+                            _syncer = WorkspaceBlobSync(
+                                storage_client=_client,
+                                workspace_root="./agent_workspaces",
+                                department=user_data.department_name,
+                            )
+                            blob_key = f"{user_data.department_name}/file_context_prompts/{safe_agent_name}_file_context_prompt.md"
+                            _result = await _syncer.restore_file(blob_key, prompt_file_path)
+                            if _result and _result.success and os.path.exists(prompt_file_path):
+                                with open(prompt_file_path, "r", encoding="utf-8") as f:
+                                    file_context_prompt = f.read()
+                                response["file_context_management_prompt"] = file_context_prompt
+                                response["file_context_prompt_exists"] = True
+                                _restored = True
+                                log.info(f"[BlobRestore] Restored file_context_prompt from blob: {blob_key}")
+                        except Exception as _restore_err:
+                            log.debug(f"[BlobRestore] file_context_prompt restore attempt failed: {_restore_err}")
+
+                    if not _restored:
+                        response["file_context_management_prompt"] = None
+                        response["file_context_prompt_exists"] = False
+                        log.warning(f"File-context prompt not found at: '{prompt_file_path}'")
             else:
                 log.warning(f"Agent name not found in response. Keys available: {list(response.keys())}")
                 response["file_context_management_prompt"] = None
@@ -453,175 +735,27 @@ async def get_agent_by_id_endpoint(
             response["file_context_management_prompt"] = None
             response["file_context_prompt_exists"] = False
     
-    update_session_context(agent_id='Unassigned')
-    return response
+    # Enrich with additional_paths from disk-based agent_config.json
+    dept = response.get("department_name", "General")
+    response["additional_paths"] = _get_additional_paths_from_disk(
+        agent_id, dept
+    )
 
-
-@router.get("/get/details/{agent_id}")
-async def get_agent_details_endpoint(
-    request: Request, 
-    agent_id: str, 
-    agent_service: AgentService = Depends(ServiceProvider.get_agent_service),
-    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
-    user_data: User = Depends(get_current_user)
-):
-    """
-    Retrieves detailed information about an agent by its ID for studio display.
-
-    Parameters:
-    ----------
-    request : Request
-        The FastAPI Request object.
-    agent_id : str
-        The ID of the agent to be retrieved.
-    agent_service : AgentService
-        Dependency-injected AgentService instance.
-
-    Returns:
-    -------
-    dict
-        A dictionary containing the agent's detailed information.
-        If the agent is not found, raises an HTTPException with status code 404.
-    """
-    # Check permissions first
-    user_department = user_data.department_name 
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "agents", user_department):
-        raise HTTPException(status_code=403, detail="You don't have permission to view agents.")
-    
-    user_id = request.cookies.get("user_id")
-    user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id, agent_id=agent_id)
-
-    # If SUPER_ADMIN, do not pass department_name
-    if user_data.role == UserRole.SUPER_ADMIN:
-        response = await agent_service.get_agent_details_studio(agentic_application_id=agent_id)
-    else:
-        response = await agent_service.get_agent_details_studio(agentic_application_id=agent_id, department_name=user_data.department_name)
-
-    if not response:
-        raise HTTPException(status_code=404, detail="Agent not found")
-    
-    # Fetch mapped KB IDs for this agent
+    # Enrich with hooks from config.yaml if present
     try:
-        knowledgebase_service = ServiceProvider.get_knowledgebase_service()
-        kb_ids = await knowledgebase_service.agent_kb_mapping_repo.get_knowledgebase_ids_for_agent(
-            agentic_application_id=agent_id
-        )
-        response["knowledgebase_ids"] = kb_ids if kb_ids else []
-    except Exception as e:
-        log.warning(f"Error fetching KB IDs for agent {agent_id}: {e}")
-        response["knowledgebase_ids"] = []
-    
-    update_session_context(agent_id='Unassigned')
-    return response
-
-
-@router.post("/get/by-list")
-async def get_agents_by_list_endpoint(
-    request: Request, 
-    agent_ids: List[str], 
-    agent_service: AgentService = Depends(ServiceProvider.get_agent_service),
-    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
-    user_data: User = Depends(get_current_user)
-):
-    """Retrieves agents by a list of IDs."""
-    # Check permissions first
-    user_department = user_data.department_name 
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "agents", user_department):
-        raise HTTPException(status_code=403, detail="You don't have permission to view agents.")
-    
-    user_id = request.cookies.get("user_id")
-    user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
-    
-    agents = []
-    knowledgebase_service = ServiceProvider.get_knowledgebase_service()
-    
-    for agent_id in agent_ids:
-        if user_data.role == UserRole.SUPER_ADMIN:
-            agent = await agent_service.get_agent(agentic_application_id=agent_id)
+        import yaml as _yaml
+        from pathlib import Path
+        _config_yaml = Path(_AGENT_WORKSPACES_BASE) / dept / _AGENTOS_FOLDER / agent_id / "config.yaml"
+        if _config_yaml.exists():
+            _ycfg = _yaml.safe_load(_config_yaml.read_text(encoding="utf-8")) or {}
+            response["hooks"] = _ycfg.get("hooks", {})
         else:
-            agent = await agent_service.get_agent(agentic_application_id=agent_id, department_name=user_data.department_name)
-        if agent:
-            agent_data = agent[0]  # get_agent returns a list
-            # Fetch mapped KB IDs for this agent
-            try:
-                kb_ids = await knowledgebase_service.agent_kb_mapping_repo.get_knowledgebase_ids_for_agent(
-                    agentic_application_id=agent_id
-                )
-                agent_data["knowledgebase_ids"] = kb_ids if kb_ids else []
-            except Exception as e:
-                log.warning(f"Error fetching KB IDs for agent {agent_id}: {e}")
-                agent_data["knowledgebase_ids"] = []
-            agents.append(agent_data)
-    return agents
+            response["hooks"] = {}
+    except Exception:
+        response["hooks"] = {}
 
-
-@router.get("/get/search-paginated/")
-async def search_paginated_agents_endpoint(
-    request: Request,
-    agentic_application_type: Optional[Union[str, List[str]]] = Query(None),
-    search_value: Optional[str] = Query(None),
-    page_number: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1),
-    created_by: Optional[str] = Query(None),
-    tag_names: List[str] = Query(None, description="Filter by tag names"),
-    agent_service: AgentService = Depends(ServiceProvider.get_agent_service),
-    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
-    user_data: User = Depends(get_current_user)
-):
-    """Searches agents with pagination."""
-    # Check permissions first
-    user_department = user_data.department_name 
-    # if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "agents", user_department):
-    #     raise HTTPException(status_code=403, detail="You don't have permission to view agents.")
-    
-    user_id = request.cookies.get("user_id")
-    user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
-
-    # If SUPER_ADMIN, do not restrict by department; otherwise include department_name
-    if user_data.role == UserRole.SUPER_ADMIN:
-        result = await agent_service.get_agents_by_search_or_page(
-            search_value=search_value,
-            limit=page_size,
-            page=page_number,
-            agentic_application_type=agentic_application_type,
-            created_by=created_by,
-            tag_names=tag_names
-        )
-    else:
-        result = await agent_service.get_agents_by_search_or_page(
-            search_value=search_value,
-            limit=page_size,
-            page=page_number,
-            agentic_application_type=agentic_application_type,
-            created_by=created_by,
-            tag_names=tag_names,
-            department_name=user_department
-        )
-
-    if not result["details"]:
-        raise HTTPException(status_code=404, detail="No agents found matching criteria.")
-    
-    # Add knowledgebase IDs for each agent in the paginated results
-    try:
-        knowledgebase_service = ServiceProvider.get_knowledgebase_service()
-        for agent in result["details"]:
-            agent_id = agent.get("agentic_application_id")
-            if agent_id:
-                kb_ids = await knowledgebase_service.agent_kb_mapping_repo.get_knowledgebase_ids_for_agent(
-                    agentic_application_id=agent_id
-                )
-                agent["knowledgebase_ids"] = kb_ids if kb_ids else []
-            else:
-                agent["knowledgebase_ids"] = []
-    except Exception as e:
-        log.warning(f"Error fetching KB IDs for paginated agents: {e}")
-        for agent in result["details"]:
-            agent["knowledgebase_ids"] = []
-    
-    return result
+    update_session_context(agent_id='Unassigned')
+    return response
 
 
 @router.post("/get/by-tags")
@@ -640,7 +774,7 @@ async def get_agents_by_tags_endpoint(
     
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="agent_operation")
 
     result = await agent_service.get_agents_by_tag(
         tag_ids=tag_data.tag_ids,
@@ -670,7 +804,8 @@ async def get_agents_by_tags_endpoint(
 
 
 # EXPORT:EXCLUDE:START
-@router.put("/update")
+@router.api_route("/update", methods=["PUT", "POST"])
+@with_request_tracking("agent_operation")
 async def update_agent_endpoint(request: Request, update_request: UpdateAgentRequest, agent_service: AgentService = Depends(ServiceProvider.get_agent_service), authorization_server: AuthorizationService = Depends(ServiceProvider.get_authorization_service), user_data: User = Depends(get_current_user)):
     """
     Updates an agent by its ID.
@@ -756,6 +891,13 @@ async def update_agent_endpoint(request: Request, update_request: UpdateAgentReq
 
     specialized_agent_service = ServiceProvider.get_specialized_agent_service(agent_type=agent_type)
 
+    # Validate guardrail_type if provided
+    if update_request.guardrail_type is not None and not guardrail_registry.is_valid(update_request.guardrail_type):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid guardrail_type '{update_request.guardrail_type}'. Use GET /agents/guardrail-types for available options."
+        )
+
     with traced_project_context_sync(project_name):
         if AgentType(agent_type).is_meta_type:
             response = await specialized_agent_service.update_agent(
@@ -773,7 +915,8 @@ async def update_agent_endpoint(request: Request, update_request: UpdateAgentReq
                 worker_agents_id_to_remove=update_request.tools_id_to_remove,
                 updated_tag_id_list=update_request.updated_tag_id_list,
                 db_connection_names_to_add=update_request.db_connection_names_to_add,
-                db_connection_names_to_remove=update_request.db_connection_names_to_remove
+                db_connection_names_to_remove=update_request.db_connection_names_to_remove,
+                guardrail_type=update_request.guardrail_type
             )
         else:
             response = await specialized_agent_service.update_agent(
@@ -793,9 +936,10 @@ async def update_agent_endpoint(request: Request, update_request: UpdateAgentReq
                 validation_criteria=update_request.validation_criteria,
                 knowledgebase_ids_to_add=update_request.knowledgebase_ids_to_add,
                 knowledgebase_ids_to_remove=update_request.knowledgebase_ids_to_remove,
-                tool_versions={item.tool_id: item.tool_version for item in update_request.tool_versions} if update_request.tool_versions else {},  # Convert list to dict
+                tool_versions={item.tool_id: item.tool_version for item in update_request.tool_versions} if update_request.tool_versions else {},
                 db_connection_names_to_add=update_request.db_connection_names_to_add,
-                db_connection_names_to_remove=update_request.db_connection_names_to_remove
+                db_connection_names_to_remove=update_request.db_connection_names_to_remove,
+                guardrail_type=update_request.guardrail_type
             )
         response["status_message"] = response.get("message", "")
         log.info(f"Agent update response: {response}")
@@ -893,6 +1037,49 @@ async def update_agent_endpoint(request: Request, update_request: UpdateAgentReq
             response["file_context_prompt_updated"] = False
             response["file_context_prompt_error"] = str(e)
     
+    # Write hooks to config.yaml in agent folder (skill agents only)
+    _yaml_dirty = update_request.hooks is not None
+    if _yaml_dirty:
+        # Validate hooks config structure (skip validation for empty dict = clear hooks)
+        if update_request.hooks:
+            _hook_errors = validate_hooks_config(update_request.hooks)
+            if _hook_errors:
+                error_detail = "; ".join(_hook_errors)
+                raise HTTPException(422, detail=f"Invalid hooks configuration: {error_detail}")
+        try:
+            import yaml as _yaml
+            from pathlib import Path
+            _agent_id = update_request.agentic_application_id_to_modify
+            _dept = user_data.department_name or "General"
+            _agent_dir = Path(_AGENT_WORKSPACES_BASE) / _dept / _AGENTOS_FOLDER / _agent_id
+            _agent_dir.mkdir(parents=True, exist_ok=True)
+            _config_yaml_path = _agent_dir / "config.yaml"
+            _yaml_config = {}
+            if _config_yaml_path.exists():
+                try:
+                    _yaml_config = _yaml.safe_load(_config_yaml_path.read_text(encoding="utf-8")) or {}
+                except Exception:
+                    _yaml_config = {}
+            # Hooks
+            if update_request.hooks is not None:
+                if update_request.hooks:
+                    _yaml_config["hooks"] = update_request.hooks
+                else:
+                    _yaml_config.pop("hooks", None)
+            if _yaml_config:
+                _config_yaml_path.write_text(
+                    _yaml.dump(_yaml_config, default_flow_style=False, allow_unicode=True),
+                    encoding="utf-8",
+                )
+            elif _config_yaml_path.exists():
+                _config_yaml_path.unlink()
+            response["config_yaml_updated"] = True
+            log.info(f"Updated config.yaml for agent {_agent_id} (hooks={update_request.hooks is not None})")
+        except Exception as _he:
+            log.warning(f"Could not write config.yaml: {_he}")
+            response["config_yaml_updated"] = False
+            response["config_yaml_error"] = str(_he)
+
     return response
 
 
@@ -901,7 +1088,7 @@ async def update_agent_endpoint(request: Request, update_request: UpdateAgentReq
 # Example: {"agentic_application_id_to_modify": "agent-id", "tool_versions": {"tool-id": "v2"}}
 
 
-@router.delete("/delete")
+@router.api_route("/delete", methods=["DELETE", "POST"])
 async def delete_agent_endpoint(request: Request, delete_request: DeleteAgentRequest, agent_service: AgentService = Depends(ServiceProvider.get_agent_service), authorization_server: AuthorizationService = Depends(ServiceProvider.get_authorization_service), user_data: User = Depends(get_current_user)):
     """
     Deletes one or more agents by their IDs.
@@ -1045,7 +1232,7 @@ async def get_available_agent_templates_endpoint(
     
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="agent_operation")
 
     templates = await agent_service.get_available_templates()
     if not templates:
@@ -1071,7 +1258,7 @@ async def get_all_agents_from_recycle_bin_endpoint(
     
     user_id = user_data.email
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="agent_operation")
     if not await authorization_server.has_role(user_email=user_email_id, required_role=UserRole.ADMIN, department_name= user_department):
         log.warning(f"User {user_email_id} attempted to access recycle bin without admin privileges")
         raise HTTPException(status_code=403, detail="Admin privileges required to access agent recycle bin")
@@ -1084,6 +1271,43 @@ async def get_all_agents_from_recycle_bin_endpoint(
 
     if not agents:
         raise HTTPException(status_code=404, detail="No agents found in recycle bin")
+
+    # Enrich skill_agent records with details from the archived disk folder
+    # (agent_config.json in .recycle_bin/) so the UI gets full metadata.
+    import json
+    from pathlib import Path
+    for agent in agents:
+        if agent.get("agentic_application_type") != "skill_agent":
+            continue
+        aid = agent.get("agentic_application_id", "")
+        dept = agent.get("department_name") or user_data.department_name or "General"
+        if not aid:
+            continue
+        config_file = (
+            Path(_AGENT_WORKSPACES_BASE) / dept / _AGENTOS_FOLDER / ".recycle_bin" / aid / "agent_config.json"
+        )
+        if config_file.exists():
+            try:
+                disk_cfg = json.loads(config_file.read_text(encoding="utf-8"))
+                # Merge disk keys that are missing from the DB record
+                for key, value in disk_cfg.items():
+                    if key not in agent:
+                        agent[key] = value
+                # Always prefer disk values for these detail fields
+                for key in (
+                    "skill_count", "default_skill", "enterprise_context_enabled",
+                    "additional_paths", "allowed_absolute_mount_roots",
+                    "agent_name", "agent_description", "model_name",
+                ):
+                    if key in disk_cfg:
+                        agent[key] = disk_cfg[key]
+            except Exception:
+                pass
+        # Consistent defaults for the UI
+        agent.setdefault("additional_paths", [])
+        agent.setdefault("allowed_absolute_mount_roots", [])
+        agent.setdefault("skill_count", 0)
+
     return agents
 
 
@@ -1107,7 +1331,7 @@ async def restore_agent_endpoint(
     
     user_id = user_data.email
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="agent_operation")
     if not await authorization_server.has_role(user_email=user_email_id, required_role=UserRole.ADMIN, department_name= user_department):
         log.warning(f"User {user_email_id} attempted to restore agent without admin privileges")
         raise HTTPException(status_code=403, detail="Admin privileges required to restore agents")
@@ -1142,7 +1366,7 @@ async def restore_agent_endpoint(
     return result
 
 
-@router.delete("/recycle-bin/permanent-delete/{agent_id}")
+@router.api_route("/recycle-bin/permanent-delete/{agent_id}", methods=["DELETE", "POST"])
 async def delete_agent_from_recycle_bin_endpoint(
     request: Request, 
     agent_id: str, 
@@ -1162,7 +1386,7 @@ async def delete_agent_from_recycle_bin_endpoint(
     
     user_id = user_data.email
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="agent_operation")
     if not await authorization_server.has_role(user_email=user_email_id, required_role=UserRole.ADMIN, department_name= user_department):
         log.warning(f"User {user_email_id} attempted to permanently delete agent without admin privileges")
         raise HTTPException(status_code=403, detail="Admin privileges required to permanently delete agents")
@@ -1218,7 +1442,9 @@ async def export_agents_endpoint(
     ):
     # Check permissions first - export agents requires export_agents_access
     user_department = user_data.department_name 
+    log.info(f"Export request received from user '{user_data.email}' (department='{user_department}') for {len(agent_ids)} agent(s): {agent_ids}, export_and_deploy={export_and_deploy}")
     if not await authorization_service.check_export_agents_access(user_data.role, user_department):
+        log.warning(f"User '{user_data.email}' denied export access (role='{user_data.role}', department='{user_department}')")
         raise HTTPException(status_code=403, detail="You don't have permission to export agents.")
     
     from src.database.repositories import ExportAgentRepository
@@ -1232,6 +1458,7 @@ async def export_agents_endpoint(
             if "=" in pair:
                 key, value = pair.split("=", 1)
                 config_dict[unquote(key)] = unquote(value)
+    log.info(f"Parsed export env config with {len(config_dict)} key(s)")
     db_manager=ServiceProvider.get_database_manager()
     login_pool= await db_manager.get_pool(DatabaseName.LOGIN.db_name)
     exporter = AgentExporter(
@@ -1250,8 +1477,10 @@ async def export_agents_endpoint(
     try:
         zipfile_path = await exporter.export()
         filename = os.path.basename(zipfile_path)
+        log.info(f"Export archive created: '{filename}' at '{zipfile_path}'")
 
         if export_and_deploy:
+            log.info("export_and_deploy=True: preparing to push exported project to GitHub")
             GITHUB_USERNAME= get_user_secrets('GITHUB_USERNAME','')
             GITHUB_PAT = get_user_secrets('GITHUB_PAT','')
             GITHUB_EMAIL = get_user_secrets('GITHUB_EMAIL','')
@@ -1259,6 +1488,7 @@ async def export_agents_endpoint(
             TARGET_REPO_OWNER = get_user_secrets('TARGET_REPO_OWNER','')
 
             push_project(exporter.work_dir, exporter.work_dir, GITHUB_USERNAME, GITHUB_PAT, GITHUB_EMAIL, TARGET_REPO_NAME, TARGET_REPO_OWNER)
+            log.info(f"Exported project pushed to GitHub repo '{TARGET_REPO_OWNER}/{TARGET_REPO_NAME}'")
 
 
         def cleanup():
@@ -1266,9 +1496,11 @@ async def export_agents_endpoint(
                 shutil.rmtree(exporter.work_dir, ignore_errors=True)
                 if os.path.exists(zipfile_path):
                     os.remove(zipfile_path)
+                log.info(f"Cleaned up temporary export artifacts at '{exporter.work_dir}'")
             except Exception as e:
                 log.error(f"Failed cleanup: {e}")
         background_tasks.add_task(cleanup)
+        log.info(f"Returning export archive '{filename}' to user '{user_data.email}'")
         return FileResponse(
             zipfile_path,
             media_type="application/zip",
@@ -1314,21 +1546,26 @@ async def import_agents_endpoint(
         for files, tools, MCP tools, worker agents, and agents.
     """
     # Permission check
-    if not await authorization_service.check_operation_permission(
-        user_data.email, user_data.role, "create", "agents"
+    log.info(f"Import request received from user '{user_data.email}' (created_by='{created_by}', file='{zip_file.filename}')")
+    if not await authorization_service.check_import_agents_access(
+        user_data.role, user_data.department_name
     ):
+        log.warning(f"User '{user_data.email}' denied import access (role='{user_data.role}', department='{user_data.department_name}')")
         raise HTTPException(
             status_code=403,
             detail="You don't have permission to import agents. Only admins and developers can perform this action.",
         )
 
     if not zip_file.filename.endswith(".zip"):
+        log.warning(f"Import rejected: uploaded file '{zip_file.filename}' is not a .zip")
         raise HTTPException(status_code=400, detail="Only .zip files are accepted.")
 
     try:
         file_content = await zip_file.read()
         zip_buffer = io.BytesIO(file_content)
+        log.info(f"Read uploaded zip '{zip_file.filename}' ({len(file_content)} bytes)")
     except Exception as e:
+        log.error(f"Failed to read uploaded import file '{zip_file.filename}': {e}")
         raise HTTPException(status_code=400, detail=f"Failed to read uploaded file: {str(e)}")
 
     try:
@@ -1340,8 +1577,11 @@ async def import_agents_endpoint(
             tag_service=ServiceProvider.get_tag_service(),
             created_by=created_by.strip(),
         )
+        log.info(f"Starting agent import from zip for user '{created_by.strip()}'")
         result = await importer.import_from_zip(zip_buffer=zip_buffer)
+        log.info(f"Agent import completed successfully for user '{created_by.strip()}'")
     except ValueError as ve:
+        log.error(f"Agent import validation error: {ve}")
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         error_message = f"Agent import failed: {str(e)}"
@@ -1381,7 +1621,7 @@ async def get_unused_agents_endpoint(
     
     user_id = user_data.email
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="agent_operation")
     
     if not await authorization_server.has_role(user_email=user_id, required_role=UserRole.ADMIN, department_name= user_department):
         raise HTTPException(status_code=403, detail="Admin privileges required to get unused agents")
@@ -1497,7 +1737,7 @@ class UpdateAgentSharingRequest(BaseModel):
     shared_with_departments: List[str] = None
 
 
-@router.put("/{agent_id}/sharing")
+@router.api_route("/{agent_id}/sharing", methods=["PUT", "POST"])
 async def update_agent_sharing_endpoint(
     request: Request,
     agent_id: str,
@@ -1519,7 +1759,7 @@ async def update_agent_sharing_endpoint(
     """
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="agent_operation")
 
     if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ADMIN]:
         raise HTTPException(status_code=403, detail="Only Admins can update agent sharing settings")
@@ -1595,7 +1835,7 @@ async def get_agents_shared_with_my_department(
     """
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="agent_operation")
     
     department = current_user.department_name or 'General'
     

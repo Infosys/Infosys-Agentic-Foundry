@@ -6,14 +6,19 @@ from typing import Dict, List, Optional, Literal
 from fastapi import HTTPException
 from langgraph.types import interrupt
 from langgraph.graph import StateGraph, START, END
-from langchain_core.messages import AIMessage, ChatMessage
+from langgraph.graph.state import CompiledStateGraph
+from langchain_core.messages import AIMessage, ChatMessage, ToolMessage
 from langgraph.types import StreamWriter
 from src.utils.helper_functions import get_timestamp, build_effective_query_with_user_updates
 from src.inference.inference_utils import InferenceUtils
 from src.inference.base_agent_inference import BaseWorkflowState, BaseAgentInference
 from src.schemas import AdminConfigLimits
 from src.config.constants import Limits
-from telemetry_wrapper import logger as log
+from telemetry_wrapper import logger as log, update_session_context
+from src.utils.guardrail_helpers import (
+    get_guardrail_response_from_exception, get_guardrail_response_from_errors,
+    log_guardrail_or_exception, format_guardrail_user_response,
+)
 from src.prompts.prompts import online_agent_evaluation_prompt, feedback_lesson_generation_prompt
 from langgraph.types import StreamWriter
 from src.database.kafka_handler import listen_for_tool_response
@@ -88,6 +93,10 @@ class PlannerExecutorAgentInference(BaseAgentInference):
             file_context_prompt_path = os.path.join(
                 prompts_dir, f"{safe_agent_name}_file_context_prompt.md"
             )
+            # Auto-restore from blob if file_context_prompt is missing locally
+            await self._ensure_file_context_prompt_from_blob(
+                file_context_prompt_path, user_department, safe_agent_name
+            )
             if os.path.exists(file_context_prompt_path):
                 with open(file_context_prompt_path, "r", encoding="utf-8") as f:
                     executor_system_prompt = f.read()
@@ -99,7 +108,17 @@ class PlannerExecutorAgentInference(BaseAgentInference):
         else:
             # Use regular DB prompt
             executor_system_prompt = system_prompt_config.get("SYSTEM_PROMPT_EXECUTOR_AGENT", "")
-        
+
+        # ---- Load mount config and advertise mounted folders in prompt ----
+        from src.inference.agent_config_loader import load_agent_mount_config, build_mount_prompt_section
+        additional_paths, allowed_absolute_mount_roots = load_agent_mount_config(agent_id)
+        _mount_section = build_mount_prompt_section(
+            additional_paths=additional_paths,
+            allowed_absolute_mount_roots=allowed_absolute_mount_roots,
+        )
+        if _mount_section:
+            executor_system_prompt = (executor_system_prompt or "") + _mount_section
+
         general_query_system_prompt = system_prompt_config.get("SYSTEM_PROMPT_GENERAL_LLM", "").replace("{", "{{").replace("}", "}}")
 
         response_generator_system_prompt = system_prompt_config.get("SYSTEM_PROMPT_RESPONSE_GENERATOR_AGENT", "").replace("{", "{{").replace("}", "}}")
@@ -116,7 +135,9 @@ class PlannerExecutorAgentInference(BaseAgentInference):
                                         session_id=session_id,
                                         agent_id=agent_id,
                                         context_flag=context_flag,
-                                        file_context_management_flag=file_context_management_flag
+                                        file_context_management_flag=file_context_management_flag,
+                                        additional_paths=additional_paths,
+                                        allowed_absolute_mount_roots=allowed_absolute_mount_roots,
                                     )
 
         # Planner Agent Chains
@@ -156,14 +177,14 @@ class PlannerExecutorAgentInference(BaseAgentInference):
 
         return chains
 
-    async def _build_workflow(self, chains: dict, flags: Dict[str, bool] = {}) -> StateGraph:
+    async def _build_workflow(self, chains: dict, flags: Dict[str, bool] = {}, get_dummy: bool = False) -> StateGraph:
         """
         Builds the LangGraph workflow for a Planner-Executor-Critic Agent.
         """
         log.info(f"[WARNING] _build_workflow called with flags: {flags}")
         
         llm = chains.get("llm", None)
-        executor_agent = chains.get("agent_executor", None)
+        executor_agent: CompiledStateGraph = chains.get("agent_executor", None)
         tool_list = chains.get("tool_list", [])
         fs_memory = chains.get("fs_memory", None)  # Filesystem memory (may be None)
 
@@ -180,8 +201,8 @@ class PlannerExecutorAgentInference(BaseAgentInference):
         response_gen_chain_json = chains.get("response_gen_chain_json", None)
         response_gen_chain_str = chains.get("response_gen_chain_str", None)
 
-        tool_interrupt_flag = flags.get("tool_interrupt_flag", False)
-        plan_verifier_flag = flags.get("plan_verifier_flag", False)
+        tool_interrupt_flag = flags.get("tool_interrupt_flag", get_dummy or False)
+        plan_verifier_flag = flags.get("plan_verifier_flag", get_dummy or False)
         evaluation_flag = flags.get("evaluation_flag", False)
         validator_flag = flags.get("validator_flag", False)
         message_queue = flags.get("message_queue", False)
@@ -192,16 +213,26 @@ class PlannerExecutorAgentInference(BaseAgentInference):
 
         log.info(f"[INFO] Extracted flags - validator: {validator_flag}, evaluation: {evaluation_flag}, plan_verifier: {plan_verifier_flag}")
 
-        if not llm or not executor_agent or not planner_chain_json or not planner_chain_str or \
-                not general_query_chain or \
-                not response_gen_chain_json or not response_gen_chain_str or \
-                (plan_verifier_flag and (not replanner_chain_json or not replanner_chain_str)):
-            raise HTTPException(status_code=500, detail="Required chains or agent executor are missing")
+        if not get_dummy:
+            if not llm or not executor_agent or not planner_chain_json or not planner_chain_str or \
+                    not general_query_chain or \
+                    not response_gen_chain_json or not response_gen_chain_str or \
+                    (plan_verifier_flag and (not replanner_chain_json or not replanner_chain_str)):
+                raise HTTPException(status_code=500, detail="Required chains or agent executor are missing")
 
         # Nodes
 
         async def generate_past_conversation_summary(state: PlannerExecutorWorkflowState | PlannerExecutorHITLWorkflowState,writer:StreamWriter):
             """Generates past conversation summary from the conversation history."""
+            
+            # Set session context for LLM tracking within this workflow node
+            # LangGraph spawns new async tasks that don't inherit contextvars automatically
+            update_session_context(
+                session_id=state['session_id'],
+                user_session=state['session_id'],
+                agent_id=state['agentic_application_id'],
+                call_category="agent_inference"
+            )
             
             strt_tmstp = get_timestamp()
             conv_summary = new_preference = ""
@@ -445,6 +476,15 @@ Input Query:
                                                             error_return_key="plan"
                                                         )  
 
+            # Detect guardrail errors disguised as plan steps by output_parser
+            if planner_response.get('plan'):
+                for step_text in planner_response['plan']:
+                    guardrail_message = format_guardrail_user_response(str(step_text))
+                    if guardrail_message:
+                        log.warning(f"Guardrail violation detected in planner output for session {state['session_id']}")
+                        writer({"Node Name": "Generating Plan", "Status": "Completed"})
+                        return {"plan": [], "response": guardrail_message, "errors": [str(step_text)]}
+
             response_state = {
                 "plan": planner_response['plan'],
                 "step_idx": 0,  # Always reset step index when generating new plan
@@ -639,7 +679,8 @@ Review the previous feedback carefully and make sure the same mistakes are not r
                 writer({"Node Name": "Thinking...", "Status":"Started"})
                 stream_source = executor_agent.astream({"messages": [("user", task_formatted.strip())]}, internal_thread)
             writer({"raw": {"Current Step": step}, "content": f"Executing step: {step}"})
-            async for msg in stream_source:
+            try:
+              async for msg in stream_source:
                 if isinstance(msg, dict) and "agent" in msg:
                     agent_output = msg.get("agent", {})
                     messages = []
@@ -679,6 +720,15 @@ Review the previous feedback carefully and make sure the same mistakes are not r
                     # writer({"raw": {"executor_agent_node": msg}, "content": f"Agent processing: {msg.get('agent', {}).get('messages', [{}])[-1].get('content', 'Agent working...') if isinstance(msg, dict) and 'agent' in msg else str(msg)}"})
                     if "agent" in msg:
                         final_content_parts.extend(msg["agent"]["messages"])
+            except Exception as e:
+                error = f"Error Occurred in Executor Agent: {e}"
+                writer({"Node Name": "Thinking...", "Status": "Failed"})
+                log_guardrail_or_exception(error, e)
+                guardrail_message = get_guardrail_response_from_exception(e)
+                if guardrail_message:
+                    return {"response": guardrail_message, "errors": [error]}
+                return {"errors": [error]}
+
             completed_steps.append(step)
             completed_steps_responses.append(final_content_parts[-1].content)
             log.info(f"Executor Agent response generated for session {state['session_id']} at step {state['step_idx']}")
@@ -844,7 +894,12 @@ Final Response from Executor Agent:
                     llm=llm
                 )
                 # asyncio.create_task(self.chat_service.update_preferences(user_input=state["query"], llm=llm, agentic_application_id=state["agentic_application_id"], session_id=state["session_id"]))
-                asyncio.create_task(self.chat_service.update_preferences_and_analyze_conversation(user_input=state["query"], llm=llm, agentic_application_id=state["agentic_application_id"], session_id=state["session_id"]))
+                asyncio.create_task(self.chat_service.update_preferences_and_analyze_conversation(
+                    user_input=state["query"], 
+                    llm=llm, 
+                    agentic_application_id=state["agentic_application_id"], 
+                    session_id=state["session_id"],
+                ))
                 config_limits = await self.admin_config_service.get_limits()
                 if (len(state["ongoing_conversation"])+1) % (2*config_limits.chat_summary_interval) == 0:
                     log.debug("Storing chat summary")
@@ -859,7 +914,17 @@ Final Response from Executor Agent:
                 log.error(error)
                 errors.append(error)
 
-            final_response_message = AIMessage(content=state["response"])
+            raw_response = state.get("response") or ""
+            if not raw_response and state.get("errors"):
+                guardrail_response = get_guardrail_response_from_errors(state.get("errors", []))
+                if guardrail_response:
+                    raw_response = guardrail_response
+                    log.info("final_response: guardrail/moderation check triggered, returning policy alert to user.")
+                else:
+                    raw_response = "I'm sorry, I encountered an error and couldn't complete your request. Please try again."
+                    log.warning(f"final_response: state['response'] is None/empty, using fallback. Errors: {state.get('errors')}")
+
+            final_response_message = AIMessage(content=raw_response)
             log.info(f"Final response generated for session {state['session_id']}")
             writer({"raw":{"final_response":"Memory Updated"}, "content":"Memory Updated"})
             writer({"Node Name": "Memory Update", "Status":"Completed"})
@@ -875,6 +940,11 @@ Final Response from Executor Agent:
             """
             Checks the status of the plan execution and decides which agent should be called next.
             """
+            errors = state.get("errors", [])
+            if errors and get_guardrail_response_from_errors(errors if isinstance(errors, list) else [errors]):
+                log.info(f"Guardrail error detected, routing directly to response_generator_agent.")
+                return "response_generator_agent"
+
             if state["step_idx"]==len(state["plan"]):
                 return "response_generator_agent"
             else:
@@ -884,6 +954,10 @@ Final Response from Executor Agent:
             """
             Determines the appropriate agent to handle a general question based on the current state.
             """
+            errors = state.get("errors", [])
+            if errors and get_guardrail_response_from_errors(errors if isinstance(errors, list) else [errors]):
+                log.info("Guardrail error detected in planner output, routing to final_response.")
+                return "final_response"
             if not state["plan"] or "STEP" not in state["plan"][0]:
                 return "general_llm_call"
             else:
@@ -1189,9 +1263,75 @@ Final Response from Executor Agent:
             # If user approved (or auto-approved), proceed to executor
             elif state.get("tool_feedback") == 'yes':
                 return "executor_agent_node"
+            # If user rejected the tool execution
+            elif state.get("tool_feedback") == 'no':
+                return "tool_reject"
             # Otherwise, user wants to update arguments
             else:
                 return "tool_interrupt"
+
+        async def tool_reject(state: PlannerExecutorWorkflowState | PlannerExecutorHITLWorkflowState, writer: StreamWriter):
+            """Handle user rejection of tool execution by injecting a decline ToolMessage."""
+            log.info(f"[{state['session_id']}] tool_reject: User declined tool execution")
+            writer({"raw": {"tool_reject": "User declined the tool execution"}, "content": "User declined the tool execution."})
+            thread_id = await self.chat_service._get_thread_id(state['agentic_application_id'], state['session_id'])
+            internal_thread = await self.chat_service._get_thread_config("inside" + thread_id)
+
+            agent_state = await executor_agent.aget_state(internal_thread)
+            value = agent_state.values["messages"][-1]
+
+            tool_call_id = value.tool_calls[-1]["id"]
+            tool_name = value.tool_calls[-1]["name"]
+
+            reject_msg = ToolMessage(
+                content="Tool execution was declined by user.",
+                tool_call_id=tool_call_id,
+                name=tool_name,
+            )
+
+            await executor_agent.aupdate_state(internal_thread, {"messages": [reject_msg]})
+
+            final_content_parts = [reject_msg]
+            stream_source = executor_agent.astream(None, internal_thread)
+            async for msg in stream_source:
+                if isinstance(msg, dict) and "agent" in msg:
+                    agent_output = msg.get("agent", {})
+                    if isinstance(agent_output, dict) and "messages" in agent_output:
+                        messages = agent_output.get("messages", [])
+                        for message in messages:
+                            if message.tool_calls:
+                                tool_call = message.tool_calls[0]
+                                writer({"Node Name": "Tool Call", "Status": "Started", "Tool Name": tool_call['name'], "Tool Arguments": tool_call['args']})
+                        final_content_parts.extend(messages)
+                elif "tools" in msg:
+                    tool_messages = msg.get("tools", [])
+                    for tool_message in tool_messages["messages"]:
+                        writer({"raw": {"Tool Name": tool_message.name, "Tool Output": tool_message.content}, "content": f"Tool {tool_message.name} returned: {tool_message.content}"})
+                        if hasattr(tool_message, "name"):
+                            writer({"Node Name": "Tool Call", "Status": "Completed", "Tool Name": tool_message.name})
+                    final_content_parts.extend(tool_messages["messages"])
+                else:
+                    if "agent" in msg:
+                        final_content_parts.extend(msg["agent"]["messages"])
+
+            final_ai_message = final_content_parts[-1]
+            response_content = final_ai_message.content if hasattr(final_ai_message, 'content') else str(final_ai_message)
+            writer({"raw": {"tool_reject_response": response_content}, "content": f"Tool execution was declined: {response_content[:50]}..."})
+
+            has_active_tasks = True
+            if (
+                hasattr(final_ai_message, "type")
+                and final_ai_message.type == "ai"
+                and final_ai_message.tool_calls == []
+            ):
+                has_active_tasks = False
+            if not has_active_tasks:
+                writer({"Node Name": "Thinking...", "Status": "Completed"})
+
+            return {
+                "response": response_content,
+                "executor_messages": final_content_parts,
+            }
 
         async def tool_interrupt(state: PlannerExecutorWorkflowState | PlannerExecutorHITLWorkflowState,writer:StreamWriter):
             # writer({"Node Name": "Updating Tool Arguments", "Status":"Started"})
@@ -1203,28 +1343,24 @@ Final Response from Executor Agent:
             agent_state = await executor_agent.aget_state(internal_thread)
             value = agent_state.values["messages"][-1]
 
-            if model_name.startswith("gemini"):
-                tool_call_id = value.tool_calls[-1]["id"]
-                tool_name = value.additional_kwargs["function_call"]["name"]
-                old_arg = ""
-            else:
-                tool_call_id = value.additional_kwargs["tool_calls"][-1]["id"]
-                tool_name = value.additional_kwargs["tool_calls"][0]["function"]["name"]
-                old_arg = value.additional_kwargs["tool_calls"][0]["function"]["arguments"]
+            tool_call_id = value.tool_calls[-1]["id"]
+            tool_name = value.tool_calls[-1]["name"]
+            old_arg = value.tool_calls[-1]["args"]
 
+            additional_kwargs = value.additional_kwargs
             response_metadata = value.response_metadata
             id = value.id
             usage_metadata = value.usage_metadata
             tool_feedback = state["tool_feedback"]
             feedback_dict = json.loads(tool_feedback)
             new_ai_msg = AIMessage(
-                            content=f"user modified the tool values, consider the new values. the old values are {old_arg}, and user modified values are {tool_feedback} for the tool {tool_name}",
-                            additional_kwargs={"tool_calls": [{"id": tool_call_id, "function": {"arguments": tool_feedback, "name": tool_name}, "type": "function"}], "refusal": None},
-                            response_metadata=response_metadata,
-                            id=id,
-                            tool_calls=[{'name': tool_name, 'args': feedback_dict, 'id': tool_call_id, 'type': 'tool_call'}],
-                            usage_metadata=usage_metadata
-                        )
+                content=f"user modified the tool values, consider the new values. the old values are {old_arg}, and user modified values are {tool_feedback} for the tool {tool_name}",
+                additional_kwargs=additional_kwargs,
+                response_metadata=response_metadata,
+                id=id,
+                tool_calls=[{'name': tool_name, 'args': feedback_dict, 'id': tool_call_id, 'type': 'tool_call'}],
+                usage_metadata=usage_metadata
+            )
 
             # Record a user update event for evaluator awareness
             try:
@@ -1571,6 +1707,7 @@ Final Response from Executor Agent:
         workflow.add_node("response_generator_agent", response_generator_agent)
         workflow.add_node("final_response", final_response)
         workflow.add_node("interrupt_node_for_tool", interrupt_node_for_tool)
+        workflow.add_node("tool_reject", tool_reject)
         workflow.add_node("tool_interrupt", tool_interrupt)
         
         # Add validator nodes if validator flag is enabled
@@ -1627,7 +1764,7 @@ Final Response from Executor Agent:
         workflow.add_conditional_edges(
             "planner_agent",
             route_general_question,
-            ["general_llm_call", "executor_agent_node" if not plan_verifier_flag else "interrupt_node"],
+            ["general_llm_call", "final_response", "executor_agent_node" if not plan_verifier_flag else "interrupt_node"],
         )
 
         if plan_verifier_flag:
@@ -1652,7 +1789,12 @@ Final Response from Executor Agent:
         workflow.add_conditional_edges(
             "interrupt_node_for_tool",
             interrupt_node_decision_for_tool,
-            ["executor_agent_node", "tool_interrupt"],
+            ["executor_agent_node", "tool_interrupt", "tool_reject"],
+        )
+        workflow.add_conditional_edges(
+            "tool_reject",
+            final_decision,
+            ["interrupt_node_for_tool", "increment_step","response_generator_agent"],
         )
         workflow.add_conditional_edges(
             "tool_interrupt",
@@ -1666,10 +1808,21 @@ Final Response from Executor Agent:
             ["executor_agent_node", "response_generator_agent"]
         )
         workflow.add_edge("general_llm_call", "final_response")
-        if flags["response_formatting_flag"]:
+        # Formatter — skip on guardrail-blocked responses to avoid wasting an LLM call
+        def formatter_router(state):
+            if state.get("errors"):
+                guardrail_resp = get_guardrail_response_from_errors(
+                    state["errors"] if isinstance(state["errors"], list) else [state["errors"]]
+                )
+                if guardrail_resp:
+                    log.info("formatter_router: guardrail response detected, skipping formatter.")
+                    return END
+            return "formatter"
+
+        if flags.get("response_formatting_flag", False):
             workflow.add_node("formatter", lambda state: InferenceUtils.format_for_ui_node(state, llm))
 
-            workflow.add_edge("final_response", "formatter")
+            workflow.add_conditional_edges("final_response", formatter_router, ["formatter", END])
             workflow.add_edge("formatter", END)
         else:
             workflow.add_edge("final_response", END)

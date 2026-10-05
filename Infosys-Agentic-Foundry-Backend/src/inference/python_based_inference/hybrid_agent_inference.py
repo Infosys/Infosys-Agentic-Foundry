@@ -9,9 +9,11 @@ from src.inference.python_based_inference.base_python_based_agent_inference impo
 from src.schemas import AdminConfigLimits
 from src.config.constants import Limits
 from src.utils.helper_functions import get_timestamp, build_effective_query_with_user_updates
+from src.prompts.prompts import hybrid_agent_planning_enforcement_prompt
 
 from telemetry_wrapper import logger as log
 from src.utils.phoenix_manager import traced_project_context_sync
+from src.utils.guardrail_helpers import format_guardrail_user_response
 
 
 class HybridAgentInference(BasePythonBasedAgentInference):
@@ -23,20 +25,23 @@ class HybridAgentInference(BasePythonBasedAgentInference):
         super().__init__(inference_utils=inference_utils)
 
 
-    async def _build_agent_and_chains(self, llm: BaseAIModelService, agent_config: Dict) -> Dict[str, Any]:
+    async def _build_agent_and_chains(self, llm: BaseAIModelService, agent_config: Dict, use_kafka_tool_worker: bool = False) -> Dict[str, Any]:
         """
         Builds the agent and chains for the Hybrid Agent.
         """
         tool_ids = agent_config["TOOLS_INFO"]
         tool_versions = agent_config.get("TOOLS_WITH_VERSIONS", {})
-        system_prompt = agent_config["SYSTEM_PROMPT"]
+        system_prompt = agent_config["SYSTEM_PROMPT"].get("SYSTEM_PROMPT_HYBRID_AGENT", "")
+
+        system_prompt = f"{system_prompt}{hybrid_agent_planning_enforcement_prompt}"
 
         # Use the common helper to get the agent instance
         hybrid_agent, _ = await self._get_python_based_agent_instance(
                                         llm,
-                                        system_prompt=system_prompt.get("SYSTEM_PROMPT_HYBRID_AGENT", ""),
+                                        system_prompt=system_prompt,
                                         tool_ids=tool_ids,
-                                        tool_versions=tool_versions
+                                        tool_versions=tool_versions,
+                                        use_kafka_tool_worker=use_kafka_tool_worker
                                     )
         chains = {
             "llm": llm,
@@ -63,10 +68,12 @@ class HybridAgentInference(BasePythonBasedAgentInference):
                                 tool_interrupt_flag: bool = False,
                                 tools_to_interrupt: Optional[List[str]] = None,
                                 tool_feedback: str = None,
+                                tool_reject: bool = False,
                                 context_flag: bool = True,
                                 temperature: float = 0,
                                 evaluation_flag: bool = False,
                                 validator_flag: bool = False,
+                                use_kafka_tool_worker: bool = False,
                                 inference_config: AdminConfigLimits = AdminConfigLimits()
                             ) -> Dict[str, Any]:
         """
@@ -89,7 +96,8 @@ class HybridAgentInference(BasePythonBasedAgentInference):
             "tool_choice": "auto",
             "tool_interrupt": tool_interrupt_flag,
             "tools_to_interrupt": tools_to_interrupt,
-            "updated_tool_calls": tool_feedback
+            "updated_tool_calls": tool_feedback,
+            "tool_reject": tool_reject
         }
 
         previous_response_feedback_type: Optional[str] = None
@@ -114,7 +122,7 @@ Please review the query and feedback, and provide an appropriate answer.
 """
 
         llm = await self.model_service.get_llm_model_using_python(model_name=model_name, temperature=temperature)
-        chains = await self._build_agent_and_chains(llm, agent_config)
+        chains = await self._build_agent_and_chains(llm, agent_config, use_kafka_tool_worker=use_kafka_tool_worker)
         app: BaseAIModelService = chains.get("hybrid_agent", None)
         if not app:
             log.error("Agent instance not found in chains.")
@@ -144,7 +152,6 @@ Please review the query and feedback, and provide an appropriate answer.
 
                 # Plan Verification Handling
                 if not is_plan_approved:
-                    config["tool_choice"] = "none"
 
                     if context_flag and query:
                         context_messages = await InferenceUtils.prepare_episodic_memory_context(agentic_application_id, query)
@@ -167,9 +174,13 @@ Please review the query and feedback, and provide an appropriate answer.
                         log.warning(f"[USER_UPDATE] Failed to load user_update_events from chat history: {e}")
 
                 elif is_plan_approved.lower() == "no" and plan_feedback:
-                    config["tool_choice"] = "none"
                     config["configurable"]["resume_previous_chat"] = True
-                    feedback_content = f"The previous plan was not approved by user.\nUSER FEEDBACK: {plan_feedback}.\n\nPlease generate a revised plan based on user feedback."
+                    feedback_content = (
+                        f"USER FEEDBACK ON THE PLAN: {plan_feedback}\n\n"
+                        "Interpret the feedback before acting:\n"
+                        "- If it requests any change, correction, or improvement to the plan, generate a REVISED plan (output only the plan JSON) and do NOT call any tool yet.\n"
+                        "- If it is merely approval or appreciation (e.g., 'yes', 'looks good', 'approved', 'great', 'go ahead'), do NOT regenerate the plan; proceed to EXECUTE the current step of the existing plan using the appropriate tool(s)."
+                    )
                     
                     messages = [app.format_content_with_role(feedback_content)]
                     
@@ -197,10 +208,6 @@ Please review the query and feedback, and provide an appropriate answer.
                 else:
                     log.info("No invocation required.")
                     return await self.chat_state_history_manager.get_recent_history(thread_id=thread_id)
-
-                # If there are no messages (tool interrupt or plan approved), set tool_choice to auto
-                if not messages:
-                    config["tool_choice"] = "auto"
 
                 # Load user_update_events from chat history for tool interrupt cases
                 # This ensures plan feedback context is preserved when tool interrupt happens after plan approval
@@ -272,10 +279,25 @@ Please review the query and feedback, and provide an appropriate answer.
                 while True:
                     agent_resp = await app.ainvoke(messages=messages, config=config)
 
+                    # Check for guardrail/moderation errors returned by AzureAIModelService
+                    if agent_resp.get("error") and not agent_resp.get("final_response"):
+                        guardrail_message = format_guardrail_user_response(str(agent_resp["error"]))
+                        if guardrail_message:
+                            log.warning(f"[{session_id}] Guardrail violation in hybrid agent: {agent_resp['error'][:200]}")
+                            guardrail_steps = list(agent_resp.get("agent_steps", []))
+                            guardrail_steps.append({"role": "assistant", "content": guardrail_message})
+                            await self.chat_state_history_manager.add_chat_entry(
+                                thread_id=thread_id,
+                                agent_steps=guardrail_steps,
+                                final_response=guardrail_message,
+                                user_query=query or "",
+                            )
+                            final_response = await self.chat_state_history_manager.get_recent_history(thread_id=thread_id)
+                            return final_response
+
                     response_custom_metadata = agent_resp["agent_steps"][-1].get("response_custom_metadata", {})
                     if response_custom_metadata and "plan" in response_custom_metadata:
                         if not plan_verifier_flag:
-                            config["tool_choice"] = "auto"
                             config["configurable"]["resume_previous_chat"] = True
                             agent_resp = await app.ainvoke(messages=None, config=config)
                         else:
@@ -393,7 +415,6 @@ IMPORTANT: Provide ONLY the improved answer/response directly. Do NOT include ac
                                 messages = [llm.format_content_with_role(validation_guidance)]
                                 config["configurable"]["resume_previous_chat"] = True
                                 config["tool_interrupt"] = False
-                                config["tool_choice"] = "none"
                                 continue  # Retry with validation feedback
 
                         except Exception as e:
@@ -498,8 +519,7 @@ IMPORTANT: Provide ONLY the improved answer/response directly. Do NOT include ac
                         config["configurable"]["resume_previous_chat"] = True
                         # Mirror other workflows: ensure tool interruption does not persist across evaluation epochs
                         config["tool_interrupt"] = False
-                        # Also prefer not to automatically choose tools during retry; keep control explicit
-                        config["tool_choice"] = "none"
+
 
                     except Exception as e:
                         log.error(f"Error during evaluation: {e}. Proceeding without further evaluations.")
@@ -550,7 +570,7 @@ IMPORTANT: Provide ONLY the improved answer/response directly. Do NOT include ac
                                 user_input=agent_resp["user_query"],
                                 llm=llm,
                                 agentic_application_id=agentic_application_id,
-                                session_id=session_id
+                                session_id=session_id,
                             )
                         )
 
@@ -609,11 +629,13 @@ IMPORTANT: Provide ONLY the improved answer/response directly. Do NOT include ac
                                 tool_interrupt_flag: bool = False,
                                 tools_to_interrupt: Optional[List[str]] = None,
                                 tool_feedback: str = None,
+                                tool_reject: bool = False,
                                 context_flag: bool = True,
                                 temperature: float = 0,
                                 evaluation_flag: bool = False,
                                 validator_flag: bool = False,
                                 enable_streaming_flag: bool = False,
+                                use_kafka_tool_worker: bool = False,
                                 inference_config: AdminConfigLimits = AdminConfigLimits()
                             ) -> AsyncGenerator[Dict[str, Any], None]:
         """
@@ -636,7 +658,8 @@ IMPORTANT: Provide ONLY the improved answer/response directly. Do NOT include ac
             "tool_choice": "auto",
             "tool_interrupt": tool_interrupt_flag,
             "tools_to_interrupt": tools_to_interrupt,
-            "updated_tool_calls": tool_feedback
+            "updated_tool_calls": tool_feedback,
+            "tool_reject": tool_reject
         }
 
         previous_response_feedback_type: Optional[str] = None
@@ -664,7 +687,7 @@ Please review the query and feedback, and provide an appropriate answer.
         # yield {"Node Name": "Hybrid Agent", "Status": "Started"}
 
         llm = await self.model_service.get_llm_model_using_python(model_name=model_name, temperature=temperature)
-        chains = await self._build_agent_and_chains(llm, agent_config)
+        chains = await self._build_agent_and_chains(llm, agent_config, use_kafka_tool_worker=use_kafka_tool_worker)
         app: BaseAIModelService = chains.get("hybrid_agent", None)
         if not app:
             log.error("Agent instance not found in chains.")
@@ -697,7 +720,6 @@ Please review the query and feedback, and provide an appropriate answer.
 
                 # Plan Verification Handling
                 if not is_plan_approved:
-                    config["tool_choice"] = "none"
 
                     if context_flag and query:
                         # Yield context generation status
@@ -727,11 +749,14 @@ Please review the query and feedback, and provide an appropriate answer.
                         log.warning(f"[USER_UPDATE] Failed to load user_update_events from chat history: {e}")
 
                 elif is_plan_approved.lower() == "no" and plan_feedback:
-                    yield {"raw": {"plan_verifier": "User rejected the plan and provided feedback."}, "content": "User rejected the plan and provided feedback. Regenerating the plan."}
-                    config["tool_choice"] = "none"
+                    yield {"raw": {"plan_verifier": "User provided feedback on the plan."}, "content": "Reviewing your feedback on the plan."}
                     config["configurable"]["resume_previous_chat"] = True
-                    feedback_content = f"The previous plan was not approved by user.\nUSER FEEDBACK: {plan_feedback}.\n\nPlease generate a revised plan based on user feedback."
-                    yield {"raw": {"plan_feedback": "Regenerating plan based on user feedback."}, "content": "Regenerating plan based on user feedback."}
+                    feedback_content = (
+                        f"USER FEEDBACK ON THE PLAN: {plan_feedback}\n\n"
+                        "Interpret the feedback before acting:\n"
+                        "- If it requests any change, correction, or improvement to the plan, generate a REVISED plan (output only the plan JSON) and do NOT call any tool yet.\n"
+                        "- If it is merely approval or appreciation (e.g., 'yes', 'looks good', 'approved', 'great', 'go ahead'), do NOT regenerate the plan; proceed to EXECUTE the current step of the existing plan using the appropriate tool(s)."
+                    )
                     messages = [app.format_content_with_role(feedback_content)]
                     
                     # Record plan feedback as user update event for validation context
@@ -763,9 +788,6 @@ Please review the query and feedback, and provide an appropriate answer.
                     yield final_response
                     return
 
-                # If there are no messages (tool interrupt or plan approved), set tool_choice to auto
-                if not messages:
-                    config["tool_choice"] = "auto"
                 
                 # Load user_update_events from chat history for tool interrupt cases
                 # This ensures plan feedback context is preserved when tool interrupt happens after plan approval
@@ -839,18 +861,39 @@ Please review the query and feedback, and provide an appropriate answer.
                 while True:
                     # Use astream instead of ainvoke for streaming status updates
                     async for stream_chunk in app.astream(messages=messages, config=config):
-                        # Forward streaming status updates
-                        yield stream_chunk
-                        
                         # Capture the final response (contains user_query, final_response, agent_steps)
                         if "final_response" in stream_chunk or "agent_steps" in stream_chunk:
                             agent_resp = stream_chunk
                             final_stream_response = stream_chunk
+                        elif "error" not in stream_chunk:
+                            yield stream_chunk
 
                     if not agent_resp:
                         log.error("No response received from agent stream.")
                         yield {"error": "No response received from agent stream."}
                         return
+
+                    # Check for guardrail/moderation errors returned by AzureAIModelService
+                    if agent_resp.get("error") and not agent_resp.get("final_response"):
+                        guardrail_message = format_guardrail_user_response(str(agent_resp["error"]))
+                        if guardrail_message:
+                            log.warning(f"[{session_id}] Guardrail violation in hybrid agent stream: {agent_resp['error'][:200]}")
+                            guardrail_steps = list(agent_resp.get("agent_steps", []))
+                            guardrail_steps.append({"role": "assistant", "content": guardrail_message})
+                            await self.chat_state_history_manager.add_chat_entry(
+                                thread_id=thread_id,
+                                agent_steps=guardrail_steps,
+                                final_response=guardrail_message,
+                                user_query=query or "",
+                            )
+                            final_response = await self.chat_state_history_manager.get_recent_history(thread_id=thread_id)
+                            yield final_response
+                            return
+                        else:
+                            # Non-guardrail error — yield the error and stop
+                            log.error(f"[{session_id}] Non-guardrail error in hybrid agent stream: {agent_resp['error'][:200]}")
+                            yield agent_resp
+                            return
 
                     response_custom_metadata = agent_resp.get("agent_steps", [{}])[-1].get("response_custom_metadata", {})
                     if response_custom_metadata and "plan" in response_custom_metadata:
@@ -862,14 +905,14 @@ Please review the query and feedback, and provide an appropriate answer.
                         
                         if not plan_verifier_flag:
                             log.info(f"[Plan Auto-Approval] Auto-approving plan since plan_verifier_flag=False")
-                            config["tool_choice"] = "auto"
                             config["configurable"]["resume_previous_chat"] = True
                             # Continue streaming with plan approved
                             async for stream_chunk in app.astream(messages=None, config=config):
-                                yield stream_chunk
                                 if "final_response" in stream_chunk or "agent_steps" in stream_chunk:
                                     agent_resp = stream_chunk
                                     final_stream_response = stream_chunk
+                                elif "error" not in stream_chunk:
+                                    yield stream_chunk
                         else:
                             # Plan verifier state - yield plan interrupt message for user confirmation
                             log.info(f"[Plan Verifier] Yielding plan_verifier prompt for user confirmation")
@@ -996,7 +1039,6 @@ IMPORTANT: Provide ONLY the improved answer/response directly. Do NOT include ac
                                 messages = [llm.format_content_with_role(validation_guidance)]
                                 config["configurable"]["resume_previous_chat"] = True
                                 config["tool_interrupt"] = False
-                                config["tool_choice"] = "none"
                                 continue  # Retry with validation feedback
 
                         except Exception as e:
@@ -1106,7 +1148,6 @@ IMPORTANT: Provide ONLY the improved answer/response directly. Do NOT include ac
                         messages = [llm.format_content_with_role(retry_message, online_evaluation_epoch=current_epoch+1)]
                         config["configurable"]["resume_previous_chat"] = True
                         config["tool_interrupt"] = False
-                        config["tool_choice"] = "none"
 
                     except Exception as e:
                         yield {"Node Name": "Evaluation", "Status": "Failed", "Error": str(e)}
@@ -1154,12 +1195,13 @@ IMPORTANT: Provide ONLY the improved answer/response directly. Do NOT include ac
                                 user_input=agent_resp.get("user_query"),
                                 llm=llm,
                                 agentic_application_id=agentic_application_id,
-                                session_id=session_id
+                                session_id=session_id,
                             )
                         )
 
                     # Formatting for canvas view
-                    if response_formatting_flag and final_response_generated_flag:                        
+                    if response_formatting_flag and final_response_generated_flag:
+                        log.info("Formatting Final Response for Canvas View")
                         formatted_response = await self.format_final_response_for_canvas_view(
                             query=agent_resp.get("user_query"),
                             response=agent_resp.get("final_response"),

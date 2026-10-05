@@ -2,7 +2,7 @@
 import os
 import uuid
 import uuid
-from typing import Dict,IO, List
+from typing import Dict, IO, List, Optional
 from pathlib import Path
 from fastapi import UploadFile, HTTPException
 from fastapi.responses import FileResponse,StreamingResponse
@@ -18,6 +18,28 @@ class FileManager:
 
     def __init__(self, base_dir: str = None):
         self.base_dir = base_dir or self.BASE_DIR
+        self._syncer = None
+
+    def _get_syncer(self):
+        """Return a cached WorkspaceBlobSync instance, creating it once if needed."""
+        if self._syncer is not None:
+            log.info("[FileManager] Reusing cached WorkspaceBlobSync instance")
+            return self._syncer
+        from src.utils.workspace_blob_sync import WorkspaceBlobSync
+        _sp = os.getenv('STORAGE_PROVIDER', '')
+        log.info(f"[FileManager] STORAGE_PROVIDER='{_sp}'")
+        if not _sp:
+            log.info("[FileManager] STORAGE_PROVIDER is not set — blob sync skipped")
+            return None
+        log.info(f"[FileManager] Initializing storage client for provider '{_sp}'")
+        _client = get_storage_client(_sp)
+        log.info(f"[FileManager] Storage client initialized: {type(_client).__name__}")
+        self._syncer = WorkspaceBlobSync(
+            storage_client=_client,
+            project_root=os.path.abspath("."),
+        )
+        log.info("[FileManager] WorkspaceBlobSync instance created and cached")
+        return self._syncer
 
 
     @staticmethod
@@ -263,6 +285,7 @@ class FileManager:
 
             
     async def save_uploaded_file(self, uploaded_file: UploadFile, subdirectory: str = "") -> str:
+        """Save uploaded file. Raises error if file already exists."""
         save_path = await self._validate_path(subdirectory)
 
         if uploaded_file.filename in os.listdir(save_path):
@@ -274,8 +297,58 @@ class FileManager:
         file_path_obj = Path(file_location)
         file_path_obj.write_bytes(file_content_bytes)
 
+        # --- Hyper-scale blob sync: upload to blob storage ---
+        try:
+            _syncer = self._get_syncer()
+            if _syncer:
+                _rel = f"{subdirectory}/{uploaded_file.filename}" if subdirectory else uploaded_file.filename
+                _syncer.schedule_user_upload_sync(_rel)
+        except Exception as e:
+            log.info(f"[FileManager] Blob sync failed for '{uploaded_file.filename}': {e}")
+
         log.info(f"Saved uploaded file to: {file_location}")
         return file_location
+
+    async def save_uploaded_file_with_conflict_handling(
+        self,
+        uploaded_file: UploadFile,
+        subdirectory: str = "",
+        overwrite: bool = False,
+    ) -> Optional[str]:
+        """
+        Save uploaded file with conflict handling.
+
+        If the file already exists in the target directory and overwrite=False, returns None
+        so the caller can surface a warning to the user with options (overwrite / custom folder /
+        default email folder).  The caller is responsible for building the right subdirectory
+        before invoking this method.
+
+        Returns:
+            Relative path where the file was saved, or None if skipped (file existed + overwrite=False).
+        """
+        save_path = await self._validate_path(subdirectory)
+
+        if uploaded_file.filename in os.listdir(save_path):
+            if not overwrite:
+                log.info(f"File '{uploaded_file.filename}' already exists in '{subdirectory or 'root'}', skipping (overwrite=False)")
+                return None
+            log.info(f"File '{uploaded_file.filename}' already exists, overwriting (overwrite=True)")
+
+        file_location = os.path.join(save_path, uploaded_file.filename)
+        file_content_bytes: bytes = await uploaded_file.read()
+        Path(file_location).write_bytes(file_content_bytes)
+
+        rel_path = (f"{subdirectory}/{uploaded_file.filename}" if subdirectory else uploaded_file.filename).replace("\\", "/")
+
+        try:
+            _syncer = self._get_syncer()
+            if _syncer:
+                _syncer.schedule_user_upload_sync(rel_path)
+        except Exception as e:
+            log.info(f"[FileManager] Blob sync failed for '{uploaded_file.filename}': {e}")
+
+        log.info(f"Saved uploaded file to: {file_location}")
+        return rel_path
 
     async def generate_file_structure(self, department_filter: str = None, include_universal: bool = False) -> Dict:
         file_struct = {}
@@ -360,6 +433,16 @@ class FileManager:
 
         log.info(f"Download request for file: {file_path}")
 
+        # --- Hyper-scale blob restore: pull from blob if missing locally ---
+        if not (file_path.exists() and file_path.is_file()):
+            try:
+                _syncer = self._get_syncer()
+                if _syncer:
+                    _rel = f"{subdirectory}/{filename}" if subdirectory else filename
+                    await _syncer.restore_user_upload(_rel)
+            except Exception as e:
+                log.info(f"[FileManager] Blob restore failed for '{filename}': {e}")
+
         if file_path.exists() and file_path.is_file():
             return FileResponse(file_path, media_type='application/octet-stream', filename=filename)
         else:
@@ -384,7 +467,18 @@ class FileManager:
         if os.path.exists(abs_full_path):
             if os.path.isfile(abs_full_path):
                 os.remove(abs_full_path)
-                log.info(f"File '{file_path}' deleted successfully.")
+                log.info(f"File '{file_path}' deleted successfully from local storage.")
+                
+                # --- Sync deletion to blob storage if STORAGE_PROVIDER is set ---
+                try:
+                    _syncer = self._get_syncer()
+                    if _syncer:
+                        blob_key = f"_global/user_uploads/{file_path}"
+                        _syncer.schedule_blob_file_delete(blob_key)
+                        log.info(f"Scheduled blob deletion for '{blob_key}'")
+                except Exception as e:
+                    log.info(f"[FileManager] Blob delete sync failed for '{file_path}': {e}")
+                
                 return {"info": f"File '{file_path}' deleted successfully."}
             else:
                 log.info(f"Attempted to delete a directory: '{file_path}'")
@@ -393,25 +487,45 @@ class FileManager:
             log.info(f"File '{file_path}' not found.")
             raise HTTPException(status_code=404, detail="No such file or directory.")
 
-    async def save_chat_file(self, uploaded_file: UploadFile, session_id: str, subdirectory: str = "") -> str:
+    async def save_chat_file(
+        self,
+        uploaded_file: UploadFile,
+        session_id: str,
+        subdirectory: str = "",
+        overwrite: bool = False,
+    ) -> Optional[str]:
         """
         Save uploaded file for chat with unique naming: <filename>_<session_id>.<ext>
-        Files are stored in department-specific subdirectory under user_uploads/
+        Files are stored in department-specific subdirectory under user_uploads/.
+
+        Returns:
+            Relative path where the file was saved, or None if skipped (file existed + overwrite=False).
         """
         save_path = await self._validate_path(subdirectory)
         name, ext = os.path.splitext(uploaded_file.filename)
         stored_filename = f"{name}_{session_id}{ext}"
+
+        if stored_filename in os.listdir(save_path):
+            if not overwrite:
+                log.info(f"Chat file '{stored_filename}' already exists in '{subdirectory or 'root'}', skipping (overwrite=False)")
+                return None
+            log.info(f"Chat file '{stored_filename}' already exists, overwriting (overwrite=True)")
+
         file_location = os.path.join(save_path, stored_filename)
-        
         file_content_bytes: bytes = await uploaded_file.read()
-        file_path_obj = Path(file_location)
-        file_path_obj.write_bytes(file_content_bytes)
-        
+        Path(file_location).write_bytes(file_content_bytes)
+
+        rel_path = (f"{subdirectory}/{stored_filename}" if subdirectory else stored_filename).replace("\\", "/")
+
+        try:
+            _syncer = self._get_syncer()
+            if _syncer:
+                _syncer.schedule_user_upload_sync(rel_path)
+        except Exception as e:
+            log.info(f"[FileManager] Blob sync failed for '{stored_filename}': {e}")
+
         log.info(f"Saved chat file: {file_location}")
-        # Return path including subdirectory so delete endpoint receives a department-scoped path
-        if subdirectory:
-            return f"{subdirectory}/{stored_filename}"
-        return stored_filename
+        return rel_path
 
     async def list_chat_files(self, session_id: str = None, subdirectory: str = "") -> List[str]:
         """List files in user_uploads department subdirectory, optionally filtered by session."""

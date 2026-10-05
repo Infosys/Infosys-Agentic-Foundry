@@ -11,7 +11,6 @@ migration-info.json
 *.db-shm
 *.db-wal
 
-.env.example
 litellm_backend/config.yaml
 litellm_backend/constants.py
 litellm_backend/outputs/
@@ -33,7 +32,8 @@ SHARING_SYSTEM_DOCUMENTATION.md
 .vscode/
 
 src/inference/chat_logs/
-agent_workspaces/
+agent_workspaces/*
+!agent_workspaces/.gitkeep
 onboarded_tools/
 user_uploads/*
 evaluation_uploads/
@@ -57,6 +57,7 @@ endor/
 ./test1.py
 new_env
 my_env
+agentpro_win_20260406/
 !Export_Agent/Agentcode/Agent_Frontend/.env
 test_mcp_ttl_and_unused.py
 test_mcp_recycle_bin.py
@@ -67,10 +68,40 @@ test_mcp_recycle_bin.py
 !user_uploads/customer_loyalty_agent_database.db
 !user_uploads/production_demand_forecast.csv
 !user_uploads/production_manufacturing.db
+skills/
+
+# Ignore AgentOS runtime metadata, but NOT src/agentos (source code)
+_agentos_meta/
+!src/agentos/
+agent_os
+
+# E2E test scripts (local-only, not committed)
+e2e_tests/
 
 reports/
 logs.log
-AgentOS
-skills
-agent_workspaces
-AgentPro_Win_20260406
+/AgentOS/
+/AgentPro_Win_20260406/
+loan_eligibility_agent/
+
+# --- Round 1-4 test artifacts (local-only) ---
+_e2e_final_results.txt
+_e2e_report_results.txt
+_high_results2.txt
+_test_high_results.txt
+_hr3.txt
+_debug_output.txt
+_test_results.txt
+audit_logs/
+test_critical_fixes.py
+test_e2e_report.py
+test_high_fixes.py
+test_infra_fixes.py
+test_round4_fixes.py
+
+test_round5_fixes.py
+test_round5_api.py
+f5_bigip_agent/
+test_hooks_scripts/
+sso/
+.claude

@@ -5,6 +5,7 @@ from telemetry_wrapper import logger as log
 from typing import Callable
 from src.config import cache_config  # use module, not direct vars to avoid stale references
 from datetime import datetime
+from uuid import UUID
 import asyncio
 import time
 
@@ -171,6 +172,8 @@ class DateTimeEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, datetime):
             return obj.isoformat()
+        if isinstance(obj, UUID):
+            return str(obj)
         return super().default(obj)
 
 

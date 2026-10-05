@@ -15,9 +15,11 @@ from src.database.services import (
     GroupService, GroupSecretsService, ConsistencyService, RoleAccessService, DepartmentService,
     TaskRegistryService
 )
-from src.database.repositories import QueryTokenUsageRepository, TokenUsageLogsRepository
-from src.database.admin_config_service import AdminConfigService
-from src.database.core_evaluation_service import CoreEvaluationService, CoreConsistencyEvaluationService, CoreRobustnessEvaluationService
+from src.database.services.async_task_service import AsyncTaskService
+from src.database.repositories import QueryTokenUsageRepository, TokenUsageLogsRepository, LLMRequestTrackingRepository
+from src.database.services.admin_config_service import AdminConfigService
+from src.database.services.scheduler_service import SchedulerService
+from src.database.services.core_evaluation_service import CoreEvaluationService, CoreConsistencyEvaluationService, CoreRobustnessEvaluationService
 # EXPORT:EXCLUDE:START
 from src.agent_templates.base_agent_onboard import BaseAgentOnboard, BaseMetaTypeAgentOnboard
 # EXPORT:EXCLUDE:END
@@ -93,6 +95,12 @@ class ServiceProvider:
         if app_container.token_usage_logs_repo is None:
             raise HTTPException(status_code=500, detail="TokenUsageLogsRepository not initialized.")
         return app_container.token_usage_logs_repo
+
+    @staticmethod
+    def get_llm_request_tracking_repo() -> LLMRequestTrackingRepository:
+        if app_container.llm_request_tracking_repo is None:
+            raise HTTPException(status_code=500, detail="LLMRequestTrackingRepository not initialized.")
+        return app_container.llm_request_tracking_repo
 
     @staticmethod
     def get_feedback_learning_service() -> FeedbackLearningService:
@@ -353,6 +361,26 @@ class ServiceProvider:
         if app_container.task_registry_service is None:
             raise HTTPException(status_code=500, detail="TaskRegistryService not initialized.")
         return app_container.task_registry_service
+
+    @staticmethod
+    def get_async_task_service() -> AsyncTaskService:
+        """
+        Returns the AsyncTaskService instance for the flag-based async response mode.
+        This is used to register, track, and query long-running background tasks
+        that return a task_id immediately for the client to poll.
+        """
+        if app_container.async_task_service is None:
+            raise HTTPException(status_code=500, detail="AsyncTaskService not initialized.")
+        return app_container.async_task_service
+
+    @staticmethod
+    def get_scheduler_service() -> SchedulerService:
+        """
+        Returns the SchedulerService instance for cron-scheduled agent jobs.
+        """
+        if app_container.scheduler_service is None:
+            raise HTTPException(status_code=500, detail="SchedulerService not initialized.")
+        return app_container.scheduler_service
     
     @staticmethod
     def get_role_access_service() -> RoleAccessService:
@@ -455,13 +483,14 @@ class ServiceProvider:
         return app_container.kb_sharing_repo
 
     @staticmethod
-    def get_kafka_manager():
+    def get_message_queue_manager():
         """
-        Returns the Kafka Manager instance for communicating with Kafka Queue
+        Returns the Message Queue Manager instance for communicating with Kafka/Azure Service Bus.
+        Returns None if MQ is disabled (MESSAGE_QUEUE_PROVIDER is empty/none).
         """
-        if app_container.kafka_manager is None:
-            raise HTTPException(status_code=500, detail="KafkaManager not initialized.")
-        return app_container.kafka_manager    
+        if app_container.mq_manager is None:
+            log.warning("Message queue is not configured. Set MESSAGE_QUEUE_PROVIDER to enable this feature.")
+        return app_container.mq_manager    
 
     @staticmethod
     def get_workflow_sharing_repo():

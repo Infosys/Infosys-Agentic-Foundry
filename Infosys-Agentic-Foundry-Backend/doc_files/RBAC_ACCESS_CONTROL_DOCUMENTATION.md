@@ -178,7 +178,7 @@ async def check_operation_permission(
 # Login requires department (except SuperAdmin)
 POST /auth/login
 {
-    "email_id": "john@company.com",
+    "email_id": "user@example.com",
     "password": "password123",
     "department_name": "Engineering"  # Required!
 }

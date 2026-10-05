@@ -78,7 +78,7 @@ async def get_tag_by_id_endpoint(request: Request, tag_id: str, tag_service: Tag
     return result
 
 
-@router.put("/update")
+@router.api_route("/update", methods=["PUT", "POST"])
 async def update_tag_endpoint(request: Request, update_data: UpdateTagData, tag_service: TagService = Depends(ServiceProvider.get_tag_service)):
     """
     API endpoint to update an existing tag.
@@ -106,7 +106,7 @@ async def update_tag_endpoint(request: Request, update_data: UpdateTagData, tag_
     return result
 
 
-@router.delete("/delete")
+@router.api_route("/delete", methods=["DELETE", "POST"])
 async def delete_tag_endpoint(request: Request, delete_data: DeleteTagData, tag_service: TagService = Depends(ServiceProvider.get_tag_service)):
     """
     API endpoint to delete a tag.

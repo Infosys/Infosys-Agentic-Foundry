@@ -12,6 +12,7 @@ from src.models.base_ai_model_service import BaseAIModelService
 from src.database.repositories import ChatStateHistoryManagerRepository
 
 from telemetry_wrapper import logger as log
+from src.utils.guardrail_helpers import is_guardrail_exception
 
 # Define a type for the streaming chunks for better clarity
 # You can customize this structure to fit your frontend's needs
@@ -94,6 +95,7 @@ async def token_usage_logging_hook(response, agent_context: Dict[str, Any]):
         tool_id_from_session = session_ctx[5] if session_ctx[5] != 'Unassigned' else None  # tool_id is sixth
         tool_name_from_session = session_ctx[6] if session_ctx[6] != 'Unassigned' else None  # tool_name is seventh
         deployment_model_from_session = session_ctx[7] if session_ctx[7] != 'Unassigned' else None  # model_used is eighth
+        department_from_session = session_ctx[21] if len(session_ctx) > 21 and session_ctx[21] != 'Unassigned' else None
         
         log.info(f"📋 [TokenUsageHook] Session context: user_id={user_id_from_session}, session_id={session_id_from_session}, agent_id={agent_id_from_session}, tool_id={tool_id_from_session}, tool_name={tool_name_from_session}")
         
@@ -177,7 +179,6 @@ async def token_usage_logging_hook(response, agent_context: Dict[str, Any]):
                 user_id=final_user_id,
                 request_id=agent_context.get('request_id'),
                 status="success",
-                # 🆕 ADD AUTOMATIC CATEGORIZATION
                 call_category=categorization.get('call_category'),
                 call_sub_category=categorization.get('call_sub_category'),
                 call_operation=categorization.get('call_operation'),
@@ -186,6 +187,7 @@ async def token_usage_logging_hook(response, agent_context: Dict[str, Any]):
                 evaluation_type=categorization.get('evaluation_type'),
                 tool_id=final_tool_id,
                 tool_name=final_tool_name,
+                department_name=department_from_session,
             )
             log.info(
                 f"✅ [TokenUsageHook] Successfully logged to DB: Agent={agent_context.get('agent_id')}, "
@@ -240,7 +242,9 @@ class AzureAIModelService(BaseAIModelService):
         api_version: str, # Azure API version, e.g., "2023-12-01-preview"
         model: Optional[str] = None,
         temperature: Optional[float] = None,
-        chat_history_manager: Optional[ChatStateHistoryManagerRepository] = None
+        chat_history_manager: Optional[ChatStateHistoryManagerRepository] = None,
+        extra_headers: Optional[Dict[str, str]] = None,
+        gateway_mode: bool = False
     ):
         super().__init__(
             api_key=api_key,
@@ -248,25 +252,44 @@ class AzureAIModelService(BaseAIModelService):
             api_version=api_version,
             model=model,
             temperature=temperature,
-            chat_history_manager=chat_history_manager
+            chat_history_manager=chat_history_manager,
+            extra_headers=extra_headers,
+            gateway_mode=gateway_mode
         )
 
         if not self._api_key or not self._api_base or not self._api_version:
             raise ValueError("For AzureAIAgent, 'api_key', 'api_base' and 'api_version' must be provided.")
 
-        self._client = AzureOpenAI(
-            api_key=self._api_key,
-            api_version=self._api_version,
-            azure_endpoint=self._api_base
-        )
-
-        # Asynchronous client (New: For astream)
-        self._async_client = AsyncAzureOpenAI(
-            api_key=self._api_key,
-            api_version=self._api_version,
-            azure_endpoint=self._api_base
-        )
-        log.info(f"[AzureAIModelService] Initialized.")
+        if self._gateway_mode:
+            # Gateway mode: use base_url (not azure_endpoint) so the SDK sends to
+            # {base_url}/chat/completions?api-version=X without inserting /openai/ in the path.
+            # Extra headers (e.g. Authorization token) are set as default_headers on the client.
+            _gw_headers = dict(self._extra_headers) if self._extra_headers else {}
+            self._client = AzureOpenAI(
+                api_key=self._api_key,
+                api_version=self._api_version,
+                base_url=self._api_base,
+                default_headers=_gw_headers or None,
+            )
+            self._async_client = AsyncAzureOpenAI(
+                api_key=self._api_key,
+                api_version=self._api_version,
+                base_url=self._api_base,
+                default_headers=_gw_headers or None,
+            )
+            log.info(f"[AzureAIModelService] Initialized in GATEWAY mode. Base URL: {self._api_base}")
+        else:
+            self._client = AzureOpenAI(
+                api_key=self._api_key,
+                api_version=self._api_version,
+                azure_endpoint=self._api_base
+            )
+            self._async_client = AsyncAzureOpenAI(
+                api_key=self._api_key,
+                api_version=self._api_version,
+                azure_endpoint=self._api_base
+            )
+            log.info(f"[AzureAIModelService] Initialized.")
 
     async def _trigger_post_completion_hooks(self, response, agent_context: Dict[str, Any]):
         """
@@ -348,6 +371,7 @@ class AzureAIModelService(BaseAIModelService):
         tool_interrupt = config.get("tool_interrupt", False)
         tools_to_interrupt: Optional[List[str]] = config.get("tools_to_interrupt", None)
         parallel_tool_calls = config.get("parallel_tool_calls", not tool_interrupt)
+        tool_reject = config.get("tool_reject", False)
         
         # Log the tool interrupt configuration
         if tool_interrupt:
@@ -401,57 +425,71 @@ class AzureAIModelService(BaseAIModelService):
 
                     if pending_tool_calls:
                         log.info(f"[Agent Stream] Resuming interrupted chat {current_entry_id} for thread '{thread_id}'.")
-                        updated_tool_calls_dict = {tc["id"]: tc["updated_arguments"] for tc in updated_tool_calls}
 
-                        if len(pending_tool_calls)==1 and self.first_tool_id_placeholder in updated_tool_calls_dict:
-                            updated_tool_calls_dict[pending_tool_calls[0]["id"]] = updated_tool_calls_dict[self.first_tool_id_placeholder]
-                            log.info(f"  [Agent Stream] Mapped placeholder ID to actual tool_call_id '{pending_tool_calls[0]['id']}', for single tool call update.")
-
-                        # Check if user updated arguments or just approved
-                        has_updates = bool(updated_tool_calls_dict)
-                        if has_updates:
-                            yield {"raw": {"tool_interrupt_update_argument": "User updated the tool arguments."}, "content": "User updated the tool arguments. Updating the agent state accordingly."}
+                        if tool_reject:
+                            log.info(f"[Agent Stream] User REJECTED tool execution. Injecting decline messages.")
+                            yield {"raw": {"tool_reject": "User declined the tool execution."}, "content": "User declined the tool execution."}
+                            for tool_call in pending_tool_calls:
+                                tool_call_name = tool_call["function"]["name"]
+                                reject_message = {
+                                    "tool_call_id": tool_call["id"],
+                                    "role": "tool",
+                                    "name": tool_call_name,
+                                    "content": json.dumps({"status": "rejected", "message": f"Tool '{tool_call_name}' execution was declined by the user. The tool was NOT executed. Do not retry this tool call."}),
+                                }
+                                current_turn_messages.append(reject_message)
                         else:
-                            yield {"raw": {"tool_verifier": "User approved the tool execution."}, "content": "User approved the tool execution by clicking the thumbs up button."}
+                            updated_tool_calls_dict = {tc["id"]: tc["updated_arguments"] for tc in updated_tool_calls}
 
-                        tool_execution_tasks = []
-                        for tool_call in pending_tool_calls:
-                            if tool_call["id"] in updated_tool_calls_dict:
-                                # Update tool call arguments with user-provided updates
-                                reference_args = json.loads(tool_call["function"]["arguments"])
-                                updated_tool_calls_dict[tool_call["id"]] = self.convert_value_type_of_candidate_as_given_in_reference(
-                                                                                    reference=reference_args,
-                                                                                    candidate=updated_tool_calls_dict[tool_call["id"]]
-                                                                                )
-                                tool_call["function"]["arguments"] = json.dumps(updated_tool_calls_dict[tool_call["id"]])
-                                if reference_args != updated_tool_calls_dict[tool_call["id"]]:
-                                    tool_call["function"]["original_arguments"] = reference_args
-                                log.info(f"  [Agent Stream] Applied user update for tool '{tool_call['function']['name']}' (ID: {tool_call['id']}).")
+                            if len(pending_tool_calls)==1 and self.first_tool_id_placeholder in updated_tool_calls_dict:
+                                updated_tool_calls_dict[pending_tool_calls[0]["id"]] = updated_tool_calls_dict[self.first_tool_id_placeholder]
+                                log.info(f"  [Agent Stream] Mapped placeholder ID to actual tool_call_id '{pending_tool_calls[0]['id']}', for single tool call update.")
 
-                            tool_execution_tasks.append(self._execute_tool_call(tool_call))
+                            # Check if user updated arguments or just approved
+                            has_updates = bool(updated_tool_calls_dict)
+                            if has_updates:
+                                yield {"raw": {"tool_interrupt_update_argument": "User updated the tool arguments."}, "content": "User updated the tool arguments. Updating the agent state accordingly."}
+                            else:
+                                yield {"raw": {"tool_verifier": "User approved the tool execution."}, "content": "User approved the tool execution by clicking the thumbs up button."}
 
-                        tool_outputs = await asyncio.gather(*tool_execution_tasks)
-                        for tool_output, tool_call in zip(tool_outputs, pending_tool_calls):
-                            tool_call_name = tool_call["function"]["name"]
-                            original_args = tool_call["function"].get("original_arguments", None)
-                            if original_args:
-                                updated_args = updated_tool_calls_dict.get(tool_call["id"])
-                                note_msg = (
-                                    f"The tool '{tool_call_name}' was originally called with arguments {original_args}. "
-                                    f"However, as part of the human-in-the-loop process, the user explicitly updated the arguments to {updated_args}. "
-                                    f"Consequently, the tool was executed using these updated arguments ({updated_args}). "
-                                    "Please proceed with the understanding that the operation was performed using the user-specified values."
-                                )
-                                tool_output = {"tool_response": tool_output, "Note": note_msg}
-                            tool_message = {
-                                "tool_call_id": tool_call["id"],
-                                "role": "tool",
-                                "name": tool_call_name,
-                                "content": json.dumps(tool_output),
-                            }
-                            current_turn_messages.append(tool_message)
-                            yield {"raw": {"Tool Name": tool_call_name, "Tool Output": tool_output}, "content": f"Tool {tool_call_name} returned: {tool_output}"}
-                            yield {"Node Name": "Tool Call", "Status": "Completed", "Tool Name": tool_call_name}
+                            tool_execution_tasks = []
+                            for tool_call in pending_tool_calls:
+                                if tool_call["id"] in updated_tool_calls_dict:
+                                    # Update tool call arguments with user-provided updates
+                                    reference_args = json.loads(tool_call["function"]["arguments"])
+                                    updated_tool_calls_dict[tool_call["id"]] = self.convert_value_type_of_candidate_as_given_in_reference(
+                                                                                        reference=reference_args,
+                                                                                        candidate=updated_tool_calls_dict[tool_call["id"]]
+                                                                                    )
+                                    tool_call["function"]["arguments"] = json.dumps(updated_tool_calls_dict[tool_call["id"]])
+                                    if reference_args != updated_tool_calls_dict[tool_call["id"]]:
+                                        tool_call["function"]["original_arguments"] = reference_args
+                                    log.info(f"  [Agent Stream] Applied user update for tool '{tool_call['function']['name']}' (ID: {tool_call['id']}).")
+
+                                tool_execution_tasks.append(self._execute_tool_call(tool_call))
+
+                            tool_outputs = await asyncio.gather(*tool_execution_tasks)
+                            for tool_output, tool_call in zip(tool_outputs, pending_tool_calls):
+                                tool_call_name = tool_call["function"]["name"]
+                                original_args = tool_call["function"].get("original_arguments", None)
+                                if original_args:
+                                    updated_args = updated_tool_calls_dict.get(tool_call["id"])
+                                    note_msg = (
+                                        f"The tool '{tool_call_name}' was originally called with arguments {original_args}. "
+                                        f"However, as part of the human-in-the-loop process, the user explicitly updated the arguments to {updated_args}. "
+                                        f"Consequently, the tool was executed using these updated arguments ({updated_args}). "
+                                        "Please proceed with the understanding that the operation was performed using the user-specified values."
+                                    )
+                                    tool_output = {"tool_response": tool_output, "Note": note_msg}
+                                tool_message = {
+                                    "tool_call_id": tool_call["id"],
+                                    "role": "tool",
+                                    "name": tool_call_name,
+                                    "content": json.dumps(tool_output),
+                                }
+                                current_turn_messages.append(tool_message)
+                                yield {"raw": {"Tool Name": tool_call_name, "Tool Output": tool_output}, "content": f"Tool {tool_call_name} returned: {tool_output}"}
+                                yield {"Node Name": "Tool Call", "Status": "Completed", "Tool Name": tool_call_name}
 
                         
                         log.info(f"[Agent] Resuming interrupted chat {most_recent_entry_id} for thread '{thread_id}' with {len(current_turn_messages)} messages.")
@@ -517,6 +555,10 @@ class AzureAIModelService(BaseAIModelService):
                 if agent_ctx.get('user_id'):
                     extra_headers['x-user-id'] = agent_ctx['user_id']
                 
+                # Merge instance-level extra headers (e.g. gateway auth token)
+                if self._extra_headers:
+                    extra_headers.update(self._extra_headers)
+
                 if extra_headers:
                     completion_params['extra_headers'] = extra_headers
                 
@@ -687,7 +729,10 @@ class AzureAIModelService(BaseAIModelService):
                     final_llm_response_content = response_message.content
                     break
             except Exception as e:
-                log.error(f"[Agent Stream] An error occurred during astream: {e}", exc_info=True)
+                if is_guardrail_exception(e):
+                    log.warning(f"[Agent Stream] Guardrail/content-policy violation during astream: {e}")
+                else:
+                    log.error(f"[Agent Stream] An error occurred during astream: {e}", exc_info=True)
                 yield {
                     "error": f"LLM interaction error: {e}",
                     "user_query": initial_user_query,
@@ -816,6 +861,7 @@ class AzureAIModelService(BaseAIModelService):
         tool_interrupt = config.get("tool_interrupt", False)
         tools_to_interrupt: Optional[List[str]] = config.get("tools_to_interrupt", None)
         parallel_tool_calls = config.get("parallel_tool_calls", not tool_interrupt)
+        tool_reject = config.get("tool_reject", False)
         
         # Log the tool interrupt configuration
         if tool_interrupt:
@@ -871,45 +917,59 @@ class AzureAIModelService(BaseAIModelService):
 
                     if pending_tool_calls:
                         log.info(f"[Agent] Resuming interrupted chat {current_entry_id} for thread '{thread_id}'.")
-                        updated_tool_calls_dict = {tc["id"]: tc["updated_arguments"] for tc in updated_tool_calls}
 
-                        if len(pending_tool_calls)==1 and self.first_tool_id_placeholder in updated_tool_calls_dict:
-                            updated_tool_calls_dict[pending_tool_calls[0]["id"]] = updated_tool_calls_dict[self.first_tool_id_placeholder]
-                            log.info(f"  [Agent] Mapped placeholder ID to actual tool_call_id '{pending_tool_calls[0]['id']}', for single tool call update.")
+                        # Handle tool rejection — user declined tool execution
+                        if tool_reject:
+                            log.info(f"[Agent] User REJECTED tool execution. Injecting decline messages.")
+                            for tool_call in pending_tool_calls:
+                                tool_call_name = tool_call["function"]["name"]
+                                reject_message = {
+                                    "tool_call_id": tool_call["id"],
+                                    "role": "tool",
+                                    "name": tool_call_name,
+                                    "content": json.dumps({"status": "rejected", "message": f"Tool '{tool_call_name}' execution was declined by the user. The tool was NOT executed. Do not retry this tool call."}),
+                                }
+                                current_turn_messages.append(reject_message)
+                        else:
+                            updated_tool_calls_dict = {tc["id"]: tc["updated_arguments"] for tc in updated_tool_calls}
 
-                        tool_execution_tasks = []
-                        for tool_call in pending_tool_calls:
-                            if tool_call["id"] in updated_tool_calls_dict:
-                                # Update tool call arguments with user-provided updates
-                                reference_args = json.loads(tool_call["function"]["arguments"])
-                                updated_tool_calls_dict[tool_call["id"]] = self.convert_value_type_of_candidate_as_given_in_reference(
-                                                                                    reference=reference_args,
-                                                                                    candidate=updated_tool_calls_dict[tool_call["id"]]
-                                                                                )
-                                tool_call["function"]["arguments"] = json.dumps(updated_tool_calls_dict[tool_call["id"]])
-                                if reference_args != updated_tool_calls_dict[tool_call["id"]]:
-                                    tool_call["function"]["original_arguments"] = reference_args
-                                log.info(f"  [Agent] Applied user update for tool '{tool_call['function']['name']}' (ID: {tool_call['id']}).")
+                            if len(pending_tool_calls)==1 and self.first_tool_id_placeholder in updated_tool_calls_dict:
+                                updated_tool_calls_dict[pending_tool_calls[0]["id"]] = updated_tool_calls_dict[self.first_tool_id_placeholder]
+                                log.info(f"  [Agent] Mapped placeholder ID to actual tool_call_id '{pending_tool_calls[0]['id']}', for single tool call update.")
 
-                            tool_execution_tasks.append(self._execute_tool_call(tool_call))
+                            tool_execution_tasks = []
+                            for tool_call in pending_tool_calls:
+                                if tool_call["id"] in updated_tool_calls_dict:
+                                    # Update tool call arguments with user-provided updates
+                                    reference_args = json.loads(tool_call["function"]["arguments"])
+                                    updated_tool_calls_dict[tool_call["id"]] = self.convert_value_type_of_candidate_as_given_in_reference(
+                                                                                        reference=reference_args,
+                                                                                        candidate=updated_tool_calls_dict[tool_call["id"]]
+                                                                                    )
+                                    tool_call["function"]["arguments"] = json.dumps(updated_tool_calls_dict[tool_call["id"]])
+                                    if reference_args != updated_tool_calls_dict[tool_call["id"]]:
+                                        tool_call["function"]["original_arguments"] = reference_args
+                                    log.info(f"  [Agent] Applied user update for tool '{tool_call['function']['name']}' (ID: {tool_call['id']}).")
 
-                        tool_outputs = await asyncio.gather(*tool_execution_tasks)
-                        for tool_output, tool_call in zip(tool_outputs, pending_tool_calls):
-                            tool_call_name = tool_call["function"]["name"]
-                            original_args = tool_call["function"].get("original_arguments", None)
-                            if original_args:
-                                updated_args = updated_tool_calls_dict.get(tool_call["id"])
-                                note_msg = (
-                                    f"The tool '{tool_call_name}' was originally called with arguments {original_args}. "
-                                    f"However, as part of the human-in-the-loop process, the user explicitly updated the arguments to {updated_args}. "
-                                    f"Consequently, the tool was executed using these updated arguments ({updated_args}). "
-                                    "Please proceed with the understanding that the operation was performed using the user-specified values."
-                                )
-                                tool_output = {"tool_response": tool_output, "Note": note_msg}
-                            tool_message = {
-                                "tool_call_id": tool_call["id"],
-                                "role": "tool",
-                                "name": tool_call_name,
+                                tool_execution_tasks.append(self._execute_tool_call(tool_call))
+
+                            tool_outputs = await asyncio.gather(*tool_execution_tasks)
+                            for tool_output, tool_call in zip(tool_outputs, pending_tool_calls):
+                                tool_call_name = tool_call["function"]["name"]
+                                original_args = tool_call["function"].get("original_arguments", None)
+                                if original_args:
+                                    updated_args = updated_tool_calls_dict.get(tool_call["id"])
+                                    note_msg = (
+                                        f"The tool '{tool_call_name}' was originally called with arguments {original_args}. "
+                                        f"However, as part of the human-in-the-loop process, the user explicitly updated the arguments to {updated_args}. "
+                                        f"Consequently, the tool was executed using these updated arguments ({updated_args}). "
+                                        "Please proceed with the understanding that the operation was performed using the user-specified values."
+                                    )
+                                    tool_output = {"tool_response": tool_output, "Note": note_msg}
+                                tool_message = {
+                                    "tool_call_id": tool_call["id"],
+                                    "role": "tool",
+                                    "name": tool_call_name,
                                 "content": json.dumps(tool_output),
                             }
                             current_turn_messages.append(tool_message)
@@ -974,6 +1034,10 @@ class AzureAIModelService(BaseAIModelService):
                 if agent_ctx.get('user_id'):
                     extra_headers['x-user-id'] = agent_ctx['user_id']
                 
+                # Merge instance-level extra headers (e.g. gateway auth token)
+                if self._extra_headers:
+                    extra_headers.update(self._extra_headers)
+
                 if extra_headers:
                     completion_params['extra_headers'] = extra_headers
                 
@@ -1066,7 +1130,10 @@ class AzureAIModelService(BaseAIModelService):
                     break # Exit the loop, we have a final response
 
             except Exception as e:
-                log.error(f"[Agent] An error occurred during ainvoke: {e}", exc_info=True)
+                if is_guardrail_exception(e):
+                    log.warning(f"[Agent] Guardrail/content-policy violation during ainvoke: {e}")
+                else:
+                    log.error(f"[Agent] An error occurred during ainvoke: {e}", exc_info=True)
                 return {
                     "error": f"LLM interaction error: {e}",
                     "user_query": initial_user_query,

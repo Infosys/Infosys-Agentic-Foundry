@@ -35,6 +35,10 @@ class AgentInferenceRequest(BaseModel):
     tool_verifier_flag: bool = Field(False, description="If true, enables human verification/interruption after a tool call. The agent will pause for user input.")
     tool_feedback: Optional[str] = Field(None, description="Optional JSON string containing modified tool arguments provided by the user during a tool interruption.")
 
+    # --- Skill Verification / Interruption Flags (Skill Agent only) ---
+    skill_verifier_flag: bool = Field(False, description="If true, enables human verification after skill routing. The agent pauses after selecting a skill so the user can approve, reject, or pick a different skill.")
+    skill_feedback: Optional[str] = Field(None, description="Skill verification feedback: 'yes' to approve, 'no' to reject, or a skill name string to override the routed skill.")
+
     # --- Plan Verification / HITL Flags ---
     plan_verifier_flag: bool = Field(False, description="If true, enables human verification/interruption after the agent generates a plan. The agent will pause for user input.")
     is_plan_approved: Optional[Literal[None, "yes", "no"]] = Field(None, description="User's approval status for a generated plan: 'yes' to proceed, 'no' to provide feedback.")
@@ -71,6 +75,9 @@ class AgentInferenceRequest(BaseModel):
     # --- Message Queue Flag ---
     message_queue: bool = Field(False, description="If true, enables Kafka message queue for dynamic tool results.")
     
+
+    # --- Execution Mode Selection (Layer 1) ---
+    execution_mode: Optional[str] = Field(None, description="Execution mode override: 'auto' triggers SmartRouter auto-detection, a specific mode name (e.g. 'react', 'planned', 'supervisor', 'orchestrator') uses that mode directly. If None/omitted, falls back to the SKILL.md configured default.")
 
     # --- Uploaded Files ---
     uploaded_files: Optional[List[str]] = Field(None, description="List of file paths uploaded along with the query via chat interface.")

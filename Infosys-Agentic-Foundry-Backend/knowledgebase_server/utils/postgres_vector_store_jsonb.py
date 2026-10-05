@@ -1,4 +1,5 @@
 import json
+import os
 import numpy as np
 from typing import List, Dict, Any, Optional
 import asyncpg
@@ -7,6 +8,27 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").lower()
+
+# BM25 hybrid search configuration
+KB_HYBRID_SEARCH_ENABLED = os.getenv("KB_HYBRID_SEARCH_ENABLED", "true").lower() == "true"
+KB_BM25_WEIGHT = float(os.getenv("KB_BM25_WEIGHT", "0.3"))
+KB_SEMANTIC_WEIGHT = float(os.getenv("KB_SEMANTIC_WEIGHT", "0.7"))
+
+try:
+    from rank_bm25 import BM25Okapi
+    BM25_AVAILABLE = True
+except ImportError:
+    BM25_AVAILABLE = False
+    BM25Okapi = None  # type: ignore
+
+
+def _format_error(e: Exception) -> str:
+    """Format exception based on environment."""
+    if ENVIRONMENT == "development":
+        return repr(e)
+    return str(e)
+
 
 class PostgresVectorStoreJSONB:
 
@@ -14,8 +36,10 @@ class PostgresVectorStoreJSONB:
         self.pool = pool
         self.kb_table = "knowledgebase_table"
         self.embedding_table = "vector_embeddings_jsonb"
+        logger.info(f"PostgresVectorStoreJSONB initialized (kb_table={self.kb_table}, embedding_table={self.embedding_table})")
 
     async def get_or_create_kb_id(self, kb_name: str, created_by: str = "system", list_of_documents: str = "") -> str:
+        logger.debug(f"Looking up knowledgebase: name='{kb_name}', created_by='{created_by}'")
         async with self.pool.acquire() as conn:
             result = await conn.fetchrow(
                 f"SELECT knowledgebase_id, list_of_documents FROM {self.kb_table} WHERE knowledgebase_name = $1",
@@ -63,6 +87,7 @@ class PostgresVectorStoreJSONB:
         created_by: str = "system",
         list_of_documents: str = ""
     ) -> Dict[str, Any]:
+        logger.info(f"Storing embeddings: kb_name='{kb_name}', chunks_count={len(chunks)}, created_by='{created_by}'")
         if len(chunks) != len(embeddings):
             raise ValueError("Number of chunks must match number of embeddings")
         
@@ -116,6 +141,7 @@ class PostgresVectorStoreJSONB:
         """
         Store embeddings directly using kb_id without needing kb_name
         """
+        logger.info(f"Storing embeddings by ID: kb_id='{kb_id}', chunks_count={len(chunks)}, filename='{filename}'")
         if len(chunks) != len(embeddings):
             raise ValueError("Number of chunks must match number of embeddings")
         
@@ -187,38 +213,101 @@ class PostgresVectorStoreJSONB:
         
         return dot_product / (norm1 * norm2)
 
+    async def check_file_indexed(self, kb_id: str, filename: str, file_hash: str) -> bool:
+        """Return True if a chunk with this exact file_hash already exists for the given kb_id + filename."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""SELECT id FROM {self.embedding_table}
+                    WHERE kb_id = $1
+                    AND metadata->>'filename' = $2
+                    AND metadata->>'file_hash' = $3
+                    LIMIT 1""",
+                kb_id, filename, file_hash
+            )
+        return row is not None
+
+    async def delete_file_chunks(self, kb_id: str, filename: str) -> int:
+        """Delete all chunks for a specific filename within a KB. Returns the number deleted."""
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                f"""DELETE FROM {self.embedding_table}
+                    WHERE kb_id = $1 AND metadata->>'filename' = $2""",
+                kb_id, filename
+            )
+        # asyncpg returns "DELETE N" — extract the count
+        try:
+            return int(result.split()[-1])
+        except (ValueError, IndexError):
+            return 0
+
     async def semantic_search(
         self,
         query_embedding: np.ndarray,
         kb_id: Optional[str] = None,
-        top_k: int = 5
+        top_k: int = 5,
+        query_text: Optional[str] = None,
+        hybrid: Optional[bool] = None,
     ) -> List[Dict[str, Any]]:
-        select_query = f"""
-        SELECT id, kb_id, chunk_text, embedding, metadata
-        FROM {self.embedding_table}
-        WHERE 1=1
-        """
-        params = []
-        
+        use_hybrid = (KB_HYBRID_SEARCH_ENABLED if hybrid is None else hybrid) and BM25_AVAILABLE and bool(query_text)
+        logger.info(f"Semantic search: kb_id='{kb_id}', top_k={top_k}, hybrid={use_hybrid}")
+
+        select_query = f"SELECT id, kb_id, chunk_text, embedding, metadata FROM {self.embedding_table} WHERE 1=1"
+        params: list = []
         if kb_id:
             params.append(kb_id)
             select_query += f" AND kb_id = ${len(params)}"
-        
+
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(select_query, *params)
-        
+
+        if not rows:
+            logger.info("Semantic search: no rows found")
+            return []
+
+        query_emb = np.array(query_embedding)
+
+        # Semantic scores for every row
+        semantic_scores = [
+            float(self._cosine_similarity(query_emb, np.array(json.loads(row['embedding']))))
+            for row in rows
+        ]
+
+        # BM25 scores (only when hybrid is active)
+        bm25_scores_norm = [0.0] * len(rows)
+        if use_hybrid:
+            corpus = [row['chunk_text'].lower().split() for row in rows]
+            bm25 = BM25Okapi(corpus)
+            raw = bm25.get_scores(query_text.lower().split())
+            bm25_max = float(max(raw)) if max(raw) > 0 else 1.0
+            bm25_scores_norm = [float(s) / bm25_max for s in raw]
+
+        # Weighted combination
+        bw = KB_BM25_WEIGHT if use_hybrid else 0.0
+        sw = KB_SEMANTIC_WEIGHT if use_hybrid else 1.0
+        total_w = bw + sw
+        bw, sw = bw / total_w, sw / total_w
+
         results = []
-        for row in rows:
-            stored_embedding = np.array(json.loads(row['embedding']))
-            similarity = self._cosine_similarity(query_embedding, stored_embedding)
-            
+        for i, row in enumerate(rows):
+            sem = semantic_scores[i]
+            bm = bm25_scores_norm[i]
+            combined = bw * bm + sw * sem
+            try:
+                metadata = json.loads(row['metadata']) if row['metadata'] else {}
+            except Exception:
+                metadata = {}
             results.append({
                 'id': row['id'],
                 'text': row['chunk_text'],
-                'metadata': json.loads(row['metadata']) if row['metadata'] else {},
+                'metadata': metadata,
                 'kb_id': row['kb_id'],
-                'similarity': float(similarity)
+                'similarity': sem,
+                'bm25_score': round(bm, 4),
+                'combined_score': round(combined, 4),
             })
-        
-        results.sort(key=lambda x: x['similarity'], reverse=True)
-        return results[:top_k]
+
+        results.sort(key=lambda x: x['combined_score'], reverse=True)
+        top_results = results[:top_k]
+        top_score = f"{top_results[0]['combined_score']:.4f}" if top_results else "N/A"
+        logger.info(f"Search done: candidates={len(rows)}, returned={len(top_results)}, top_score={top_score}")
+        return top_results

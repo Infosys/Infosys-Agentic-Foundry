@@ -475,7 +475,7 @@ async def get_user_tool_ids_endpoint(
         raise HTTPException(status_code=500, detail=f"Error retrieving tool IDs for user: {str(e)}")
 
 
-@router.get("/get/search-paginated/")
+@router.get("/get/search-paginated")
 async def search_paginated_user_agent_access_endpoint(
     request: Request,
     search_value: Optional[str] = Query(None),

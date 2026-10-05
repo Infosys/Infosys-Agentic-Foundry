@@ -28,6 +28,8 @@ import json
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from pathlib import Path
+
+from src.config.application_config import app_config
 from telemetry_wrapper import logger as log
 
 
@@ -36,6 +38,37 @@ AGENT_WORKSPACES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirn
 
 # Default department name when none is provided
 DEFAULT_DEPARTMENT = "General"
+
+
+def _sanitize_department(dept: str) -> str:
+    """Sanitize department name to prevent path traversal.
+
+    Only allows alphanumeric characters, underscores, hyphens, and spaces.
+    Rejects any value containing path separators or traversal sequences.
+    """
+    import re as _re
+    if not dept or not _re.fullmatch(r'[a-zA-Z0-9_ \-]+', dept):
+        return DEFAULT_DEPARTMENT
+    return dept
+
+
+def _schedule_db_blob_delete(blob_prefix: str, department: str = None):
+    """Fire-and-forget: delete blobs under prefix after local DB file deletion."""
+    _sp = os.getenv('STORAGE_PROVIDER', '')
+    if not _sp:
+        return
+    try:
+        from src.utils.workspace_blob_sync import WorkspaceBlobSync
+        from src.storage import get_storage_client
+        _client = get_storage_client(_sp)
+        _syncer = WorkspaceBlobSync(
+            storage_client=_client,
+            workspace_root=AGENT_WORKSPACES_DIR,
+            department=department or DEFAULT_DEPARTMENT,
+        )
+        _syncer.schedule_blob_prefix_delete(blob_prefix, name="db_blob_delete")
+    except Exception as e:
+        log.warning(f"[DB_DATA] Blob delete scheduling failed: {e}")
 
 
 def get_department_root(department: str = None) -> Path:
@@ -204,6 +237,25 @@ def save_database_schema(
         
         log.info(f"[DB_DATA] Saved schema for {connection_name} to {schema_file}")
         
+        # --- Fire-and-forget blob sync ---
+        try:
+            import os as _os
+            _sp = _os.getenv('STORAGE_PROVIDER', '')
+            if _sp:
+                from src.utils.workspace_blob_sync import WorkspaceBlobSync
+                from src.storage import get_storage_client
+                _client = get_storage_client(_sp)
+                _dept = _sanitize_department(department or app_config.DEFAULT_DEPARTMENT)
+                _syncer = WorkspaceBlobSync(
+                    storage_client=_client,
+                    workspace_root="./agent_workspaces",
+                    department=_dept,
+                )
+                _syncer.schedule_database_cache_sync(connection_name)
+        except Exception:
+            pass  # Non-critical
+        # ---
+        
         return {
             "status": "success",
             "message": f"Schema saved for {connection_name}",
@@ -254,6 +306,25 @@ def save_database_samples(
         samples_file.write_text(content, encoding="utf-8")
         
         log.info(f"[DB_DATA] Saved samples for {connection_name} to {samples_file}")
+        
+        # --- Fire-and-forget blob sync ---
+        try:
+            import os as _os
+            _sp = _os.getenv('STORAGE_PROVIDER', '')
+            if _sp:
+                from src.utils.workspace_blob_sync import WorkspaceBlobSync
+                from src.storage import get_storage_client
+                _client = get_storage_client(_sp)
+                _dept = _sanitize_department(department or app_config.DEFAULT_DEPARTMENT)
+                _syncer = WorkspaceBlobSync(
+                    storage_client=_client,
+                    workspace_root="./agent_workspaces",
+                    department=_dept,
+                )
+                _syncer.schedule_database_cache_sync(connection_name)
+        except Exception:
+            pass  # Non-critical
+        # ---
         
         return {
             "status": "success",
@@ -355,6 +426,12 @@ def delete_database_file(connection_name: str, file_type: str = "schema", depart
         if file_path.exists():
             file_path.unlink()
             log.info(f"[DB_DATA] Deleted {file_type} for {connection_name}")
+            # Delete from blob to prevent resurrection on restore
+            dept = department or DEFAULT_DEPARTMENT
+            _schedule_db_blob_delete(
+                f"{dept}/databases/{connection_name}/{filename}",
+                department=dept,
+            )
             return True
         return False
     except Exception as e:
@@ -380,6 +457,12 @@ def clear_database_files(connection_name: str, department: str = None) -> bool:
         if db_dir.exists():
             shutil.rmtree(db_dir)
             log.info(f"[DB_DATA] Cleared all files for connection {connection_name}")
+        # Delete from blob to prevent resurrection on restore
+        dept = department or DEFAULT_DEPARTMENT
+        _schedule_db_blob_delete(
+            f"{dept}/databases/{connection_name}/",
+            department=dept,
+        )
         return True
     except Exception as e:
         log.error(f"[DB_DATA] Error clearing files for {connection_name}: {e}")
@@ -404,265 +487,268 @@ def clear_all_database_files(department: str = None) -> bool:
             shutil.rmtree(db_root)
             db_root.mkdir(parents=True, exist_ok=True)
             log.info(f"[DB_DATA] Cleared all database files")
+        # Delete all database blobs for this department
+        dept = department or DEFAULT_DEPARTMENT
+        _schedule_db_blob_delete(
+            f"{dept}/databases/",
+            department=dept,
+        )
         return True
     except Exception as e:
         log.error(f"[DB_DATA] Error clearing all database files: {e}")
         return False
 
 
-# =============================================================================
-# auto_generate_schema_and_samples — Temporarily disabled, will be used later
-# =============================================================================
-# async def auto_generate_schema_and_samples(
-#     connection_name: str,
-#     db_type: str,
-#     connection_manager=None,
-#     department: str = None
-# ) -> Dict[str, Any]:
-#     """
-#     Auto-generate schema and sample files when a data connector is created.
-#
-#     This function:
-#     1. Gets the list of tables from the database
-#     2. Gets column information for each table (from sample query)
-#     3. Gets sample data (LIMIT 3) from each table
-#     4. Saves schema.md and samples.md files
-#
-#     Args:
-#         connection_name: Name of the database connection
-#         db_type: Type of database (sqlite, postgresql, mysql, mongodb)
-#         connection_manager: The connection manager instance
-#         department: Department name for workspace segregation
-#
-#     Returns:
-#         Dict with status and file paths
-#     """
-#     from MultiDBConnection_Manager import get_connection_manager
-#
-#     if connection_manager is None:
-#         connection_manager = get_connection_manager()
-#
-#     schema_md = f"# Database Schema: {connection_name}\n\n"
-#     samples_md = f"# Sample Data: {connection_name}\n\n"
-#
-#     tables_processed = []
-#     errors = []
-#
-#     try:
-#         if db_type.lower() == "mongodb":
-#             # MongoDB: Get collections
-#             try:
-#                 mongo_db = connection_manager.get_mongo_database(connection_name)
-#                 collections = await mongo_db.list_collection_names()
-#
-#                 schema_md += f"**Database Type:** MongoDB\n\n"
-#
-#                 for collection_name in collections:
-#                     if collection_name.startswith('system.'):
-#                         continue
-#
-#                     schema_md += f"## Collection: {collection_name}\n\n"
-#                     samples_md += f"## Collection: {collection_name}\n\n"
-#
-#                     # Get sample document to infer schema
-#                     collection = mongo_db[collection_name]
-#                     sample_docs = await collection.find().limit(3).to_list(length=3)
-#
-#                     if sample_docs:
-#                         # Infer fields and types from sample documents
-#                         first_doc = sample_docs[0]
-#                         fields = list(first_doc.keys())
-#
-#                         schema_md += f"**Fields:**\n\n"
-#                         schema_md += "| Field | Type | Sample Value |\n"
-#                         schema_md += "| --- | --- | --- |\n"
-#                         for field in fields:
-#                             val = first_doc.get(field)
-#                             # Infer BSON/Python type
-#                             if val is None:
-#                                 ftype = "null"
-#                             elif hasattr(val, '__str__') and 'ObjectId' in str(type(val)):
-#                                 ftype = "ObjectId"
-#                             elif isinstance(val, bool):
-#                                 ftype = "Boolean"
-#                             elif isinstance(val, int):
-#                                 ftype = "Int"
-#                             elif isinstance(val, float):
-#                                 ftype = "Double"
-#                             elif isinstance(val, str):
-#                                 ftype = "String"
-#                             elif isinstance(val, list):
-#                                 ftype = "Array"
-#                             elif isinstance(val, dict):
-#                                 ftype = "Object"
-#                             else:
-#                                 ftype = type(val).__name__
-#                             sample_val = str(val)[:60] if val is not None else "null"
-#                             schema_md += f"| `{field}` | {ftype} | {sample_val} |\n"
-#                         schema_md += "\n"
-#
-#                         # Add sample documents
-#                         samples_md += "**Sample Documents:**\n```json\n"
-#                         import json
-#                         for doc in sample_docs:
-#                             # Convert ObjectId to string for serialization
-#                             for k, v in doc.items():
-#                                 if hasattr(v, '__str__') and 'ObjectId' in str(type(v)):
-#                                     doc[k] = str(v)
-#                             samples_md += json.dumps(doc, indent=2, default=str) + "\n"
-#                         samples_md += "```\n\n"
-#                     else:
-#                         schema_md += "*No documents found*\n\n"
-#                         samples_md += "*No documents found*\n\n"
-#
-#                     tables_processed.append(collection_name)
-#
-#             except Exception as e:
-#                 errors.append(f"MongoDB error: {str(e)}")
-#                 log.error(f"[AUTO_SCHEMA] MongoDB error for {connection_name}: {e}")
-#
-#         else:
-#             # SQL databases (SQLite, PostgreSQL, MySQL)
-#             try:
-#                 from sqlalchemy import text, inspect as sa_inspect
-#                 session = connection_manager.get_sql_session(connection_name)
-#
-#                 # Get the engine for SQLAlchemy inspector (full metadata)
-#                 engine = session.get_bind()
-#                 inspector = sa_inspect(engine)
-#
-#                 schema_md += f"**Database Type:** {db_type}\n\n"
-#
-#                 # Get tables using inspector (works for all SQL backends)
-#                 tables = inspector.get_table_names()
-#
-#                 for table_name in tables:
-#                     if table_name.startswith('sqlite_'):
-#                         continue
-#
-#                     schema_md += f"## Table: {table_name}\n\n"
-#                     samples_md += f"## Table: {table_name}\n\n"
-#
-#                     try:
-#                         # --- Full column metadata via inspector ---
-#                         columns_info = inspector.get_columns(table_name)
-#                         pk_info = inspector.get_pk_constraint(table_name)
-#                         pk_columns = set(pk_info.get('constrained_columns', []) if pk_info else [])
-#                         fk_list = inspector.get_foreign_keys(table_name)
-#                         unique_constraints = inspector.get_unique_constraints(table_name)
-#                         indexes = inspector.get_indexes(table_name)
-#
-#                         # Build a lookup for foreign key columns
-#                         fk_map = {}  # column_name -> "references table(column)"
-#                         for fk in fk_list:
-#                             ref_table = fk.get('referred_table', '')
-#                             for local_col, ref_col in zip(
-#                                 fk.get('constrained_columns', []),
-#                                 fk.get('referred_columns', [])
-#                             ):
-#                                 fk_map[local_col] = f"{ref_table}({ref_col})"
-#
-#                         # Build unique columns set
-#                         unique_columns = set()
-#                         for uc in unique_constraints:
-#                             for col in uc.get('column_names', []):
-#                                 unique_columns.add(col)
-#
-#                         # Build indexed columns set
-#                         indexed_columns = set()
-#                         for idx in indexes:
-#                             for col in idx.get('column_names', []):
-#                                 if col:
-#                                     indexed_columns.add(col)
-#
-#                         # Schema table header
-#                         schema_md += f"**Columns:**\n\n"
-#                         schema_md += "| Column | Type | Nullable | Default | Key | Extra |\n"
-#                         schema_md += "| --- | --- | --- | --- | --- | --- |\n"
-#
-#                         column_names = []
-#                         for col in columns_info:
-#                             col_name = col['name']
-#                             column_names.append(col_name)
-#                             col_type = str(col.get('type', 'UNKNOWN'))
-#                             nullable = 'YES' if col.get('nullable', True) else 'NO'
-#                             default = str(col.get('default', '')) if col.get('default') is not None else ''
-#
-#                             # Key info
-#                             key_parts = []
-#                             if col_name in pk_columns:
-#                                 key_parts.append('PK')
-#                             if col_name in fk_map:
-#                                 key_parts.append('FK')
-#                             if col_name in unique_columns:
-#                                 key_parts.append('UQ')
-#                             key_str = ', '.join(key_parts) if key_parts else ''
-#
-#                             # Extra info
-#                             extra_parts = []
-#                             if col.get('autoincrement', False) and col.get('autoincrement') != 'auto':
-#                                 extra_parts.append('auto_increment')
-#                             if col_name in fk_map:
-#                                 extra_parts.append(f'→ {fk_map[col_name]}')
-#                             if col_name in indexed_columns:
-#                                 extra_parts.append('indexed')
-#                             extra_str = ', '.join(extra_parts) if extra_parts else ''
-#
-#                             schema_md += f"| `{col_name}` | {col_type} | {nullable} | {default} | {key_str} | {extra_str} |\n"
-#
-#                         schema_md += "\n"
-#
-#                         # --- Sample data ---
-#                         sample_result = session.execute(text(f"SELECT * FROM \"{table_name}\" LIMIT 3"))
-#                         rows = sample_result.fetchall()
-#
-#                         samples_md += f"**Columns:** {', '.join(column_names)}\n\n"
-#                         if rows:
-#                             samples_md += "| " + " | ".join(column_names) + " |\n"
-#                             samples_md += "| " + " | ".join(["---"] * len(column_names)) + " |\n"
-#                             for row in rows:
-#                                 values = [str(v) if v is not None else "NULL" for v in row]
-#                                 samples_md += "| " + " | ".join(values) + " |\n"
-#                         else:
-#                             samples_md += "*No data found*\n"
-#                         samples_md += "\n"
-#
-#                         tables_processed.append(table_name)
-#
-#                     except Exception as table_error:
-#                         errors.append(f"Table {table_name}: {str(table_error)}")
-#                         log.warning(f"[AUTO_SCHEMA] Error processing table {table_name}: {table_error}")
-#                         schema_md += f"*Error reading table*\n\n"
-#                         samples_md += f"*Error reading table*\n\n"
-#
-#                 session.close()
-#
-#             except Exception as e:
-#                 errors.append(f"SQL error: {str(e)}")
-#                 log.error(f"[AUTO_SCHEMA] SQL error for {connection_name}: {e}")
-#
-#         # Save the schema and samples files
-#         schema_result = save_database_schema(connection_name, schema_md, department)
-#         samples_result = save_database_samples(connection_name, samples_md, department)
-#
-#         log.info(f"[AUTO_SCHEMA] Generated schema and samples for {connection_name}: {len(tables_processed)} tables")
-#
-#         return {
-#             "status": "success",
-#             "message": f"Auto-generated schema and samples for {connection_name}",
-#             "tables_processed": tables_processed,
-#             "schema_file": schema_result.get("virtual_path"),
-#             "samples_file": samples_result.get("virtual_path"),
-#             "errors": errors if errors else None
-#         }
-#
-#     except Exception as e:
-#         log.error(f"[AUTO_SCHEMA] Failed to auto-generate for {connection_name}: {e}")
-#         return {
-#             "status": "error",
-#             "message": str(e),
-#             "errors": errors
-#         }
+async def auto_generate_schema_and_samples(
+    connection_name: str,
+    db_type: str,
+    connection_manager=None,
+    department: str = None
+) -> Dict[str, Any]:
+    """
+    Auto-generate schema and sample files when a data connector is created.
+
+    This function:
+    1. Gets the list of tables from the database
+    2. Gets column information for each table (from sample query)
+    3. Gets sample data (LIMIT 3) from each table
+    4. Saves schema.md and samples.md files
+
+    Args:
+        connection_name: Name of the database connection
+        db_type: Type of database (sqlite, postgresql, mysql, mongodb)
+        connection_manager: The connection manager instance
+        department: Department name for workspace segregation
+
+    Returns:
+        Dict with status and file paths
+    """
+    from MultiDBConnection_Manager import get_connection_manager
+
+    if connection_manager is None:
+        connection_manager = get_connection_manager()
+
+    schema_md = f"# Database Schema: {connection_name}\n\n"
+    samples_md = f"# Sample Data: {connection_name}\n\n"
+
+    tables_processed = []
+    errors = []
+
+    try:
+        if db_type.lower() == "mongodb":
+            # MongoDB: Get collections
+            try:
+                mongo_db = connection_manager.get_mongo_database(connection_name)
+                collections = await mongo_db.list_collection_names()
+
+                schema_md += f"**Database Type:** MongoDB\n\n"
+
+                for collection_name in collections:
+                    if collection_name.startswith('system.'):
+                        continue
+
+                    schema_md += f"## Collection: {collection_name}\n\n"
+                    samples_md += f"## Collection: {collection_name}\n\n"
+
+                    # Get sample document to infer schema
+                    collection = mongo_db[collection_name]
+                    sample_docs = await collection.find().limit(3).to_list(length=3)
+
+                    if sample_docs:
+                        # Infer fields and types from sample documents
+                        first_doc = sample_docs[0]
+                        fields = list(first_doc.keys())
+
+                        schema_md += f"**Fields:**\n\n"
+                        schema_md += "| Field | Type | Sample Value |\n"
+                        schema_md += "| --- | --- | --- |\n"
+                        for field in fields:
+                            val = first_doc.get(field)
+                            # Infer BSON/Python type
+                            if val is None:
+                                ftype = "null"
+                            elif hasattr(val, '__str__') and 'ObjectId' in str(type(val)):
+                                ftype = "ObjectId"
+                            elif isinstance(val, bool):
+                                ftype = "Boolean"
+                            elif isinstance(val, int):
+                                ftype = "Int"
+                            elif isinstance(val, float):
+                                ftype = "Double"
+                            elif isinstance(val, str):
+                                ftype = "String"
+                            elif isinstance(val, list):
+                                ftype = "Array"
+                            elif isinstance(val, dict):
+                                ftype = "Object"
+                            else:
+                                ftype = type(val).__name__
+                            sample_val = str(val)[:60] if val is not None else "null"
+                            schema_md += f"| `{field}` | {ftype} | {sample_val} |\n"
+                        schema_md += "\n"
+
+                        # Add sample documents
+                        samples_md += "**Sample Documents:**\n```json\n"
+                        import json
+                        for doc in sample_docs:
+                            # Convert ObjectId to string for serialization
+                            for k, v in doc.items():
+                                if hasattr(v, '__str__') and 'ObjectId' in str(type(v)):
+                                    doc[k] = str(v)
+                            samples_md += json.dumps(doc, indent=2, default=str) + "\n"
+                        samples_md += "```\n\n"
+                    else:
+                        schema_md += "*No documents found*\n\n"
+                        samples_md += "*No documents found*\n\n"
+
+                    tables_processed.append(collection_name)
+
+            except Exception as e:
+                errors.append(f"MongoDB error: {str(e)}")
+                log.error(f"[AUTO_SCHEMA] MongoDB error for {connection_name}: {e}")
+
+        else:
+            # SQL databases (SQLite, PostgreSQL, MySQL)
+            try:
+                from sqlalchemy import text, inspect as sa_inspect
+                session = connection_manager.get_sql_session(connection_name)
+
+                # Get the engine for SQLAlchemy inspector (full metadata)
+                engine = session.get_bind()
+                inspector = sa_inspect(engine)
+
+                schema_md += f"**Database Type:** {db_type}\n\n"
+
+                # Get tables using inspector (works for all SQL backends)
+                tables = inspector.get_table_names()
+
+                for table_name in tables:
+                    if table_name.startswith('sqlite_'):
+                        continue
+
+                    schema_md += f"## Table: {table_name}\n\n"
+                    samples_md += f"## Table: {table_name}\n\n"
+
+                    try:
+                        # --- Full column metadata via inspector ---
+                        columns_info = inspector.get_columns(table_name)
+                        pk_info = inspector.get_pk_constraint(table_name)
+                        pk_columns = set(pk_info.get('constrained_columns', []) if pk_info else [])
+                        fk_list = inspector.get_foreign_keys(table_name)
+                        unique_constraints = inspector.get_unique_constraints(table_name)
+                        indexes = inspector.get_indexes(table_name)
+
+                        # Build a lookup for foreign key columns
+                        fk_map = {}  # column_name -> "references table(column)"
+                        for fk in fk_list:
+                            ref_table = fk.get('referred_table', '')
+                            for local_col, ref_col in zip(
+                                fk.get('constrained_columns', []),
+                                fk.get('referred_columns', [])
+                            ):
+                                fk_map[local_col] = f"{ref_table}({ref_col})"
+
+                        # Build unique columns set
+                        unique_columns = set()
+                        for uc in unique_constraints:
+                            for col in uc.get('column_names', []):
+                                unique_columns.add(col)
+
+                        # Build indexed columns set
+                        indexed_columns = set()
+                        for idx in indexes:
+                            for col in idx.get('column_names', []):
+                                if col:
+                                    indexed_columns.add(col)
+
+                        # Schema table header
+                        schema_md += f"**Columns:**\n\n"
+                        schema_md += "| Column | Type | Nullable | Default | Key | Extra |\n"
+                        schema_md += "| --- | --- | --- | --- | --- | --- |\n"
+
+                        column_names = []
+                        for col in columns_info:
+                            col_name = col['name']
+                            column_names.append(col_name)
+                            col_type = str(col.get('type', 'UNKNOWN'))
+                            nullable = 'YES' if col.get('nullable', True) else 'NO'
+                            default = str(col.get('default', '')) if col.get('default') is not None else ''
+
+                            # Key info
+                            key_parts = []
+                            if col_name in pk_columns:
+                                key_parts.append('PK')
+                            if col_name in fk_map:
+                                key_parts.append('FK')
+                            if col_name in unique_columns:
+                                key_parts.append('UQ')
+                            key_str = ', '.join(key_parts) if key_parts else ''
+
+                            # Extra info
+                            extra_parts = []
+                            if col.get('autoincrement', False) and col.get('autoincrement') != 'auto':
+                                extra_parts.append('auto_increment')
+                            if col_name in fk_map:
+                                extra_parts.append(f'→ {fk_map[col_name]}')
+                            if col_name in indexed_columns:
+                                extra_parts.append('indexed')
+                            extra_str = ', '.join(extra_parts) if extra_parts else ''
+
+                            schema_md += f"| `{col_name}` | {col_type} | {nullable} | {default} | {key_str} | {extra_str} |\n"
+
+                        schema_md += "\n"
+
+                        # --- Sample data ---
+                        sample_result = session.execute(text(f"SELECT * FROM \"{table_name}\" LIMIT 3"))
+                        rows = sample_result.fetchall()
+
+                        samples_md += f"**Columns:** {', '.join(column_names)}\n\n"
+                        if rows:
+                            samples_md += "| " + " | ".join(column_names) + " |\n"
+                            samples_md += "| " + " | ".join(["---"] * len(column_names)) + " |\n"
+                            for row in rows:
+                                values = [str(v) if v is not None else "NULL" for v in row]
+                                samples_md += "| " + " | ".join(values) + " |\n"
+                        else:
+                            samples_md += "*No data found*\n"
+                        samples_md += "\n"
+
+                        tables_processed.append(table_name)
+
+                    except Exception as table_error:
+                        errors.append(f"Table {table_name}: {str(table_error)}")
+                        log.warning(f"[AUTO_SCHEMA] Error processing table {table_name}: {table_error}")
+                        schema_md += f"*Error reading table*\n\n"
+                        samples_md += f"*Error reading table*\n\n"
+
+                session.close()
+
+            except Exception as e:
+                errors.append(f"SQL error: {str(e)}")
+                log.error(f"[AUTO_SCHEMA] SQL error for {connection_name}: {e}")
+
+        # Save the schema and samples files
+        schema_result = save_database_schema(connection_name, schema_md, department)
+        samples_result = save_database_samples(connection_name, samples_md, department)
+
+        log.info(f"[AUTO_SCHEMA] Generated schema and samples for {connection_name}: {len(tables_processed)} tables")
+
+        return {
+            "status": "success",
+            "message": f"Auto-generated schema and samples for {connection_name}",
+            "tables_processed": tables_processed,
+            "schema_file": schema_result.get("virtual_path"),
+            "samples_file": samples_result.get("virtual_path"),
+            "errors": errors if errors else None
+        }
+
+    except Exception as e:
+        log.error(f"[AUTO_SCHEMA] Failed to auto-generate for {connection_name}: {e}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "errors": errors
+        }
 
 
 __all__ = [
@@ -682,5 +768,5 @@ __all__ = [
     "delete_database_file",
     "clear_database_files",
     "clear_all_database_files",
-    # "auto_generate_schema_and_samples",  # Temporarily disabled
+    "auto_generate_schema_and_samples",
 ]

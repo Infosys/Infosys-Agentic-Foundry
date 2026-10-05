@@ -1,5 +1,6 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
 import os
+import uuid
 import json
 import shutil
 import asyncio
@@ -19,7 +20,7 @@ import azure.cognitiveservices.speech as speechsdk
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_community.document_loaders import TextLoader
-from langchain.text_splitter import CharacterTextSplitter
+from langchain_text_splitters import CharacterTextSplitter
 from langchain_pymupdf4llm import PyMuPDF4LLMLoader
 
 from src.auth.authorization_service import AuthorizationService
@@ -40,13 +41,14 @@ from src.auth.models import UserRole, User
 from src.auth.dependencies import get_current_user
 
 from src.utils.secrets_handler import current_user_department
-from src.auth.models import UserRole, User
+from src.auth.models import UserRole, User, UserStatus
 from src.auth.dependencies import get_current_user
 
 
 from src.schemas import VMConnectionRequest
 from src.utils.tool_code_dependency_analyzer import ToolCodeDependencyExtractor
 from src.config.application_config import app_config
+from src.utils.helper_functions import get_requests_verify, resolve_pending_user_department
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -96,7 +98,16 @@ async def get_available_models_endpoint(
         data = await model_service.get_all_available_model_names()
         log.debug(f"Models retrieved successfully: {data}, Temperature: {temperature}")
         default_model_name = data[0] if data else None
-        return JSONResponse(content={"models": data, "temperature": temperature, "default_model_name": default_model_name})
+
+        from litellm_standalone_tracker import scan_unconfigured_models
+        unconfigured = scan_unconfigured_models(data)
+
+        return JSONResponse(content={
+            "models": data,
+            "temperature": temperature,
+            "default_model_name": default_model_name,
+            "unconfigured_cost_models": unconfigured,
+        })
 
     except asyncpg.PostgresError as e:
         log.error(f"Database error while fetching models: {str(e)}")
@@ -110,43 +121,80 @@ async def get_available_models_endpoint(
 
 ## ============ User Uploaded Files Endpoints ============
 
-@router.post("/files/user-uploads/upload/")
-async def upload_file_endpoint(request: Request, files: List[UploadFile] = File(...), subdirectory: str = "", file_manager: FileManager = Depends(ServiceProvider.get_file_manager)):
+def _sanitize_email_for_folder(email: str) -> str:
+    """Sanitize email for use as a folder name."""
+    if not email:
+        return "anonymous"
+    return email.replace("@", "_at_").replace(".", "_")
+
+@router.post("/files/user-uploads/upload")
+async def upload_file_endpoint(
+    request: Request,
+    files: List[UploadFile] = File(...),
+    subdirectory: str = Form(""),
+    overwrite: str = Form("false"),
+    file_manager: FileManager = Depends(ServiceProvider.get_file_manager),
+    user_data: User = Depends(get_current_user)
+):
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
 
-    # Get user's department and create department-specific subdirectory
+    # Accept subdirectory and overwrite from either form field or query param
+    subdirectory = request.query_params.get("subdirectory", subdirectory)
+    overwrite_raw = request.query_params.get("overwrite", overwrite)
+    should_overwrite = overwrite_raw.strip().lower() in ("true", "1", "yes")
+
     user_department = current_user_department.get()
     if not user_department:
         raise HTTPException(status_code=400, detail="User department not found")
-    
-    # Combine department with any additional subdirectory
-    department_subdirectory = user_department
-    if subdirectory:
-        department_subdirectory = os.path.join(user_department, subdirectory)
 
-    file_names = []
+    department_subdirectory = f"{user_department}/{subdirectory}" if subdirectory else user_department
 
-    if STORAGE_PROVIDER=="":
-        # Handle local file storage
-        for file in files:
-            file_location = await file_manager.save_uploaded_file(uploaded_file=file, subdirectory=department_subdirectory)
-            log.info(f"File '{file.filename}' uploaded successfully to '{file_location}' for department '{user_department}'")
-            file_names.append(file.filename)
+    uploaded_files = []
+    conflict_files = []
 
-        return {"info": f"Files {file_names} saved successfully to department '{user_department}'."}
+    _file_names = [f.filename for f in files]
+    log.info(f"[PVC:user_uploads] START upload — department='{user_department}', subdirectory='{subdirectory}', files={_file_names}, overwrite={should_overwrite}, mountPath=/app/user_uploads")
+
+    for file in files:
+        saved_path = await file_manager.save_uploaded_file_with_conflict_handling(
+            uploaded_file=file,
+            subdirectory=department_subdirectory,
+            overwrite=should_overwrite,
+        )
+        if saved_path is None:
+            conflict_files.append(file.filename)
+            log.info(f"File '{file.filename}' skipped — already exists in '{department_subdirectory}'")
+        else:
+            uploaded_files.append({"original_name": file.filename, "saved_path": saved_path})
+            log.info(f"File '{file.filename}' uploaded to '{saved_path}'")
+
+    total = len(uploaded_files) + len(conflict_files)
+    if conflict_files and uploaded_files:
+        msg = f"{len(uploaded_files)} of {total} file(s) uploaded. {len(conflict_files)} file(s) already exist — choose overwrite or a subfolder."
+    elif conflict_files and not uploaded_files:
+        msg = f"No files uploaded. {len(conflict_files)} file(s) already exist — choose overwrite or a subfolder."
     else:
-        status={}
+        msg = f"{len(uploaded_files)} file(s) uploaded successfully."
 
-        for uploaded_file in files:
-            status[uploaded_file.filename] = await file_manager.upload_file_to_storage(file=uploaded_file, storage_provider=STORAGE_PROVIDER)
-            file_names.append(uploaded_file.filename)
+    warnings = {
+        "files": conflict_files,
+        "message": f"{len(conflict_files)} file(s) already exist.",
+        "conflict_path": subdirectory,
+    } if conflict_files else {}
 
-        return status
+    log.info(f"[PVC:user_uploads] END upload — uploaded={len(uploaded_files)}, conflicts={len(conflict_files)}, department='{user_department}', mountPath=/app/user_uploads")
+
+    return {
+        "success": not conflict_files,
+        "message": msg,
+        "uploaded_files": uploaded_files,
+        "warnings": warnings,
+    }
 
 
-@router.get("/files/user-uploads/get-file-structure/")
+@router.get("/files/user-uploads/get-file-structure")
 async def get_file_structure_endpoint(request: Request, file_manager: FileManager = Depends(ServiceProvider.get_file_manager)):
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
@@ -157,72 +205,115 @@ async def get_file_structure_endpoint(request: Request, file_manager: FileManage
     if not user_department:
         raise HTTPException(status_code=400, detail="User department not found")
 
+    # --- Bulk restore: if department folder is empty/missing, restore all from blob ---
+    try:
+        _sp = os.getenv('STORAGE_PROVIDER', '')
+        if _sp:
+            dept_upload_dir = os.path.join(file_manager.base_dir, user_department)
+            if not os.path.exists(dept_upload_dir) or not os.listdir(dept_upload_dir):
+                from src.utils.workspace_blob_sync import WorkspaceBlobSync
+                from src.storage import get_storage_client
+                _client = get_storage_client(_sp)
+                _syncer = WorkspaceBlobSync(
+                    storage_client=_client,
+                    project_root=os.path.abspath("."),
+                )
+                report = await _syncer.restore_workspace(
+                    blob_prefix=f"_global/user_uploads/{user_department}/",
+                    restore_root=Path(dept_upload_dir),
+                )
+                if report and report.synced > 0:
+                    log.info(f"[BlobRestore] Bulk-restored {report.synced} user upload files for dept '{user_department}'")
+    except Exception as _e:
+        log.warning(f"[BlobRestore] user_uploads bulk restore failed: {_e}", exc_info=True)
+
     # Show user's department files + universal files (root-level files outside any department folder)
     file_structure = await file_manager.generate_file_structure(department_filter=user_department, include_universal=True)
     log.info(f"File structure retrieved for department '{user_department}' with universal files")
     return JSONResponse(content=file_structure)
 
 @router.get('/files/user-uploads/download')
-async def download_file_endpoint(request: Request, filename: str = Query(...), sub_dir_name: str = Query(None), file_manager: FileManager = Depends(ServiceProvider.get_file_manager), user_data: User = Depends(get_current_user)):
+async def download_file_endpoint(request: Request, filename: str = Query(...), sub_dir_name: str = Query(None), agentic_application_id: str = Query(None, description="Agent ID — used to resolve department for unregistered Azure AD users."), file_manager: FileManager = Depends(ServiceProvider.get_file_manager), user_data: User = Depends(get_current_user)):
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
 
     
-    if STORAGE_PROVIDER=="":
-        # Get user's department and restrict access to their department folder only
-        user_department = user_data.department_name
-        if not user_department:
-            raise HTTPException(status_code=400, detail="User department not found")
+    # Get user's department and restrict access to their department folder only
+    user_department = user_data.department_name
+    # Unregistered Azure AD users have no department — resolve it from the agent, same as chat inference.
+    if not user_department and user_data.status == UserStatus.PENDING_APPROVAL:
+        user_department = await resolve_pending_user_department(agentic_application_id)
+    if not user_department:
+        raise HTTPException(status_code=400, detail="User department not found")
+    
+    # Validate filename
+    if not filename or filename.strip() == "":
+        raise HTTPException(status_code=400, detail="Filename cannot be empty")
+    
+    # Combine department with any additional subdirectory
+    if sub_dir_name and sub_dir_name.strip():
+        # Sanitize subdirectory name
+        sub_dir_name = sub_dir_name.strip().lstrip("/\\")
         
-        # Validate filename
-        if not filename or filename.strip() == "":
-            raise HTTPException(status_code=400, detail="Filename cannot be empty")
-        
-        # Combine department with any additional subdirectory
-        if sub_dir_name and sub_dir_name.strip():
-            # Sanitize subdirectory name
-            sub_dir_name = sub_dir_name.strip().lstrip("/\\")
-            
-            # Check if sub_dir_name already starts with the department name
-            if sub_dir_name.startswith(user_department + "/") or sub_dir_name.startswith(user_department + "\\"):
-                # Use sub_dir_name as-is since it already includes the department
-                department_subdirectory = sub_dir_name.replace("\\", "/")  # Normalize path separators
-            elif sub_dir_name == user_department:
-                # If sub_dir_name is exactly the department name, just use department
-                department_subdirectory = user_department
-            else:
-                # Sub_dir_name is a subdirectory within the department
-                department_subdirectory = os.path.join(user_department, sub_dir_name)
-        else:
-            # No subdirectory specified, use department root
+        # Check if sub_dir_name already starts with the department name
+        if sub_dir_name.startswith(user_department + "/") or sub_dir_name.startswith(user_department + "\\"):
+            # Use sub_dir_name as-is since it already includes the department
+            department_subdirectory = sub_dir_name.replace("\\", "/")  # Normalize path separators
+        elif sub_dir_name == user_department:
+            # If sub_dir_name is exactly the department name, just use department
             department_subdirectory = user_department
-        
-        # Also allow downloading universal files (root-level files outside any department folder)
-        # Check if the file exists at root level when not found in department directory
-        try:
-            return await file_manager.get_file(filename=filename, subdirectory=department_subdirectory)
-        except HTTPException as he:
-            # If file not found in department folder, try root level (universal files)
-            if he.status_code == 404 or "not found" in str(he.detail).lower():
-                if not sub_dir_name or not sub_dir_name.strip():
-                    try:
-                        return await file_manager.get_file(filename=filename, subdirectory="")
-                    except Exception:
-                        pass  # Fall through to original error
-            raise
-        except Exception as e:
-            log.error(f"Error downloading file '{filename}' for department '{user_department}': {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error downloading file: {str(e)}")
+        else:
+            # Sub_dir_name is a subdirectory within the department
+            department_subdirectory = os.path.join(user_department, sub_dir_name)
     else:
-        return await file_manager.download_file_from_storage(filename=filename, storage_provider=STORAGE_PROVIDER)
+        # No subdirectory specified, use department root
+        department_subdirectory = user_department
+    
+    # Always try local file first, then fall back to blob storage
+    try:
+        return await file_manager.get_file(filename=filename, subdirectory=department_subdirectory)
+    except HTTPException as he:
+        # If file not found in department folder, try root level (universal files)
+        if he.status_code == 404 or "not found" in str(he.detail).lower():
+            if not sub_dir_name or not sub_dir_name.strip():
+                try:
+                    return await file_manager.get_file(filename=filename, subdirectory="")
+                except Exception:
+                    pass  # Fall through to blob fallback
+            # If STORAGE_PROVIDER is set and file not found locally, try restoring from blob
+            if STORAGE_PROVIDER:
+                try:
+                    # Ensure current_user_department ContextVar is set for blob client init
+                    _token = current_user_department.set(user_department)
+                    try:
+                        from src.utils.workspace_blob_sync import WorkspaceBlobSync
+                        from src.storage import get_storage_client
+                        _client = get_storage_client(STORAGE_PROVIDER)
+                        _syncer = WorkspaceBlobSync(
+                            storage_client=_client,
+                            project_root=os.path.abspath("."),
+                        )
+                        _rel_path = f"{department_subdirectory}/{filename}"
+                        restored = await _syncer.restore_user_upload(_rel_path)
+                        if restored:
+                            log.info(f"[BlobRestore] Restored user upload '{_rel_path}' from blob")
+                            return await file_manager.get_file(filename=filename, subdirectory=department_subdirectory)
+                    finally:
+                        current_user_department.reset(_token)
+                except Exception as blob_err:
+                    log.warning(f"Blob restore also failed for '{filename}': {blob_err}")
+        raise
+    except Exception as e:
+        log.error(f"Error downloading file '{filename}' for department '{user_department}': {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to download file: {str(e)}")
 
 
 class DeleteFilesRequest(BaseModel):
     """Schema for deleting one or more user-uploaded files."""
     file_paths: List[str]
 
-@router.delete("/files/user-uploads/delete/")
+@router.api_route("/files/user-uploads/delete", methods=["DELETE", "POST"])
 async def delete_file_endpoint(request: Request, delete_request: DeleteFilesRequest, file_manager: FileManager = Depends(ServiceProvider.get_file_manager)):
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
@@ -230,6 +321,8 @@ async def delete_file_endpoint(request: Request, delete_request: DeleteFilesRequ
 
     if not delete_request.file_paths:
         raise HTTPException(status_code=400, detail="'file_paths' must be provided and cannot be empty.")
+
+    log.info(f"[PVC:user_uploads] START delete — file_paths={delete_request.file_paths}, mountPath=/app/user_uploads")
 
     results = []
     for file_path in delete_request.file_paths:
@@ -263,8 +356,32 @@ async def delete_file_endpoint(request: Request, delete_request: DeleteFilesRequ
                 delete_result = await file_manager.delete_file(file_path=department_file_path)
                 results.append({"file_path": file_path, "is_delete": True, "message": f"File '{file_name}' deleted successfully"})
             else:
-                delete_result = await file_manager.delete_file_from_storage(file_name=file_name, storage_provider=STORAGE_PROVIDER)
-                results.append({"file_path": file_path, "is_delete": True, "message": f"File '{file_name}' deleted successfully from storage"})
+                # When STORAGE_PROVIDER is set, delete from BOTH local and blob
+                # First get department for local delete
+                user_department = current_user_department.get()
+                if not user_department:
+                    results.append({"file_path": file_path, "is_delete": False, "message": "User department not found"})
+                    continue
+
+                normalized_path = file_path.strip().lstrip("/\\")
+
+                # Block deletion of root-level (universal) files
+                if os.sep not in normalized_path and "/" not in normalized_path:
+                    results.append({"file_path": file_path, "is_delete": False, "message": "Access denied: Universal files cannot be deleted."})
+                    continue
+
+                if not normalized_path.startswith(user_department):
+                    department_file_path = os.path.join(user_department, normalized_path)
+                else:
+                    department_file_path = normalized_path
+
+                if not department_file_path.startswith(user_department):
+                    results.append({"file_path": file_path, "is_delete": False, "message": "Access denied: Cannot delete files outside your department"})
+                    continue
+
+                # Delete from local first (this also syncs deletion to blob via schedule_blob_file_delete)
+                delete_result = await file_manager.delete_file(file_path=department_file_path)
+                results.append({"file_path": file_path, "is_delete": True, "message": f"File '{file_name}' deleted successfully"})
 
         except Exception as e:
             log.error(f"Error deleting file '{file_path}': {str(e)}")
@@ -280,6 +397,10 @@ async def delete_file_endpoint(request: Request, delete_request: DeleteFilesRequ
         f"{reason}: {', '.join(file_names)}"
         for reason, file_names in sorted(response.items(), key=lambda item: item[0] != "Successfully deleted files")
     )
+
+    _deleted = sum(1 for r in results if r.get("is_delete"))
+    _failed = len(results) - _deleted
+    log.info(f"[PVC:user_uploads] END delete — deleted={_deleted}, failed={_failed}, mountPath=/app/user_uploads")
 
     return {"results": results, "status_message": status_message}
 
@@ -307,7 +428,8 @@ async def check_kb_server_health() -> bool:
     try:
         response = requests.get(
             f"{KB_SERVER_ENDPOINT}/health",
-            timeout=5
+            timeout=5,
+            verify=get_requests_verify(KB_SERVER_ENDPOINT)
         )
         response.raise_for_status()
         health_data = response.json()
@@ -370,10 +492,23 @@ async def upload_knowledge_base_documents_endpoint(
             detail="KB server is not available. Please try again later."
         )
     
+    ALLOWED_EXTENSIONS = {
+        '.pdf', '.txt', '.md', '.docx',           # documents (.doc excluded — Word 97-2003 not supported)
+        '.csv', '.pptx', '.ppt', '.xlsx', '.xls', # spreadsheets / presentations
+        '.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif'  # images (OCR supported)
+    }
+
     try:
-        # Sanitize all filenames before processing
+        # Validate and sanitize all filenames before processing
         sanitized_filenames = []
         for f in files:
+            ext = os.path.splitext(f.filename)[1].lower()
+            if ext not in ALLOWED_EXTENSIONS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"File type '{ext}' is not allowed. Supported types: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
+                )
+
             safe_name = f.filename
             # Remove path separators and parent directory references
             safe_name = safe_name.replace('..', '').replace('/', '_').replace('\\', '_')
@@ -420,7 +555,8 @@ async def upload_knowledge_base_documents_endpoint(
                     f"{KB_SERVER_ENDPOINT}/upload-documents",
                     files=files_payload,
                     params=params,
-                    timeout=300
+                    timeout=300,
+                    verify=get_requests_verify(KB_SERVER_ENDPOINT)
                 )
                 
                 response.raise_for_status()
@@ -478,7 +614,7 @@ class UpdateKBSharingRequest(BaseModel):
     shared_with_departments: List[str] = None
 
 
-@router.put("/knowledge-base/{kb_id}/sharing")
+@router.api_route("/knowledge-base/{kb_id}/sharing", methods=["PUT", "POST"])
 async def update_kb_sharing_endpoint(
     request: Request,
     kb_id: str,
@@ -833,7 +969,7 @@ class DeleteKnowledgebasesRequest(BaseModel):
     kb_ids: List[str]
     user_email: str
 
-@router.delete("/remove-knowledgebases")
+@router.api_route("/remove-knowledgebases", methods=["DELETE", "POST"])
 async def delete_knowledgebases(
     request: Request,
     delete_request: DeleteKnowledgebasesRequest,
@@ -961,79 +1097,91 @@ async def delete_knowledgebases(
 
 ## ============ speech-to-text ============
 
-@router.post("/transcribe/")
+@router.post("/transcribe")
 async def transcribe_audio_endpoint(file: UploadFile = File(...)) -> Dict[str, str]:
     STT_ENDPOINT = os.getenv("STT_ENDPOINT")
     SPEECH_KEY = os.getenv("SPEECH_KEY")
     HTTP_PROXY = os.getenv("HTTP_PROXY", "")
     HTTPS_PROXY = os.getenv("HTTPS_PROXY", "")
     
-    # Set environment proxy variables
-    os.environ['HTTP_PROXY'] = HTTP_PROXY
-    os.environ['HTTPS_PROXY'] = HTTPS_PROXY
-
-    # Sanitize filename before processing
-    safe_name = file.filename
-    # Remove path separators and parent directory references
+    # Sanitize filename and make it unique per request to avoid collisions across concurrent users.
+    safe_name = file.filename or "audio"
     safe_name = safe_name.replace('..', '').replace('/', '_').replace('\\', '_')
-    # Extract basename to remove any remaining path components
     safe_name = os.path.basename(safe_name)
-    # Replace other dangerous characters
     safe_name = re.sub(r'[^a-zA-Z0-9._-]', '_', safe_name)
-    # Ensure filename doesn't start with dot (hidden files)
     if safe_name.startswith('.'):
         safe_name = 'file' + safe_name
-    # Fallback for empty filename
-    if not safe_name:
-        safe_name = "unnamed_audio.wav"
+    unique_name = f"{uuid.uuid4().hex}_{safe_name}"
 
     os.makedirs('audios', exist_ok=True)
-    file_location = os.path.join("audios", safe_name)
+    file_location = os.path.join("audios", unique_name)
     file_content_bytes: bytes = await file.read()
     file_path_obj = Path(file_location)
     file_path_obj.write_bytes(file_content_bytes)
 
+    # Decode any audio format (WebM/Opus/OGG/MP3/WAV) to 16kHz mono PCM WAV using PyAV.
+    try:
+        import av, io, wave, struct
+        import numpy as np
+
+        in_buf = io.BytesIO(file_content_bytes)
+        container = av.open(in_buf)
+        audio_stream = next(s for s in container.streams if s.type == 'audio')
+        orig_rate = audio_stream.codec_context.sample_rate
+        log.info(f"[STT] Input: {audio_stream.codec_context.name}, {orig_rate}Hz, {audio_stream.codec_context.channels}ch")
+
+        resampler = av.AudioResampler(format='s16', layout='mono', rate=16000)
+        pcm_frames = []
+        for packet in container.demux(audio_stream):
+            for frame in packet.decode():
+                resampled = resampler.resample(frame)
+                for rf in (resampled if isinstance(resampled, list) else [resampled]):
+                    pcm_frames.append(bytes(rf.planes[0]))
+
+        pcm_data = b''.join(pcm_frames)
+        out_buf = io.BytesIO()
+        with wave.open(out_buf, 'wb') as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(16000)
+            wf.writeframes(pcm_data)
+        file_content_bytes = out_buf.getvalue()
+        log.info(f"[STT] Converted to 16kHz mono PCM WAV ({len(file_content_bytes)} bytes)")
+    except Exception as conv_err:
+        log.warning(f"[STT] Audio conversion failed ({conv_err}), sending original bytes")
+
     url = f"{STT_ENDPOINT}/speech/recognition/conversation/cognitiveservices/v1?language=en-US"
-    
+
     headers = {
         'Ocp-Apim-Subscription-Key': SPEECH_KEY,
-        'Content-Type': 'audio/wav; codecs=audio/pcm; samplerate=16000'
+        'Content-Type': 'audio/wav; codecs=audio/pcm; samplerate=16000',
     }
     
-    definition = {
-        "displayText": True,
-        "diarizationEnabled": False
-    }
-
     proxies = {
         'http': HTTP_PROXY,
         'https': HTTPS_PROXY
     } if HTTP_PROXY or HTTPS_PROXY else None
 
     try:
-        with open(file_location, 'rb') as audio_file:
-            files = {
-                'audio': (safe_name, audio_file, 'audio/wav'),
-                'definition': (None, json.dumps(definition), 'application/json')
-            }
-
-            response = requests.post(
-                url,
-                headers=headers,
-                files=files,
-                proxies=proxies,
-                timeout=300
-            )
+        response = requests.post(
+            url,
+            headers=headers,
+            data=file_content_bytes,
+            proxies=proxies,
+            timeout=300
+        )
 
         response.raise_for_status()
         result = response.json()
+        log.info(f"[STT] Azure response: {result}")
 
-        if 'combinedPhrases' in result and len(result['combinedPhrases']) > 0:
-            transcription = result['combinedPhrases'][0]['text']
-        elif 'phrases' in result and len(result['phrases']) > 0:
-            transcription = ' '.join([phrase['text'] for phrase in result['phrases']])
+        status = result.get('RecognitionStatus', '')
+        display_text = result.get('DisplayText', '').strip()
+        log.info(f"[STT] RecognitionStatus={status}, DisplayText={repr(display_text)}")
+        if status == 'Success':
+            transcription = display_text if display_text else "No speech detected in the audio."
         else:
-            transcription = "No speech could be recognized."
+            transcription = f"No speech could be recognized. (Azure status: {status})"
 
         os.remove(file_location)
         return {"transcription": transcription}
@@ -1457,7 +1605,7 @@ from datetime import datetime
 from typing import Any, Optional
 from pydantic import Field
 from fastapi.responses import FileResponse
-from src.database.cleanup_service import get_cleanup_service, CleanupSummary
+from src.database.services.cleanup_service import get_cleanup_service, CleanupSummary
 
 class CleanupPreviewRequest(BaseModel):
     """Request model for cleanup preview"""

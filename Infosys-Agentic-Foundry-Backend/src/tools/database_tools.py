@@ -606,20 +606,29 @@ def database_query_tool(
                 return output
                 
         finally:
+            try:
+                session.rollback()  # Rollback any failed transaction to keep session usable
+            except Exception:
+                pass
             session.close()
             
     except Exception as e:
         error_msg = str(e)
         log.error(f"[DB Tool] Query execution error: {error_msg}")
         
-        if "does not exist" in error_msg.lower():
-            return f"🚫 **Connection Error:** Connection '{connection_name}' does not exist."
+        # Check for column errors FIRST (before generic "does not exist" check)
+        if "undefinedcolumn" in error_msg.lower().replace(" ", "").replace("_", "") or \
+           ("column" in error_msg.lower() and "does not exist" in error_msg.lower()):
+            return f"🚫 **Column Error:** {error_msg}\n\nUse `database_schema_discovery` or check `/databases/{connection_name}/schema.md` to find valid column names."
+        elif "undefinedtable" in error_msg.lower().replace(" ", "").replace("_", "") or \
+             ("relation" in error_msg.lower() and "does not exist" in error_msg.lower()):
+            return f"🚫 **Table Error:** {error_msg}\n\nUse `database_schema_discovery` to check valid table names."
+        elif "connection" in error_msg.lower() and "does not exist" in error_msg.lower():
+            return f"🚫 **Connection Error:** Connection '{connection_name}' does not exist. Check the connection name."
+        elif "does not exist in" in error_msg.lower() and "department" in error_msg.lower():
+            return f"🚫 **Connection Error:** {error_msg}"
         elif "syntax" in error_msg.lower():
             return f"🚫 **SQL Syntax Error:** {error_msg}\n\nPlease check your query syntax."
-        elif "column" in error_msg.lower() and "not found" in error_msg.lower():
-            return f"🚫 **Column Error:** {error_msg}\n\nUse `database_schema_discovery` to check valid column names."
-        elif "table" in error_msg.lower() or "relation" in error_msg.lower():
-            return f"🚫 **Table Error:** {error_msg}\n\nUse `database_schema_discovery` to check valid table names."
         
         return f"🚫 **Database Error:** {error_msg}"
 

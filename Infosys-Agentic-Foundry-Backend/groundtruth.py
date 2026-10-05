@@ -7,7 +7,7 @@ import datetime
 from typing import Union
 from difflib import SequenceMatcher
 import uuid
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import Runnable
 from pathlib import Path
 from rapidfuzz import fuzz  
@@ -122,6 +122,10 @@ Be specific and concise. Do not just list the scores again — explain what the 
 #     return result.get("response", f"Invalid or error response for query: {query}")
 
 async def call_agent(query, model_name, agentic_application_id, session_id, agent_type, inference_service: CentralizedAgentInference):
+    # ✅ Set context for evaluation categorization - ensure it propagates to inference
+    from telemetry_wrapper import set_context
+    set_context(agent_id=agentic_application_id, call_category="evaluation")
+    
     req = AgentInferenceRequest(
         query=query,
         agentic_application_id=agentic_application_id,
@@ -183,6 +187,10 @@ async def evaluate_ground_truth_file(
     use_llm_grading: bool = False,
     progress_callback: Optional[Callable[[str], Awaitable[None]]] = None,
 ) -> tuple[pd.DataFrame, dict, str, str, str, Union[str, None]]:
+    # ✅ Set context for evaluation categorization with explicit call_category
+    from telemetry_wrapper import set_context
+    set_context(agent_id=agentic_application_id, call_category="evaluation")
+    
     if file_path.endswith(".csv"):
         if progress_callback:
             await progress_callback("Reading CSV file...")
@@ -258,6 +266,8 @@ async def evaluate_ground_truth_file(
         # LLM grading
         if grading_chain:
             try:
+                # ✅ Set context immediately before LLM call for proper categorization
+                set_context(agent_id=agentic_application_id, call_category="evaluation")
                 result = await grading_chain.ainvoke({
                     "query": query,
                     "expected_response": expected,
@@ -339,5 +349,20 @@ async def evaluate_ground_truth_file(
     base_filename = f"evaluation_results_{generated_uuid}"
     excel_path = output_dir / f"{base_filename}.xlsx"
     df.to_excel(excel_path, index=False)
+
+    # --- Hyper-scale blob sync: push eval result to blob ---
+    try:
+        _sp = os.getenv('STORAGE_PROVIDER', '')
+        if _sp:
+            from src.utils.workspace_blob_sync import WorkspaceBlobSync
+            from src.storage import get_storage_client
+            _client = get_storage_client(_sp)
+            _syncer = WorkspaceBlobSync(
+                storage_client=_client,
+                project_root=os.path.abspath("."),
+            )
+            _syncer.schedule_output_sync(f"{base_filename}.xlsx")
+    except Exception:
+        pass
 
     return avg_scores, summary, str(excel_path)

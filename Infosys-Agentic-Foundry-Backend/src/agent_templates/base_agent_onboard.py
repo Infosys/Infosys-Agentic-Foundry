@@ -1,9 +1,17 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
+import json
+import os
 from abc import ABC, abstractmethod
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import List, Dict, Any, Optional, Union
 
 from src.database.services import AgentServiceUtils, AgentService
 from src.config.constants import AgentType
+from telemetry_wrapper import logger as log
+
+AGENT_WORKSPACES_BASE = os.getenv("AGENT_WORKSPACES_BASE", "./agent_workspaces")
+AGENTOS_FOLDER_NAME = "agentos_agents"
 
 
 # Normal Type Agent's Base Template Class
@@ -57,8 +65,9 @@ class BaseAgentOnboard(AgentService, ABC):
                             validation_criteria: Optional[List[Dict[str, Any]]] = None,
                             knowledgebase_ids: Optional[List[str]] = None,
                             db_connection_names: Optional[List[str]] = None,
-                            tool_versions: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
-        return await self._onboard_agent(
+                            tool_versions: Optional[Dict[str, str]] = None,
+                            guardrail_type: Optional[str] = None) -> Dict[str, Any]:
+        result = await self._onboard_agent(
             agent_name=agent_name,
             agent_goal=agent_goal,
             workflow_description=workflow_description,
@@ -71,8 +80,22 @@ class BaseAgentOnboard(AgentService, ABC):
             validation_criteria=validation_criteria,
             knowledgebase_ids=knowledgebase_ids,
             db_connection_names=db_connection_names,
-            tool_versions=tool_versions
+            tool_versions=tool_versions,
+            guardrail_type=guardrail_type
         )
+        # Create agent_config.json so additional_paths / allowed_absolute_mount_roots
+        # can be configured later via PUT /agents/{id}
+        if result.get("is_created"):
+            _seed_agent_config(
+                agent_id=result["agentic_application_id"],
+                agent_name=agent_name,
+                agent_description=agent_goal,
+                agent_type=self.agent_type.value,
+                model_name=model_name,
+                department_name=department_name,
+                created_by=user_id,
+            )
+        return result
 
     async def update_agent(self,
                            agentic_application_id: Optional[str] = None,
@@ -95,7 +118,8 @@ class BaseAgentOnboard(AgentService, ABC):
                            knowledgebase_ids_to_remove: Optional[List[str]] = None,
                            db_connection_names_to_add: Optional[List[str]] = None,
                            db_connection_names_to_remove: Optional[List[str]] = None,
-                           tool_versions: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+                           tool_versions: Optional[Dict[str, str]] = None,
+                           guardrail_type: Optional[str] = None) -> Dict[str, Any]:
         return await self._update_agent(
             agentic_application_id=agentic_application_id,
             agentic_application_name=agentic_application_name,
@@ -117,7 +141,8 @@ class BaseAgentOnboard(AgentService, ABC):
             knowledgebase_ids_to_remove=knowledgebase_ids_to_remove,
             tool_versions=tool_versions,
             db_connection_names_to_add=db_connection_names_to_add,
-            db_connection_names_to_remove=db_connection_names_to_remove
+            db_connection_names_to_remove=db_connection_names_to_remove,
+            guardrail_type=guardrail_type
         )
 
 
@@ -169,8 +194,9 @@ class BaseMetaTypeAgentOnboard(AgentService, ABC):
                             user_id: str,
                             department_name: Optional[str] = None,
                             tag_ids: Optional[Union[str, List[str]]] = None,
-                            db_connection_names: Optional[List[str]] = None) -> Dict[str, Any]:
-        return await self._onboard_agent(
+                            db_connection_names: Optional[List[str]] = None,
+                            guardrail_type: Optional[str] = None) -> Dict[str, Any]:
+        result = await self._onboard_agent(
             agent_name=agent_name,
             agent_goal=agent_goal,
             workflow_description=workflow_description,
@@ -180,8 +206,22 @@ class BaseMetaTypeAgentOnboard(AgentService, ABC):
             user_id=user_id,
             department_name=department_name,
             tag_ids=tag_ids,
-            db_connection_names=db_connection_names
+            db_connection_names=db_connection_names,
+            guardrail_type=guardrail_type
         )
+        # Create agent_config.json so additional_paths / allowed_absolute_mount_roots
+        # can be configured later via PUT /agents/{id}
+        if result.get("is_created"):
+            _seed_agent_config(
+                agent_id=result["agentic_application_id"],
+                agent_name=agent_name,
+                agent_description=agent_goal,
+                agent_type=self.agent_type.value,
+                model_name=model_name,
+                department_name=department_name,
+                created_by=user_id,
+            )
+        return result
 
     async def update_agent(self,
                            agentic_application_id: Optional[str] = None,
@@ -200,7 +240,8 @@ class BaseMetaTypeAgentOnboard(AgentService, ABC):
                            worker_agents_id_to_remove: List[str] = [],
                            updated_tag_id_list: Optional[Union[str, List[str]]] = None,
                            db_connection_names_to_add: Optional[List[str]] = None,
-                           db_connection_names_to_remove: Optional[List[str]] = None) -> Dict[str, Any]:
+                           db_connection_names_to_remove: Optional[List[str]] = None,
+                           guardrail_type: Optional[str] = None) -> Dict[str, Any]:
         return await self._update_agent(
             agentic_application_id=agentic_application_id,
             agentic_application_name=agentic_application_name,
@@ -218,7 +259,55 @@ class BaseMetaTypeAgentOnboard(AgentService, ABC):
             associated_ids_to_remove=worker_agents_id_to_remove,
             updated_tag_id_list=updated_tag_id_list,
             db_connection_names_to_add=db_connection_names_to_add,
-            db_connection_names_to_remove=db_connection_names_to_remove
+            db_connection_names_to_remove=db_connection_names_to_remove,
+            guardrail_type=guardrail_type
         )
 
 
+# ---------------------------------------------------------------------------
+# Helper: seed a minimal agent_config.json for DB-based agents
+# ---------------------------------------------------------------------------
+
+def _seed_agent_config(
+    agent_id: str,
+    agent_name: str,
+    agent_description: str,
+    agent_type: str,
+    model_name: str,
+    department_name: Optional[str],
+    created_by: str,
+) -> None:
+    """Create a minimal ``agent_config.json`` for a DB-onboarded agent.
+
+    This ensures the agent directory and config file exist so that:
+    * The inference layer can read ``additional_paths`` / ``allowed_absolute_mount_roots``.
+    * The ``PUT /agents/{id}`` update endpoint can patch the file later.
+
+    If the file already exists it is **not** overwritten (to avoid clobbering
+    any changes that were applied between creation and restart).
+    """
+    try:
+        dept = department_name or "General"
+        agent_dir = Path(AGENT_WORKSPACES_BASE) / dept / AGENTOS_FOLDER_NAME / agent_id
+        agent_dir.mkdir(parents=True, exist_ok=True)
+
+        config_file = agent_dir / "agent_config.json"
+        if config_file.exists():
+            return  # don't overwrite
+
+        config = {
+            "agent_id": agent_id,
+            "agent_name": agent_name,
+            "agent_description": agent_description,
+            "agent_type": agent_type,
+            "model_name": model_name,
+            "department_name": dept,
+            "created_by": created_by,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        config_file.write_text(json.dumps(config, indent=2), encoding="utf-8")
+        log.info(f"Seeded agent_config.json for DB-onboarded agent {agent_id}")
+    except Exception as exc:
+        # Non-fatal – the agent works without this file; it just won't have
+        # additional_paths / allowed_absolute_mount_roots until created manually.
+        log.warning(f"Could not seed agent_config.json for {agent_id}: {exc}")

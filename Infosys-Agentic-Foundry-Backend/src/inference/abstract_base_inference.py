@@ -10,8 +10,6 @@ from fastapi import HTTPException
 from src.database.services import ChatService
 from src.inference.inference_utils import InferenceUtils
 from src.schemas import AgentInferenceRequest
-from src.utils.secrets_handler import get_user_secrets, current_user_email, get_public_key, get_group_secrets, current_user_department, current_request_headers
-from src.decorators.tool_access import resource_access, require_role, authorized_tool, current_tool_user, get_tool_user_context
 from src.utils.sandbox import get_sandbox_builtins, get_sandbox_extras
 
 from telemetry_wrapper import logger as log
@@ -106,7 +104,7 @@ class AbstractBaseInference(ABC):
         )
         return [manage_memory_tool, search_memory_tool]
 
-    async def _get_tools_instances(self, tool_ids: List[str] = [], tool_versions: Dict[str, str] = None) -> list:
+    async def _get_tools_instances(self, tool_ids: List[str] = [], tool_versions: Dict[str, str] = None, use_kafka_tool_worker: bool = False) -> list:
         """
         Retrieves tool instances based on the provided tool IDs.
         
@@ -114,22 +112,12 @@ class AbstractBaseInference(ABC):
             tool_ids: List of tool IDs to load
             tool_versions: Optional dict mapping tool_id -> version (e.g., 'v1', 'v2').
                           If provided, loads versioned code from tool_versions_table.
+            use_kafka_tool_worker: If True, wraps Python tools for Kafka-based remote execution.
         """
         # local_var for exec() context, including secrets handlers
         local_var = {
             "__builtins__": get_sandbox_builtins(),
             **get_sandbox_extras(),
-            "get_user_secrets": get_user_secrets,
-            "current_user_email": current_user_email,
-            "current_user_department": current_user_department,
-            "get_public_secrets": get_public_key,
-            "get_group_secrets": get_group_secrets,
-            "resource_access": resource_access,
-            "require_role": require_role,
-            "authorized_tool": authorized_tool,
-            "current_tool_user": current_tool_user,
-            "get_tool_user_context": get_tool_user_context,
-            "current_request_headers": current_request_headers,
         }
         # if self.storage_provider:
         #     self._initialize_storage_client()
@@ -142,6 +130,13 @@ class AbstractBaseInference(ABC):
         # Initialize tool_versions if not provided
         if tool_versions is None:
             tool_versions = {}
+
+        # ========== MESSAGE QUEUE SETUP (only when use_kafka_tool_worker=True) ==========
+        mq_manager = None
+        if use_kafka_tool_worker:
+            from src.utils.message_queue_factory.mq_factory import create_mq_manager as _create_mq_manager
+            from tool_worker.tool_wrappers import make_message_queue_tool
+            mq_manager = _create_mq_manager()
 
         tool_list: List[Callable] = []
         mcp_server_ids: List[str] = []
@@ -183,7 +178,18 @@ class AbstractBaseInference(ABC):
                         log.info(f"Using fallback code_snippet from tool_table for tool '{tool_name}'")
                     
                     exec(codes, local_var)
-                    tool_list.append(local_var[tool_name])
+                    loaded_tool = local_var[tool_name]
+
+                    if use_kafka_tool_worker and mq_manager is not None:
+                        loaded_tool = make_message_queue_tool(
+                            original_func=loaded_tool,
+                            tool_id=tool_id,
+                            mq_manager=mq_manager,
+                            tool_version=target_version,
+                        )
+                        log.info(f"Wrapped Python tool '{tool_name}' version '{target_version}' for Kafka dispatch")
+
+                    tool_list.append(loaded_tool)
                 else:
                     log.warning(f"Python tool record for ID {tool_id} not found.")
                     raise HTTPException(status_code=404, detail=f"Python tool record for ID {tool_id} not found.")
@@ -276,9 +282,6 @@ class AbstractBaseInference(ABC):
             local_var = {
                 "__builtins__": get_sandbox_builtins(),
                 **get_sandbox_extras(),
-                "get_user_secrets": get_user_secrets,
-                "current_user_email": current_user_email,
-                "get_public_secrets": get_public_key
             }
             
             # Get validator tool record from tool service

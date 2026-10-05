@@ -20,16 +20,17 @@ class PublicKeysManager:
     """
     Manages encrypted public keys accessible to all users
     """
-    
-    def __init__(self, db_config: Dict[str, str], master_key: Optional[str] = None):
+
+    def __init__(self, db_config: Dict[str, str], master_key: Optional[str] = None, enable_create_tables: bool = True):
         self.db_config = db_config
         # Use master key from environment or generate one
         self.master_key = master_key or os.getenv('SECRETS_MASTER_KEY')
         if not self.master_key:
             raise ValueError("SECRETS_MASTER_KEY must be set in environment")
-        
+
         self.cipher_suite = Fernet(self.master_key.encode()[:44].ljust(44, b'='))
-        self._init_database()
+        if enable_create_tables:
+            self._init_database()
     
     def _init_database(self):
         """Initialize the public keys table"""
@@ -297,17 +298,17 @@ class UserSecretsManager:
     """
     Manages encrypted user secrets with database storage
     """
-    
-    def __init__(self, db_config: Dict[str, str], master_key: Optional[str] = None):
+
+    def __init__(self, db_config: Dict[str, str], master_key: Optional[str] = None, enable_create_tables: bool = True):
         self.db_config = db_config
         # Use master key from environment or generate one
         self.master_key = master_key or os.getenv('SECRETS_MASTER_KEY')
         if not self.master_key:
             raise ValueError("SECRETS_MASTER_KEY must be set in environment")
-        
+
         self.cipher_suite = Fernet(self.master_key.encode()[:44].ljust(44, b'='))
-        
-        self._init_database()
+        if enable_create_tables:
+            self._init_database()
     
     def _get_user_role_sync(self, user_email: str, department_name: str) -> Optional[str]:
         """Get user role from user_email using direct database query"""
@@ -767,6 +768,9 @@ def get_public_key(key_name: str, default="", department_name: str= None) -> Opt
     # Check vault access permission
     user_role = secrets_manager._get_user_role_sync(user_email, department_name= dept_name)
     if not user_role:
+        # Fallback to middleware-assigned role (e.g. Azure AD users not in IAF DB)
+        user_role = current_user_role.get(None)
+    if not user_role:
         log.error(f"Could not determine role for user: {user_email}")
         raise PermissionError("Access denied: Could not determine user role")
     
@@ -912,6 +916,9 @@ def get_user_secrets(look_up_key, default_value=None):
         raise ValueError("Current user email is not set in context")
     
     user_role = secrets_manager._get_user_role_sync(user_email, department_name= user_department)
+    if not user_role:
+        # Fallback to middleware-assigned role (e.g. Azure AD users not in IAF DB)
+        user_role = current_user_role.get(None)
     if not user_role:
         log.error(f"Could not determine role for user: {user_email}")
         raise PermissionError("Access denied: Could not determine user role")
@@ -1169,6 +1176,9 @@ def get_group_secrets(group_name: str, key_name: str, default_value=None):
         log.error("User context not properly set for group secrets")
         return default_value if default_value is not None else ""
     
+    if not user_role:
+        # Fallback to middleware-assigned role (e.g. Azure AD users not in IAF DB)
+        user_role = current_user_role.get(None)
     if not user_role:
         log.error(f"Could not determine role for user: {user_email}")
         raise PermissionError("Access denied: Could not determine user role")

@@ -6,15 +6,19 @@ from typing import Dict
 
 from langgraph.types import interrupt, StreamWriter
 from langgraph.graph import StateGraph, START, END
-from langchain_core.messages import AIMessage, ChatMessage
+from langgraph.graph.state import CompiledStateGraph
+from langchain_core.messages import AIMessage, ChatMessage, ToolMessage
 
 from src.utils.helper_functions import get_timestamp, build_effective_query_with_user_updates
 from src.inference.inference_utils import InferenceUtils
 from src.inference.base_agent_inference import BaseWorkflowState, BaseMetaTypeAgentInference
 from src.schemas import AdminConfigLimits
 from src.config.constants import Limits
-from telemetry_wrapper import logger as log
-
+from telemetry_wrapper import logger as log, update_session_context
+from src.utils.guardrail_helpers import (
+    get_guardrail_response_from_exception, get_guardrail_response_from_errors,
+    log_guardrail_or_exception,
+)
 
 
 from src.prompts.prompts import online_agent_evaluation_prompt, feedback_lesson_generation_prompt
@@ -50,7 +54,7 @@ class MetaAgentInference(BaseMetaTypeAgentInference):
         Returns writer_holder to enable streaming in handoff tools.
         
         Args:
-            use_kafka_tool_worker: Not used by meta agent, included for interface compatibility.
+            use_kafka_tool_worker: If True, wraps sub-agent tools for Kafka-based remote execution.
             session_id: Session ID for shell workspace (required if file_context_management_flag=True).
             agent_id: Agent ID for shell workspace (required if file_context_management_flag=True).
             context_flag: If False, no memory tools will be added.
@@ -71,6 +75,10 @@ class MetaAgentInference(BaseMetaTypeAgentInference):
             file_context_prompt_path = os.path.join(
                 prompts_dir, f"{safe_agent_name}_file_context_prompt.md"
             )
+            # Auto-restore from blob if file_context_prompt is missing locally
+            await self._ensure_file_context_prompt_from_blob(
+                file_context_prompt_path, user_department, safe_agent_name
+            )
             if os.path.exists(file_context_prompt_path):
                 with open(file_context_prompt_path, "r", encoding="utf-8") as f:
                     system_prompt = f.read()
@@ -83,6 +91,20 @@ class MetaAgentInference(BaseMetaTypeAgentInference):
             # Use regular DB prompt
             system_prompt = system_prompt_config.get("SYSTEM_PROMPT_META_AGENT", "")
         
+        # ---- Load additional_paths and allowed_absolute_mount_roots from agent_config.json ----
+        from src.inference.agent_config_loader import load_agent_mount_config, build_mount_prompt_section
+        additional_paths, allowed_absolute_mount_roots = load_agent_mount_config(agent_id)
+
+        # Advertise mounted folders in the supervisor prompt so the meta agent
+        # knows to use run_shell_command on them. The tool itself is loaded by
+        # _get_react_agent_as_supervisor_agent when mounts are configured.
+        _mount_section = build_mount_prompt_section(
+            additional_paths=additional_paths,
+            allowed_absolute_mount_roots=allowed_absolute_mount_roots,
+        )
+        if _mount_section:
+            system_prompt = (system_prompt or "") + _mount_section
+
         meta_agent, _, writer_holder = await self._get_react_agent_as_supervisor_agent(
             llm=llm,
             system_prompt=system_prompt,
@@ -92,6 +114,9 @@ class MetaAgentInference(BaseMetaTypeAgentInference):
             file_context_management_flag=file_context_management_flag,
             agent_id=agent_id,
             session_id=session_id,
+            additional_paths=additional_paths,
+            allowed_absolute_mount_roots=allowed_absolute_mount_roots,
+            use_kafka_tool_worker=use_kafka_tool_worker,
         )
 
         chains = {
@@ -103,9 +128,9 @@ class MetaAgentInference(BaseMetaTypeAgentInference):
     
    
 
-    async def _build_workflow(self, chains: dict, flags: Dict[str, bool] = {}) -> StateGraph:
+    async def _build_workflow(self, chains: dict, flags: Dict[str, bool] = {}, get_dummy: bool = False) -> StateGraph:
         """Builds the LangGraph workflow for a Meta agent."""
-        tool_interrupt_flag = flags.get("tool_interrupt_flag", False)
+        tool_interrupt_flag = flags.get("tool_interrupt_flag", get_dummy or False)
         evaluation_flag = flags.get("evaluation_flag", False)
         validator_flag = flags.get("validator_flag", False)
         response_formatting_flag = flags.get("response_formatting_flag", False)
@@ -113,17 +138,27 @@ class MetaAgentInference(BaseMetaTypeAgentInference):
         inference_config: AdminConfigLimits = flags.get("inference_config", AdminConfigLimits())
 
         llm = chains.get("llm", None)
-        meta_agent = chains.get("meta_agent", None)
+        meta_agent: CompiledStateGraph = chains.get("meta_agent", None)
         writer_holder = chains.get("writer_holder", {})  # Get writer_holder for handoff tools
 
-        if not llm or not meta_agent:
-            raise ValueError("Required chains (llm, meta_agent) are missing.")
+        if not get_dummy:
+            if not llm or not meta_agent:
+                raise ValueError("Required chains (llm, meta_agent) are missing.")
 
         # ---------------- Nodes ----------------
 
         
         async def generate_past_conversation_summary(state: MetaWorkflowState, writer: StreamWriter):
             """Generates past conversation summary from the conversation history."""
+           
+            # Set session context for LLM tracking within this workflow node
+            # LangGraph spawns new async tasks that don't inherit contextvars automatically
+            update_session_context(
+                session_id=state['session_id'],
+                user_session=state['session_id'],
+                agent_id=state['agentic_application_id'],
+                call_category="agent_inference"
+            )
            
             strt_tmstp = get_timestamp()
             conv_summary = ""
@@ -380,8 +415,14 @@ User Query:
 
             except Exception as e:
                 writer({"Node Name": "Meta Agent Thinking...", "Status": "Failed"})
-                log.error(f"Error Occurred in Meta Agent: {e}", exc_info=True)
-                raise
+                error = f"[{state['session_id']}] Error during meta agent streaming: {e}"
+                errors = [error]
+                log_guardrail_or_exception(error, e)
+                guardrail_message = get_guardrail_response_from_exception(e)
+                if guardrail_message:
+                    return {"response": guardrail_message, "errors": errors}
+
+                return {"errors": errors}
 
             # Fallback handling if agent produced no messages
             if not final_content_parts:
@@ -419,6 +460,11 @@ User Query:
             }
 
         async def tool_interrupt_router(state: MetaWorkflowState):
+            errors = state.get("errors", "")
+            if errors and get_guardrail_response_from_errors([errors] if isinstance(errors, str) else errors):
+                log.info(f"[{state['session_id']}] Guardrail error detected, routing directly to final_response_node.")
+                return "final_response_node"
+
             thread_id = await self.chat_service._get_thread_id(
                 state["agentic_application_id"], state["session_id"]
             )
@@ -470,8 +516,73 @@ User Query:
         async def tool_interrupt_node_decision(state: MetaWorkflowState):
             if state["tool_feedback"] == "yes":
                 return "meta_agent_node"
+            elif state.get("tool_feedback") == "no":
+                return "tool_reject"
             else:
                 return "tool_interrupt_update_argument"
+
+        async def tool_reject(state: MetaWorkflowState, writer: StreamWriter):
+            """Handle user rejection of agent/tool execution by injecting a decline ToolMessage."""
+            log.info(f"[{state['session_id']}] tool_reject: User declined agent execution")
+            writer({"raw": {"tool_reject": "User declined the agent execution"}, "content": "User declined the agent execution."})
+            thread_id = await self.chat_service._get_thread_id(state['agentic_application_id'], state['session_id'])
+            internal_thread = await self.chat_service._get_thread_config("inside" + thread_id)
+
+            agent_state = await meta_agent.aget_state(internal_thread)
+            value = agent_state.values["messages"][-1]
+
+            tool_call_id = value.tool_calls[-1]["id"]
+            tool_name = value.tool_calls[-1]["name"]
+
+            reject_msg = ToolMessage(
+                content="Sub-Agent invocation was declined by user.",
+                tool_call_id=tool_call_id,
+                name=tool_name,
+            )
+
+            await meta_agent.aupdate_state(internal_thread, {"messages": [reject_msg]})
+
+            final_content_parts = [reject_msg]
+            stream_source = meta_agent.astream(None, internal_thread)
+            async for msg in stream_source:
+                if isinstance(msg, dict) and "agent" in msg:
+                    agent_output = msg.get("agent", {})
+                    if isinstance(agent_output, dict) and "messages" in agent_output:
+                        messages = agent_output.get("messages", [])
+                        for message in messages:
+                            if message.tool_calls:
+                                for tool_call in message.tool_calls:
+                                    writer({"Node Name": "Agent Call", "Status": "Started", "Agent Name": tool_call['name'], "Agent Arguments": tool_call['args']})
+                        final_content_parts.extend(messages)
+                elif "tools" in msg:
+                    tool_messages = msg.get("tools", [])
+                    for tool_message in tool_messages["messages"]:
+                        writer({"raw": {"Agent Name": tool_message.name, "Agent Output": tool_message.content}, "content": f"Agent {tool_message.name} returned: {tool_message.content}"})
+                        if hasattr(tool_message, "name"):
+                            writer({"Node Name": "Agent Call", "Status": "Completed", "Agent Name": tool_message.name})
+                    final_content_parts.extend(tool_messages["messages"])
+                else:
+                    if "agent" in msg:
+                        final_content_parts.extend(msg["agent"]["messages"])
+
+            final_ai_message = final_content_parts[-1]
+            writer({"raw": {"tool_reject_response": final_ai_message.content if hasattr(final_ai_message, 'content') else str(final_ai_message)}, "content": "Agent execution was declined by user."})
+
+            has_active_tasks = True
+            if (
+                hasattr(final_ai_message, "type")
+                and final_ai_message.type == "ai"
+                and final_ai_message.tool_calls == []
+            ):
+                has_active_tasks = False
+            if not has_active_tasks:
+                writer({"Node Name": "Meta Agent Thinking...", "Status": "Completed"})
+
+            return {
+                "response": final_ai_message.content if hasattr(final_ai_message, 'content') else str(final_ai_message),
+                "executor_messages": final_content_parts,
+                "is_tool_interrupted": False,
+            }
 
         async def tool_interrupt_update_argument(state: MetaWorkflowState, writer: StreamWriter):
             writer({"raw": {"tool_interrupt_update_argument": "User updated the agent arguments"}, "content": "User updated the agent arguments, updating the agent state accordingly."})
@@ -483,15 +594,11 @@ User Query:
             agent_state = await meta_agent.aget_state(internal_thread)
             value = agent_state.values["messages"][-1]
 
-            if model_name.startswith("gemini"):
-                tool_call_id = value.tool_calls[-1]["id"]
-                tool_name = value.additional_kwargs["function_call"]["name"]
-                old_arg = ""
-            else:
-                tool_call_id = value.additional_kwargs["tool_calls"][-1]["id"]
-                tool_name = value.additional_kwargs["tool_calls"][0]["function"]["name"]
-                old_arg = value.additional_kwargs["tool_calls"][0]["function"]["arguments"]
+            tool_call_id = value.tool_calls[-1]["id"]
+            tool_name = value.tool_calls[-1]["name"]
+            old_arg = value.tool_calls[-1]["args"]
 
+            additional_kwargs = value.additional_kwargs
             response_metadata = value.response_metadata
             id_ = value.id
             usage_metadata = value.usage_metadata
@@ -510,16 +617,7 @@ User Query:
                     f"the old values are {old_arg}, and user modified values are {tool_feedback} "
                     f"for the tool {tool_name}"
                 ),
-                additional_kwargs={
-                    "tool_calls": [
-                        {
-                            "id": tool_call_id,
-                            "function": {"arguments": tool_feedback, "name": tool_name},
-                            "type": "function",
-                        }
-                    ],
-                    "refusal": None,
-                },
+                additional_kwargs=additional_kwargs,
                 response_metadata=response_metadata,
                 id=id_,
                 tool_calls=[
@@ -614,12 +712,12 @@ User Query:
             writer({"Node Name": "Memory Update", "Status": "Started"})
             thread_id = await self.chat_service._get_thread_id(state['agentic_application_id'], state['session_id'])
             internal_thread_id = f"inside{thread_id}"
-            asyncio.create_task(self.chat_service.delete_internal_thread(internal_thread_id))
+            self._safe_background_task(self.chat_service.delete_internal_thread(internal_thread_id), name="delete_internal_thread")
             errors = []
             end_timestamp = get_timestamp()
             try:
                 # Save to database
-                asyncio.create_task(
+                self._safe_background_task(
                     self.chat_service.save_chat_message(
                         agentic_application_id=state["agentic_application_id"],
                         session_id=state["session_id"],
@@ -627,7 +725,8 @@ User Query:
                         end_timestamp=end_timestamp,
                         human_message=state["query"],
                         ai_message=state["response"],
-                    )
+                    ),
+                    name="save_chat_message",
                 )
                 
                 # Save to file (using ChatService method)
@@ -641,23 +740,25 @@ User Query:
                     llm=llm
                 )
                 
-                asyncio.create_task(
+                self._safe_background_task(
                     self.chat_service.update_preferences_and_analyze_conversation(
                         user_input=state["query"],
                         llm=llm,
                         agentic_application_id=state["agentic_application_id"],
                         session_id=state["session_id"],
-                    )
+                    ),
+                    name="update_preferences",
                 )
                 config_limits = await self.admin_config_service.get_limits()
                 if (len(state["ongoing_conversation"]) + 1) % (2*config_limits.chat_summary_interval) == 0:
                     log.debug("Storing chat summary")
-                    asyncio.create_task(
+                    self._safe_background_task(
                         self.chat_service.get_chat_summary(
                             agentic_application_id=state["agentic_application_id"],
                             session_id=state["session_id"],
                             llm=llm,
-                        )
+                        ),
+                        name="get_chat_summary",
                     )
             except Exception as e:
                 error = f"Error occurred in Final response: {e}"
@@ -665,7 +766,31 @@ User Query:
                 log.error(error)
                 errors.append(error)
 
-            final_response_message = AIMessage(content=state["response"])
+            raw_response = state.get("response") or ""
+            if not raw_response and state.get("errors"):
+                guardrail_response = get_guardrail_response_from_errors(
+                    state.get("errors") if isinstance(state.get("errors"), list) else [state.get("errors")]
+                )
+                if guardrail_response:
+                    raw_response = guardrail_response
+                    log.info("final_response: guardrail/moderation check triggered, returning policy alert to user.")
+                else:
+                    raw_response = "I'm sorry, I encountered an error and couldn't complete your request. Please try again."
+                    log.warning(f"final_response: state['response'] is None/empty, using fallback. Errors: {state.get('errors')}")
+
+            try:
+                last_execution_step = state.get("executor_messages")[-1] if state.get("executor_messages") else None
+            except Exception as e:
+                log.error(f"Error accessing last execution step: {e}")
+                last_execution_step = None
+
+            if last_execution_step and last_execution_step.content == raw_response:
+                log.info("Meta Agent's final response matches the last execution step, using last_execution_step as final response.")
+                final_response_message = last_execution_step
+            else:
+                log.info("Meta Agent's final response differs from the last execution step, creating a new AIMessage for final response.")
+                final_response_message = AIMessage(content=raw_response)
+
             log.info(f"Meta Agent's final response generated: {final_response_message.content}")
             writer({"raw": {"final_response": "Memory Updated"}, "content": "Memory Updated"})
             writer({"Node Name": "Memory Update", "Status": "Completed"})
@@ -1093,6 +1218,7 @@ User Query:
         if response_formatting_flag:
             workflow.add_node("formatter", lambda state: InferenceUtils.format_for_ui_node(state, llm))
         workflow.add_node("tool_interrupt_node", tool_interrupt_node)
+        workflow.add_node("tool_reject", tool_reject)
         workflow.add_node("tool_interrupt_update_argument", tool_interrupt_update_argument)
 
         # Add validator nodes when enabled
@@ -1122,7 +1248,15 @@ User Query:
         workflow.add_conditional_edges(
             "tool_interrupt_node",
             tool_interrupt_node_decision,
-            ["meta_agent_node", "tool_interrupt_update_argument"],
+            ["meta_agent_node", "tool_interrupt_update_argument", "tool_reject"],
+        )
+
+        workflow.add_conditional_edges(
+            "tool_reject",
+            tool_interrupt_router,
+            ["tool_interrupt_node", "final_response_node"]
+            + (["validator_agent"] if validator_flag else [])
+            + (["evaluator_agent"] if evaluation_flag else []),
         )
 
         workflow.add_conditional_edges(
@@ -1153,9 +1287,19 @@ User Query:
             )
             workflow.add_edge("increment_epoch_validation", "meta_agent_node")
 
-        # Formatter
+        # Formatter — skip on guardrail-blocked responses to avoid wasting an LLM call
+        def formatter_router(state: MetaWorkflowState):
+            if state.get("errors"):
+                guardrail_resp = get_guardrail_response_from_errors(
+                    state["errors"] if isinstance(state["errors"], list) else [state["errors"]]
+                )
+                if guardrail_resp:
+                    log.info("formatter_router: guardrail response detected, skipping formatter.")
+                    return END
+            return "formatter"
+
         if response_formatting_flag:
-            workflow.add_edge("final_response_node", "formatter")
+            workflow.add_conditional_edges("final_response_node", formatter_router, ["formatter", END])
             workflow.add_edge("formatter", END)
         else:
             workflow.add_edge("final_response_node", END)

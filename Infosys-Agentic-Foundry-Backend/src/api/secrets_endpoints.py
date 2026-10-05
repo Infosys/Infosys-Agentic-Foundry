@@ -68,18 +68,18 @@ async def create_user_secret_endpoint(
         )
         
         if success:
-            log.info(f"Secret '{request.key_name}' created/updated successfully for user: {request.user_email}")
+            log.info(f"Secret '{request.key_name}' created successfully for user: {request.user_email}")
             return {
                 "success": True,
-                "message": f"Secret '{request.key_name}' created/updated successfully",
+                "message": f"Secret '{request.key_name}' created successfully",
                 "user_email": request.user_email,
                 "key_name": request.key_name
             }
         else:
-            log.error(f"Failed to create/update secret '{request.key_name}' for user: {request.user_email}")
+            log.error(f"Failed to create secret '{request.key_name}' for user: {request.user_email}")
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to create/update secret '{request.key_name}'"
+                detail=f"Failed to create secret '{request.key_name}'"
             )
     except ValueError as e:
         log.error(f"Error creating secret for user {request.user_email}: {str(e)}")
@@ -133,10 +133,10 @@ async def create_public_secret_endpoint(
             department_name=department_name
             
         )
-        log.info(f"Public key '{request.key_name}' created/updated successfully")
+        log.info(f"Public key '{request.key_name}' created successfully")
         return {
             "success": True,
-            "message": f"Public key '{request.key_name}' created/updated successfully"
+            "message": f"Public key '{request.key_name}' created successfully"
         }
     except ValueError as e:
         log.error(f"Error creating secret for user {request.key_name}: {str(e)}")
@@ -303,7 +303,7 @@ async def get_public_secret_endpoint(
         )
 
 
-@router.put("/update")
+@router.api_route("/update", methods=["PUT", "POST"])
 async def update_user_secret_endpoint(
     fastapi_request: Request, 
     request: SecretUpdateRequest,
@@ -387,7 +387,7 @@ async def update_user_secret_endpoint(
         )
 
 
-@router.put("/public/update")
+@router.api_route("/public/update", methods=["PUT", "POST"])
 async def update_public_secret_endpoint(
     fastapi_request: Request, 
     request: PublicSecretUpdateRequest,
@@ -448,7 +448,7 @@ async def update_public_secret_endpoint(
         )
 
 
-@router.delete("/delete")
+@router.api_route("/delete", methods=["DELETE", "POST"])
 async def delete_user_secret_endpoint(
     fastapi_request: Request, 
     request: SecretDeleteRequest,
@@ -557,7 +557,7 @@ async def delete_user_secret_endpoint(
         )
 
 
-@router.delete("/public/delete")
+@router.api_route("/public/delete", methods=["DELETE", "POST"])
 async def delete_public_secret_endpoint(
     fastapi_request: Request,
     request: PublicSecretDeleteRequest,

@@ -1,0 +1,38 @@
+version: '1.0'
+default_skill: general
+
+skills:
+  general:
+    description: "General-purpose assistant for common questions and tasks"
+    keywords: []
+    category: general
+    status: active
+
+  invoice_lookup:
+    description: "Look up invoice status, vendor details, and payment history from the AP database"
+    keywords:
+      - invoice
+      - invoice status
+      - payment status
+      - find invoice
+      - vendor invoice
+      - AP
+      - accounts payable
+    category: operations
+    status: active
+
+  code_assistant:
+    description: "AI-powered code generation and execution from natural-language goals"
+    keywords:
+      - code
+      - execute
+      - run
+      - script
+      - analyze
+      - calculate
+      - chart
+      - automate
+      - data analysis
+      - generate code
+    category: platform
+    status: active

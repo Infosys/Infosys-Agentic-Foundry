@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from telemetry_wrapper import logger as log
-from src.utils.tool_file_manager import ToolFileManager
+from src.utils.tool_file_manager import ToolFileManager, ENABLE_TOOL_FILE_CREATION
 from src.database.services import ToolService, AgentService, ModelService, WorkflowService, McpToolService
 from src.config.constants import AgentType
 
@@ -52,7 +52,7 @@ async def insert_sample_tools(tool_service: ToolService):
         return True
 
     default_model = tool_service.model_service.default_model_name
-    tool_file_manager = ToolFileManager()
+    tool_file_manager = ToolFileManager() if ENABLE_TOOL_FILE_CREATION else None
     inserted, skipped, failed = 0, 0, 0
     
     for tool in tools:
@@ -75,11 +75,12 @@ async def insert_sample_tools(tool_service: ToolService):
                 
                 if await tool_service.tool_repo.save_tool_record(tool_data):
                     await tool_service.tool_repo.approve_tool(tool_id=tool_data["tool_id"], approved_by="system")
-                    file_creation_result = await tool_file_manager.create_tool_file(tool_data)
-                    if file_creation_result.get("success"):
-                        log.info(f"Tool file created at: {file_creation_result.get('file_path')}")
-                    else:
-                        log.warning(f"Failed to create tool file for '{tool_data['tool_name']}': {file_creation_result.get('message')}")
+                    if tool_file_manager is not None:
+                        file_creation_result = await tool_file_manager.create_tool_file(tool_data)
+                        if file_creation_result.get("success"):
+                            log.info(f"Tool file created at: {file_creation_result.get('file_path')}")
+                        else:
+                            log.warning(f"Failed to create tool file for '{tool_data['tool_name']}': {file_creation_result.get('message')}")
                     inserted += 1
                 else:
                     failed += 1
@@ -200,7 +201,7 @@ async def _ensure_workflow_tools_exist(tool_service: ToolService, tool_names: li
     regardless of ENABLE_ONBOARDING.
     """
     default_model = tool_service.model_service.default_model_name
-    tool_file_manager = ToolFileManager()
+    tool_file_manager = ToolFileManager() if ENABLE_TOOL_FILE_CREATION else None
 
     for tool_name in tool_names:
         existing = await tool_service.tool_repo.get_tool_record(tool_name=tool_name)
@@ -226,11 +227,12 @@ async def _ensure_workflow_tools_exist(tool_service: ToolService, tool_names: li
 
         if await tool_service.tool_repo.save_tool_record(tool_data):
             await tool_service.tool_repo.approve_tool(tool_id=tool_data["tool_id"], approved_by="system")
-            file_result = await tool_file_manager.create_tool_file(tool_data)
-            if file_result.get("success"):
-                log.info(f"Workflow dep tool '{tool_name}' created (file: {file_result.get('file_path')})")
-            else:
-                log.warning(f"Workflow dep tool '{tool_name}' saved but file creation failed")
+            if tool_file_manager is not None:
+                file_result = await tool_file_manager.create_tool_file(tool_data)
+                if file_result.get("success"):
+                    log.info(f"Workflow dep tool '{tool_name}' created (file: {file_result.get('file_path')})")
+                else:
+                    log.warning(f"Workflow dep tool '{tool_name}' saved but file creation failed")
         else:
             log.error(f"Failed to save workflow dep tool '{tool_name}'")
 

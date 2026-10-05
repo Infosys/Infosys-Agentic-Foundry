@@ -4,10 +4,11 @@ import json
 import re
 import astor
 from typing import List
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers.string import StrOutputParser
 from src.prompts.prompts import tool_prompt_generator
 from telemetry_wrapper import logger as log
+from src.utils.guardrail_helpers import is_guardrail_exception, format_guardrail_user_response
 
 
 def safe_to_source(tree: ast.AST) -> str:
@@ -210,6 +211,10 @@ class ToolCodeProcessor:
             return {"code_snippet": updated_tool_code_str}
 
         except Exception as e:
+            if is_guardrail_exception(e):
+                guardrail_message = format_guardrail_user_response(str(e)) or "Content policy violation detected during tool onboarding."
+                log.warning(f"Tool onboarding guardrail triggered: {e}")
+                return {"error": guardrail_message}
             err = f"Tool Onboarding Failed: Error while generating docstring.\n{e}"
             log.error(err)
             return {"error": err}

@@ -12,9 +12,9 @@ This module provides API endpoints for the Resource Dashboard, allowing users to
 The Resource Dashboard is accessible by all authenticated users.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Any, Dict
 from src.auth.models import User, UserRole
 from src.auth.dependencies import get_current_user
 from src.api.dependencies import ServiceProvider
@@ -48,6 +48,19 @@ class AccessKeyListResponse(BaseModel):
     department_name: str
     total_count: int
     access_keys: List[AccessKeyDefinition]
+
+
+class PaginatedAccessKeysResponse(BaseModel):
+    """Response model for paginated access key search results"""
+    success: bool
+    message: str
+    details: List[AccessKeyDefinition]
+    total_count: int
+    total_pages: int
+    current_page: int
+    page_size: int
+    has_next: bool
+    has_previous: bool
 
 
 class ToolInfo(BaseModel):
@@ -139,6 +152,46 @@ async def list_access_keys_in_department(
     )
 
 
+@router.get("/access-keys/search-paginated-dashboard", response_model=PaginatedAccessKeysResponse)
+async def search_paginated_access_keys(
+    search_value: Optional[str] = Query(None, description="Access key name to search for (partial, case-insensitive match)"),
+    page_number: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(20, ge=1, le=100, description="Number of items per page"),
+    created_by: Optional[str] = Query(None, description="Filter by the user who created the access key"),
+    current_user: User = Depends(get_current_user),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service)
+):
+    """
+    Search access keys in the current user's department with pagination.
+
+    **Permission required** - read access on tools.
+
+    Args:
+        search_value: Optional access key name to search for (partial, case-insensitive match)
+        page_number: Page number for pagination (starts from 1)
+        page_size: Number of results per page
+        created_by: Optional filter by the user who created the access key
+
+    Returns:
+        Paginated access key search results with pagination metadata
+    """
+    # Check permissions first - use user's department for department-wise permission check
+    user_department = current_user.department_name
+    if not await authorization_service.check_operation_permission(current_user.email, current_user.role, "create", "tools", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to read access keys")
+
+    repo = ServiceProvider.get_access_key_definitions_repository()
+    result = await repo.get_access_keys_by_search_or_page(
+        search_value=search_value or '',
+        limit=page_size,
+        page=page_number,
+        created_by=created_by,
+        department_name=current_user.department_name
+    )
+
+    return result
+
+
 @router.post("/access-keys", response_model=AccessKeyDefinition)
 async def create_access_key(
     request: CreateAccessKeyRequest,
@@ -228,6 +281,7 @@ async def get_access_key_details(
 
 
 @router.delete("/access-keys")
+@router.post("/access-keys/delete")
 async def delete_access_key(
     request: DeleteAccessKeysRequest,
     current_user: User = Depends(get_current_user),
@@ -368,7 +422,7 @@ async def get_tools_by_access_key(
 # USER VALUES ENDPOINTS
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.put("/access-keys/{access_key}/my-access")
+@router.api_route("/access-keys/{access_key}/my-access", methods=["PUT", "POST"])
 async def update_my_access_for_key(
     access_key: str,
     request: UpdateMyAccessRequest,

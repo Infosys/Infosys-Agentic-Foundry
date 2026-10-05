@@ -190,6 +190,10 @@ class LoginResponse(BaseModel):
     email: Optional[str] = None
     department_name: Optional[str] = None  # Added department field
     must_change_password: bool = Field(default=False, description="Flag indicating user must change password")
+    available_departments: Optional[List['UserDepartmentInfo']] = None  # List of all departments user has access to (for multi-department users)
+    requires_department_selection: bool = Field(default=False, description="True if user has multiple departments and needs to choose one")
+    available_roles: Optional[List[str]] = None  # All roles user has in the logged-in department
+    requires_role_selection: bool = Field(default=False, description="True if user has multiple roles in the department and needs to choose one")
     message: str
 
 
@@ -221,7 +225,7 @@ class RegisterRequest(BaseModel):
     @field_validator('email_id')
     @classmethod
     def validate_email(cls, v: str) -> str:
-        v = v.strip().lower()
+        v = v.strip()
         if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
             raise ValueError('Invalid email format. Please provide a valid email address (e.g. user@example.com)')
         return v
@@ -269,7 +273,7 @@ class SuperAdminRegisterRequest(BaseModel):
     @field_validator('email_id')
     @classmethod
     def validate_email(cls, v: str) -> str:
-        v = v.strip().lower()
+        v = v.strip()
         if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
             raise ValueError('Invalid email format. Please provide a valid email address (e.g. user@example.com)')
         return v
@@ -331,6 +335,17 @@ class AssignRoleDepartmentResponse(BaseModel):
     message: str
 
 
+class RemoveRoleDepartmentRequest(BaseModel):
+    email_id: str
+    department_name: str
+    role: str
+
+
+class RemoveRoleDepartmentResponse(BaseModel):
+    success: bool
+    message: str
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # REGISTRATION APPROVAL MODELS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -339,6 +354,7 @@ class RegistrationApproveRequest(BaseModel):
     """Request for admin to approve one or more registration requests by assigning a single role"""
     request_ids: List[int] = Field(..., description="List of registration request IDs to approve")
     role: str = Field(..., description="Role to assign to all the users in their department")
+    department_name: Optional[str] = Field(None, description="Optional: Override department name for the users. If not provided, uses the department from registration request.")
 
 
 class RegistrationRejectRequest(BaseModel):
@@ -359,6 +375,7 @@ class RegistrationRequestResponse(BaseModel):
     reviewed_at: Optional[datetime] = None
     rejection_reason: Optional[str] = None
     created_at: Optional[datetime] = None
+    is_sso: bool = False
 
 
 class GrantApprovalPermissionRequest(BaseModel):
@@ -386,7 +403,7 @@ class UpdatePasswordRequest(BaseModel):
     @field_validator('email_id')
     @classmethod
     def validate_email(cls, v: str) -> str:
-        v = v.strip().lower()
+        v = v.strip()
         if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
             raise ValueError('Invalid email format. Please provide a valid email address (e.g. user@example.com)')
         return v
@@ -415,17 +432,26 @@ class UpdatePasswordRequest(BaseModel):
 
 class UpdateUserRoleRequest(BaseModel):
     email_id: str = Field(..., description="Target user's email (mail_id)")
-    new_role: Optional[str] = Field(None, description="New role to assign within the department")
-    department_name: Optional[str] = Field(None, description="Department to update role in. Required for SuperAdmin, optional for Admin (defaults to admin's department).")
+    add_roles: Optional[List[str]] = Field(None, description="List of roles to assign to the user within the department")
+    remove_roles: Optional[List[str]] = Field(None, description="List of roles to remove from the user within the department")
+    department_name: Optional[str] = Field(None, description="Department to update roles in. Required for SuperAdmin, optional for Admin (defaults to admin's department).")
     temporary_password: Optional[str] = Field(None, description="Temporary password to set for the user. User will be required to change on next login.")
 
     @field_validator('email_id')
     @classmethod
     def validate_email(cls, v: str) -> str:
-        v = v.strip().lower()
+        v = v.strip()
         if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
             raise ValueError('Invalid email format. Please provide a valid email address (e.g. user@example.com)')
         return v
+
+    @field_validator('add_roles', 'remove_roles')
+    @classmethod
+    def validate_role_lists(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        if v is None:
+            return v
+        cleaned = [r.strip() for r in v if r and r.strip()]
+        return cleaned or None
 
     @field_validator('temporary_password')
     @classmethod
@@ -451,10 +477,10 @@ class UpdateUserRoleRequest(BaseModel):
 
 # User Enable/Disable Models
 class SetUserActiveStatusRequest(BaseModel):
-    """Request to enable or disable a user's login access"""
+    """Request to enable or disable a user's login access in a specific department"""
     email_id: str = Field(..., description="Target user's email (mail_id)")
     is_active: bool = Field(..., description="Whether the user should be active (True) or disabled (False)")
-    department_name: Optional[str] = Field(None, description="Department to enable/disable user in. If None, applies globally.")
+    department_name: str = Field(..., description="Department to enable/disable user in")
 
 
 class UserActiveStatusResponse(BaseModel):
@@ -463,8 +489,7 @@ class UserActiveStatusResponse(BaseModel):
     message: str
     email: str
     is_active: bool
-    department_name: Optional[str] = Field(None, description="Department affected, or None for global")
-    scope: str = Field(default="global", description="'global' for account-wide, 'department' for department-specific")
+    department_name: str = Field(..., description="Department affected")
 
 
 # Role-based Access Control Models
@@ -503,6 +528,12 @@ class RoleAccessModel(BaseModel):
     canvas_view_access: Optional[bool] = None
     context_access: Optional[bool] = None
     export_agents_access: Optional[bool] = None
+    export_tools_access: Optional[bool] = None
+    export_servers_access: Optional[bool] = None
+    convert_to_mcp_access: Optional[bool] = None
+    import_tools_access: Optional[bool] = None
+    import_servers_access: Optional[bool] = None
+    import_agents_access: Optional[bool] = None
     created_at: datetime
     updated_at: datetime
     created_by: Optional[str] = None
@@ -535,6 +566,12 @@ class SetRolePermissionsRequest(BaseModel):
     canvas_view_access: Optional[bool] = None
     context_access: Optional[bool] = None
     export_agents_access: Optional[bool] = None
+    export_tools_access: Optional[bool] = None
+    export_servers_access: Optional[bool] = None
+    convert_to_mcp_access: Optional[bool] = None
+    import_tools_access: Optional[bool] = None
+    import_servers_access: Optional[bool] = None
+    import_agents_access: Optional[bool] = None
 
 
 class UpdateRolePermissionsRequest(BaseModel):
@@ -558,6 +595,12 @@ class UpdateRolePermissionsRequest(BaseModel):
     canvas_view_access: Optional[bool] = None
     context_access: Optional[bool] = None
     export_agents_access: Optional[bool] = None
+    export_tools_access: Optional[bool] = None
+    export_servers_access: Optional[bool] = None
+    convert_to_mcp_access: Optional[bool] = None
+    import_tools_access: Optional[bool] = None
+    import_servers_access: Optional[bool] = None
+    import_agents_access: Optional[bool] = None
 
 
 class GetRolePermissionsRequest(BaseModel):
@@ -644,7 +687,6 @@ class DepartmentUserInfo(BaseModel):
     user_name: Optional[str] = None
     role: str
     is_active: bool = Field(default=True, description="Whether user is active in this department")
-    global_is_active: bool = Field(default=True, description="Whether user account is globally active")
 
 
 class DepartmentUsersResponse(BaseModel):
@@ -693,6 +735,33 @@ class PaginatedAllDepartmentsUsersResponse(BaseModel):
     users: List[DepartmentUserInfo]
 
 
+class UserInfoWithDepartment(BaseModel):
+    """User info including department assignment (used for flat listing without department filter)"""
+    email: str
+    user_name: Optional[str] = None
+    role: str
+    department_name: Optional[str] = None
+    is_active: bool = Field(default=True, description="Whether user is active in their department")
+
+
+class AllUsersResponse(BaseModel):
+    """Response model for listing all users without department filter (SuperAdmin only)"""
+    total_count: int
+    users: List[UserInfoWithDepartment]
+
+
+class PaginatedAllUsersResponse(BaseModel):
+    """Paginated response for all users without department filter (SuperAdmin only)"""
+    total_count: int
+    filtered_count: int
+    page: int
+    page_size: int
+    total_pages: int
+    has_next: bool
+    has_previous: bool
+    users: List[UserInfoWithDepartment]
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # PWD RESET FLOW MODELS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -705,7 +774,7 @@ class AdminResetPasswordRequest(BaseModel):
     @field_validator('email_id')
     @classmethod
     def validate_email(cls, v: str) -> str:
-        v = v.strip().lower()
+        v = v.strip()
         if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
             raise ValueError('Invalid email format. Please provide a valid email address (e.g. user@example.com)')
         return v
@@ -774,5 +843,253 @@ class ChangePasswordRequest(BaseModel):
 
 class ChangePasswordResponse(BaseModel):
     """Response model for user PWD change"""
+    success: bool
+    message: str
+
+
+# OAuth Authorization Code Flow Models (MFA Compatible)
+class OAuthLoginInitResponse(BaseModel):
+    """Response when initiating OAuth login - provides redirect URL to Keycloak"""
+    redirect_url: str
+    state: str  # CSRF protection token (store in session/cookie)
+    message: str = "Redirect to Keycloak for authentication"
+
+
+class OAuthCallbackRequest(BaseModel):
+    """Request received from Keycloak after user completes authentication"""
+    code: str  # Authorization code from Keycloak
+    state: str  # CSRF state to validate
+    session_state: Optional[str] = None  # Keycloak session state
+
+
+class OAuthCallbackResponse(BaseModel):
+    """Response after successful OAuth callback - contains tokens and user info"""
+    approval: bool
+    token: Optional[str] = None  # Access token
+    refresh_token: Optional[str] = None
+    id_token: Optional[str] = None  # OpenID Connect ID token
+    role: Optional[str] = None
+    username: Optional[str] = None
+    email: Optional[str] = None
+    department_name: Optional[str] = None  # Current department
+    available_departments: Optional[List['UserDepartmentInfo']] = None  # List of all departments user has access to
+    requires_department_selection: bool = Field(default=False, description="True if user has multiple departments and needs to choose one")
+    message: str
+    expires_in: Optional[int] = None  # Token expiry in seconds
+    status: Optional[str] = Field(default=None, description="Special status: 'PENDING_APPROVAL' for new SSO users awaiting admin approval")
+    frontend_origin: Optional[str] = None  # Which UI initiated this login (used internally for multi-UI redirect)
+
+
+class OAuthLogoutResponse(BaseModel):
+    """Response for OAuth logout"""
+    success: bool
+    logout_url: Optional[str] = None  # Keycloak logout URL for browser redirect
+    message: str
+
+
+class OAuthStateData(BaseModel):
+    """Internal model to store OAuth state data for PKCE validation"""
+    state: str
+    nonce: str
+    code_verifier: str  # PKCE code verifier (stored server-side)
+    redirect_uri: str
+    requested_role: Optional[str] = None
+    frontend_origin: Optional[str] = None  # Which UI initiated this login (for multi-UI support)
+    created_at: datetime
+    expires_at: datetime
+
+
+# ==================== Department Switching Models ====================
+
+class UserDepartmentInfo(BaseModel):
+    """Information about a user's department and role"""
+    department_name: str
+    role: str  # Currently active role in this department
+    roles: List[str] = []  # All roles the user has in this department
+    is_active: bool
+    is_default: bool = False  # True if this is the most recently used department
+    created_at: Optional[datetime] = None
+    last_used_at: Optional[datetime] = None
+
+
+class GetUserDepartmentsResponse(BaseModel):
+    """Response containing all departments a user has access to"""
+    approval: bool
+    departments: List[UserDepartmentInfo]
+    message: str
+
+
+class SwitchRoleRequest(BaseModel):
+    """Request to switch to a different role within a department"""
+    role: str
+    department_name: Optional[str] = None  # If not provided, uses current department from JWT
+
+    @field_validator('role')
+    @classmethod
+    def validate_role(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Role cannot be empty")
+        return v.strip()
+
+
+class SwitchRoleResponse(BaseModel):
+    """Response after switching role with new JWT token"""
+    approval: bool
+    token: Optional[str] = None  # New JWT with new role context
+    refresh_token: Optional[str] = None
+    role: Optional[str] = None
+    department_name: Optional[str] = None
+    available_roles: Optional[List[str]] = None  # All roles in this department
+    message: str
+
+
+class SwitchDepartmentRequest(BaseModel):
+    """Request to switch to a different department"""
+    department_name: str
+
+    @field_validator('department_name')
+    @classmethod
+    def validate_department_name(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Department name cannot be empty")
+        return v.strip()
+
+
+class SwitchDepartmentResponse(BaseModel):
+    """Response after switching department with new JWT token"""
+    approval: bool
+    token: Optional[str] = None  # New JWT with new department context
+    refresh_token: Optional[str] = None
+    role: Optional[str] = None
+    department_name: Optional[str] = None
+    available_roles: Optional[List[str]] = None  # All roles the user has in the new department
+    message: str
+
+
+class SetDefaultDepartmentRequest(BaseModel):
+    """Request to explicitly set a default department (optional - switching auto-sets it)"""
+    department_name: str
+
+    @field_validator('department_name')
+    @classmethod
+    def validate_department_name(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Department name cannot be empty")
+        return v.strip()
+
+
+class SetDefaultDepartmentResponse(BaseModel):
+    """Response after setting default department"""
+    approval: bool
+    department_name: Optional[str] = None
+    message: str
+
+
+# ==================== Authorization Code Exchange Models ====================
+
+class ExchangeCodeRequest(BaseModel):
+    """Request to exchange one-time authorization code for tokens"""
+    code: str
+
+    @field_validator('code')
+    @classmethod
+    def validate_code(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Authorization code cannot be empty")
+        if len(v) < 32:
+            raise ValueError("Invalid authorization code format")
+        return v.strip()
+
+
+class ExchangeCodeResponse(BaseModel):
+    """Response after successful code exchange"""
+    approval: bool
+    token: Optional[str] = None  # JWT access token
+    refresh_token: Optional[str] = None
+    id_token: Optional[str] = None  # OpenID Connect ID token
+    email: Optional[str] = None
+    username: Optional[str] = None
+    role: Optional[str] = None
+    department_name: Optional[str] = None
+    expires_in: Optional[int] = None
+    message: str
+
+
+# ==================== SSO JIT Provisioning Models ====================
+
+class PendingSSOUser(BaseModel):
+    """Information about a pending SSO user awaiting approval"""
+    id: int
+    email: str
+    username: str
+    created_at: datetime
+    is_sso: bool = True
+
+
+class ListPendingSSOUsersResponse(BaseModel):
+    """Response containing list of pending SSO users"""
+    approval: bool
+    pending_users: List[PendingSSOUser]
+    message: str
+
+
+class ApproveSSOUserRequest(BaseModel):
+    """Request to approve a pending SSO user and assign department+role"""
+    request_id: int
+    department_name: str
+    role: str
+
+    @field_validator('department_name')
+    @classmethod
+    def validate_department_name(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Department name cannot be empty")
+        return v.strip()
+
+    @field_validator('role')
+    @classmethod
+    def validate_role(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Role cannot be empty")
+        valid_roles = ['User', 'Developer', 'Admin', 'SuperAdmin']
+        if v not in valid_roles:
+            raise ValueError(f"Role must be one of: {', '.join(valid_roles)}")
+        return v
+
+
+class ApproveSSOUserResponse(BaseModel):
+    """Response after approving SSO user"""
+    approval: bool
+    email: Optional[str] = None
+    department_name: Optional[str] = None
+    role: Optional[str] = None
+    message: str
+
+
+class SSORegisterRequest(BaseModel):
+    """Request for a new SSO user to self-register by selecting their department(s)"""
+    email: str
+    username: str
+    department_names: List[str] = Field(..., min_length=1, description="Department(s) the user wants to join")
+
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        v = v.strip()
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
+            raise ValueError('Invalid email format')
+        return v
+
+    @field_validator('department_names')
+    @classmethod
+    def validate_department_names(cls, v: List[str]) -> List[str]:
+        cleaned = list(set(d.strip() for d in v if d.strip()))
+        if not cleaned:
+            raise ValueError('At least one department name is required')
+        return cleaned
+
+
+class SSORegisterResponse(BaseModel):
+    """Response after new SSO user submits department registration"""
     success: bool
     message: str

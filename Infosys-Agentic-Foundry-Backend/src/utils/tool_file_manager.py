@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 STORAGE_PROVIDER=os.getenv("STORAGE_PROVIDER","")
+ENABLE_TOOL_FILE_CREATION = os.getenv("ENABLE_TOOL_FILE_CREATION", "true").strip().lower() == "true"
 
 
 class ToolFileManager:
@@ -27,7 +28,8 @@ class ToolFileManager:
             self.base_directory = project_root / "onboarded_tools"
         else:
             self.base_directory = Path(base_directory)
-        self.base_directory.mkdir(parents=True, exist_ok=True)
+        if ENABLE_TOOL_FILE_CREATION:
+            self.base_directory.mkdir(parents=True, exist_ok=True)
         self.pool = pool
         self.file_manager = FileManager()
         log.info(f"ToolFileManager initialized with base directory: {self.base_directory}")
@@ -71,6 +73,13 @@ class ToolFileManager:
             tool_data: Dictionary containing tool information including tool_name and code_snippet
             version: Version string (e.g., 'v1', 'v2'). Creates versioned filename like 'addition_v1.py'
         """
+        if not ENABLE_TOOL_FILE_CREATION:
+            log.info("Tool file creation is disabled (ENABLE_TOOL_FILE_CREATION=false). Skipping file creation.")
+            return {
+                "success": True,
+                "file_path": "",
+                "message": "Tool file creation is disabled via ENABLE_TOOL_FILE_CREATION flag"
+            }
         try:
             tool_name = tool_data.get('tool_name')
             if not tool_name:
@@ -104,6 +113,21 @@ class ToolFileManager:
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(file_content)
             log.info(f"Successfully created tool file: {file_path}")
+
+            # --- Hyper-scale blob sync: push tool file to blob ---
+            try:
+                if STORAGE_PROVIDER:
+                    from src.utils.workspace_blob_sync import WorkspaceBlobSync
+                    from src.storage import get_storage_client
+                    _client = get_storage_client(STORAGE_PROVIDER)
+                    _syncer = WorkspaceBlobSync(
+                        storage_client=_client,
+                        project_root=os.path.abspath("."),
+                    )
+                    _syncer.schedule_tool_file_sync(filename)
+            except Exception:
+                pass
+
             return {
                 "success": True,
                 "file_path": str(file_path),
@@ -134,6 +158,13 @@ class ToolFileManager:
             tool_data: Dictionary containing tool information
             version: Version string (e.g., 'v1', 'v2'). Creates/updates versioned file.
         """
+        if not ENABLE_TOOL_FILE_CREATION:
+            log.info("Tool file operations are disabled (ENABLE_TOOL_FILE_CREATION=false). Skipping update.")
+            return {
+                "success": True,
+                "file_path": "",
+                "message": "Tool file operations are disabled via ENABLE_TOOL_FILE_CREATION flag"
+            }
         tool_name = tool_data.get('tool_name')
         if not tool_name:
             return {
@@ -176,6 +207,13 @@ class ToolFileManager:
             version: If provided, deletes specific version file (e.g., 'addition_v1.py').
                      If None, deletes the base file (e.g., 'addition.py') for backwards compatibility.
         """
+        if not ENABLE_TOOL_FILE_CREATION:
+            log.info("Tool file operations are disabled (ENABLE_TOOL_FILE_CREATION=false). Skipping delete.")
+            return {
+                "success": True,
+                "file_path": "",
+                "message": "Tool file operations are disabled via ENABLE_TOOL_FILE_CREATION flag"
+            }
         try:
             filename = self._sanitize_filename(tool_name, version)
             file_path = self.base_directory / filename
@@ -249,6 +287,14 @@ class ToolFileManager:
         Returns:
             Dictionary with success status and deleted files info
         """
+        if not ENABLE_TOOL_FILE_CREATION:
+            log.info("Tool file operations are disabled (ENABLE_TOOL_FILE_CREATION=false). Skipping delete all versions.")
+            return {
+                "success": True,
+                "deleted_files": [],
+                "failed_files": [],
+                "message": "Tool file operations are disabled via ENABLE_TOOL_FILE_CREATION flag"
+            }
         deleted_files = []
         failed_files = []
         
@@ -276,6 +322,13 @@ class ToolFileManager:
         Restore tool file when tool is restored from recycle bin.
         Fetches data from database and recreates the .py file.
         """
+        if not ENABLE_TOOL_FILE_CREATION:
+            log.info("Tool file operations are disabled (ENABLE_TOOL_FILE_CREATION=false). Skipping restore.")
+            return {
+                "success": True,
+                "file_path": "",
+                "message": "Tool file operations are disabled via ENABLE_TOOL_FILE_CREATION flag"
+            }
         try:
             tool_name = tool_data.get('tool_name')
             if not tool_name:
@@ -306,9 +359,9 @@ class ToolFileManager:
             }
 
     async def restore_tool_file_for_version(
-        self, 
-        tool_data: Dict[str, Any], 
-        version: str, 
+        self,
+        tool_data: Dict[str, Any],
+        version: str,
         code_snippet: str
     ) -> Dict[str, Any]:
         """
@@ -322,6 +375,13 @@ class ToolFileManager:
         Returns:
             Dictionary with success status and file path
         """
+        if not ENABLE_TOOL_FILE_CREATION:
+            log.info("Tool file operations are disabled (ENABLE_TOOL_FILE_CREATION=false). Skipping restore for version.")
+            return {
+                "success": True,
+                "file_path": "",
+                "message": "Tool file operations are disabled via ENABLE_TOOL_FILE_CREATION flag"
+            }
         try:
             tool_name = tool_data.get('tool_name')
             if not tool_name:
@@ -381,6 +441,12 @@ class ToolFileManager:
         Args:
             force: If True, recreate all files even if they exist
         """
+        if not ENABLE_TOOL_FILE_CREATION:
+            log.info("Tool file operations are disabled (ENABLE_TOOL_FILE_CREATION=false). Skipping DB sync.")
+            return {
+                "success": True,
+                "message": "Tool file operations are disabled via ENABLE_TOOL_FILE_CREATION flag"
+            }
         if not self.pool:
             return {"success": False, "error": "Database pool not initialized"}
         

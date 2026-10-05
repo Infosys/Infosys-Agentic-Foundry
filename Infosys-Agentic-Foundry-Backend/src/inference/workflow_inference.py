@@ -1727,10 +1727,12 @@ class WorkflowInference(AbstractBaseInference):
         """Build query with accessible inputs and merged parallel inputs."""
         parts = [original_query]
         
-        # Add context from accessible inputs
+        # Add context from accessible inputs (skip the raw query and input node echoes)
         context_parts = []
         for key, value in agent_input.items():
             if key in ("query", "_merged_inputs"):
+                continue
+            if isinstance(value, str) and value == original_query:
                 continue
             if isinstance(value, str):
                 context_parts.append(f"[{key}]: {value}")
@@ -2001,7 +2003,7 @@ Format the following output into {format_type} format: {output}
                     else:
                         agent_input = input_dict
                     
-                    updated_query_with_input = input_query + "\n" + "\n".join([f"{k}: {v}" for k, v in agent_input.items() if k != 'query'])
+                    updated_query_with_input = input_query + "\n" + "\n".join([f"{k}: {v}" for k, v in agent_input.items() if k != 'query' and v != input_query])
                     
                     inference_request = AgentInferenceRequest(
                         query=updated_query_with_input,

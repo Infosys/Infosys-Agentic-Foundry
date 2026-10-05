@@ -6,7 +6,8 @@ from src.auth.models import (
     AddRoleToDepartmentRequest, RemoveRoleFromDepartmentRequest, DepartmentRoleResponse,
     DepartmentUserInfo, DepartmentUsersResponse, DepartmentUsersInfo, AllDepartmentsUsersResponse,
     PaginatedDepartmentUsersResponse, PaginatedAllDepartmentsUsersResponse,
-    SetRolePermissionsRequest, AccessPermission
+    SetRolePermissionsRequest, AccessPermission,
+    UserInfoWithDepartment, AllUsersResponse, PaginatedAllUsersResponse
 )
 from src.database.services import DepartmentService, RoleAccessService
 from src.auth.dependencies import get_current_user
@@ -134,6 +135,7 @@ async def get_department_by_name(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.delete("/{department_name}", response_model=DepartmentResponse)
+@router.post("/{department_name}/delete", response_model=DepartmentResponse)
 async def delete_department(
     request: Request,
     department_name: str,
@@ -220,7 +222,13 @@ async def add_role_to_department(
                         file_context_access=True,
                         canvas_view_access=True,
                         context_access=True,
-                        export_agents_access=True
+                        export_agents_access=True,
+                        export_tools_access=True,
+                        export_servers_access=True,
+                        convert_to_mcp_access=True,
+                        import_tools_access=True,
+                        import_servers_access=True,
+                        import_agents_access=True
                     )
                 elif role_name_lower == "user":
                     # User gets only agent read access and agent execute access
@@ -247,7 +255,13 @@ async def add_role_to_department(
                         file_context_access=False,
                         canvas_view_access=False,
                         context_access=False,
-                        export_agents_access=False
+                        export_agents_access=False,
+                        export_tools_access=False,
+                        export_servers_access=False,
+                        convert_to_mcp_access=False,
+                        import_tools_access=False,
+                        import_servers_access=False,
+                        import_agents_access=False
                     )
                 else:
                     permissions_request = None
@@ -276,6 +290,7 @@ async def add_role_to_department(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.delete("/{department_name}/roles/{role_name}", response_model=DepartmentRoleResponse)
+@router.post("/{department_name}/roles/{role_name}/delete", response_model=DepartmentRoleResponse)
 async def remove_role_from_department(
     request: Request,
     department_name: str,
@@ -334,7 +349,7 @@ async def get_department_roles(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.get("/{department_name}/users", response_model=Union[AllDepartmentsUsersResponse, DepartmentUsersResponse])
+@router.get("/{department_name}/users", response_model=Union[AllUsersResponse, DepartmentUsersResponse])
 async def get_department_users(
     department_name: str,
     user_data: User = Depends(get_current_user)
@@ -343,20 +358,19 @@ async def get_department_users(
     Get users in department(s).
     
     **Access Control:**
-    - **SuperAdmin**: Pass `"all"` to get users from ALL departments, or a specific department name
+    - **SuperAdmin**: Pass `"all"` to get all users across all departments (flat list with department info)
     - **Admin**: Can only view users in their own department
     
     Args:
-        department_name: Department name to query, or "all" for SuperAdmin to get all departments
+        department_name: Department name to query, or "all" for SuperAdmin to get all users
     
     Returns:
-        - If "all": List of all departments with their users (SuperAdmin only)
+        - If "all": Flat list of all users with their department info (SuperAdmin only)
         - If specific department: List of users in that department
     """
     user_dept_mapping_repo = ServiceProvider.get_user_department_mapping_repository()
-    department_service = get_department_service(None)
     
-    # Handle "all" departments request (SuperAdmin only)
+    # Handle "all" users request (SuperAdmin only)
     if department_name.lower() == "all":
         if user_data.role != "SuperAdmin":
             raise HTTPException(
@@ -364,39 +378,23 @@ async def get_department_users(
                 detail="Only SuperAdmin can view users across all departments. Please specify your department name."
             )
         
-        # Get all departments
-        all_departments = await department_service.list_departments()
+        # Get all user-department mappings as a flat list
+        all_mappings = await user_dept_mapping_repo.get_all_mappings()
         
-        departments_data = []
-        total_users = 0
+        users_list = [
+            UserInfoWithDepartment(
+                email=user["mail_id"],
+                user_name=user.get("user_name"),
+                role=user["role"],
+                department_name=user.get("department_name"),
+                is_active=user.get("is_active", True) if user.get("is_active") is not None else True
+            )
+            for user in all_mappings
+        ]
         
-        for dept in all_departments:
-            dept_name = dept.get("department_name")
-            if dept_name:  # Skip if department name is None
-                dept_users = await user_dept_mapping_repo.get_department_users(dept_name)
-                
-                users_list = [
-                    DepartmentUserInfo(
-                        email=user["mail_id"],
-                        user_name=user.get("user_name"),
-                        role=user["role"],
-                        is_active=user.get("is_active", True) if user.get("is_active") is not None else True,
-                        global_is_active=user.get("global_is_active", True) if user.get("global_is_active") is not None else True
-                    )
-                    for user in dept_users
-                ]
-                
-                departments_data.append(DepartmentUsersInfo(
-                    department_name=dept_name,
-                    user_count=len(users_list),
-                    users=users_list
-                ))
-                total_users += len(users_list)
-        
-        return AllDepartmentsUsersResponse(
-            total_departments=len(departments_data),
-            total_users=total_users,
-            departments=departments_data
+        return AllUsersResponse(
+            total_count=len(users_list),
+            users=users_list
         )
     
     # Handle specific department request
@@ -425,21 +423,19 @@ async def get_department_users(
                 email=user["mail_id"],
                 user_name=user.get("user_name"),
                 role=user["role"],
-                is_active=user.get("is_active", True) if user.get("is_active") is not None else True,
-                global_is_active=user.get("global_is_active", True) if user.get("global_is_active") is not None else True
+                is_active=user.get("is_active", True) if user.get("is_active") is not None else True
             )
             for user in department_users
         ]
     )
 
 
-@router.get("/{department_name}/users/search", response_model=Union[PaginatedAllDepartmentsUsersResponse, PaginatedDepartmentUsersResponse])
+@router.get("/{department_name}/users/search", response_model=Union[PaginatedAllUsersResponse, PaginatedDepartmentUsersResponse])
 async def search_department_users(
     department_name: str,
     search: Optional[str] = Query(None, description="Search term for email or username (partial match)"),
     role: Optional[str] = Query(None, description="Filter by role (Admin, Developer, etc.)"),
     is_active: Optional[bool] = Query(None, description="Filter by active status in department"),
-    global_is_active: Optional[bool] = Query(None, description="Filter by global active status"),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(10, ge=1, le=100, description="Number of items per page"),
     user_data: User = Depends(get_current_user)
@@ -448,23 +444,21 @@ async def search_department_users(
     Search and paginate users in department(s).
     
     **Access Control:**
-    - **SuperAdmin**: Pass `"all"` to search users across ALL departments, or a specific department name
+    - **SuperAdmin**: Pass `"all"` to search users across ALL departments (flat list with department info)
     - **Admin**: Can only search users in their own department
     
     Args:
-        department_name: Department name to query, or "all" for SuperAdmin to search all departments
+        department_name: Department name to query, or "all" for SuperAdmin to search all users
         search: Optional search term for email or username (partial, case-insensitive match)
         role: Optional filter by role name
         is_active: Optional filter by department-level active status
-        global_is_active: Optional filter by global account active status
         page: Page number (starts from 1)
         page_size: Number of items per page (max 100)
     
     Returns:
-        Paginated list of users matching the search criteria
+        Paginated flat list of users matching the search criteria
     """
     user_dept_mapping_repo = ServiceProvider.get_user_department_mapping_repository()
-    department_service = get_department_service(None)
     
     def filter_user(user: dict) -> bool:
         """Apply filters to a user record"""
@@ -485,11 +479,6 @@ async def search_department_users(
         if is_active is not None and user_is_active != is_active:
             return False
         
-        # global_is_active filter
-        user_global_is_active = user.get("global_is_active", True) if user.get("global_is_active") is not None else True
-        if global_is_active is not None and user_global_is_active != global_is_active:
-            return False
-        
         return True
     
     def convert_to_user_info(user: dict, dept_name: str = None) -> DepartmentUserInfo:
@@ -498,11 +487,10 @@ async def search_department_users(
             email=user["mail_id"],
             user_name=user.get("user_name"),
             role=user["role"],
-            is_active=user.get("is_active", True) if user.get("is_active") is not None else True,
-            global_is_active=user.get("global_is_active", True) if user.get("global_is_active") is not None else True
+            is_active=user.get("is_active", True) if user.get("is_active") is not None else True
         )
     
-    # Handle "all" departments request (SuperAdmin only)
+    # Handle "all" users request (SuperAdmin only)
     if department_name.lower() == "all":
         if user_data.role != "SuperAdmin":
             raise HTTPException(
@@ -510,44 +498,37 @@ async def search_department_users(
                 detail="Only SuperAdmin can search users across all departments. Please specify your department name."
             )
         
-        # Get all departments
-        all_departments = await department_service.list_departments()
+        # Get all user-department mappings as a flat list
+        all_mappings = await user_dept_mapping_repo.get_all_mappings()
         
-        all_users = []
-        total_users = 0
-        
-        for dept in all_departments:
-            dept_name = dept.get("department_name")
-            if dept_name:
-                dept_users = await user_dept_mapping_repo.get_department_users(dept_name)
-                total_users += len(dept_users)
-                
-                # Filter and add department info to each user
-                for user in dept_users:
-                    if filter_user(user):
-                        user_info = convert_to_user_info(user, dept_name)
-                        # Add department reference for context
-                        user_info_dict = user_info.dict()
-                        user_info_dict["department"] = dept_name
-                        all_users.append(user_info_dict)
+        # Apply filters
+        filtered_users = [user for user in all_mappings if filter_user(user)]
         
         # Apply pagination
-        filtered_count = len(all_users)
+        filtered_count = len(filtered_users)
         total_pages = (filtered_count + page_size - 1) // page_size if filtered_count > 0 else 1
         start_idx = (page - 1) * page_size
         end_idx = start_idx + page_size
-        paginated_users = all_users[start_idx:end_idx]
+        paginated_users = filtered_users[start_idx:end_idx]
         
-        return PaginatedAllDepartmentsUsersResponse(
-            total_departments=len(all_departments),
-            total_users=total_users,
+        return PaginatedAllUsersResponse(
+            total_count=len(all_mappings),
             filtered_count=filtered_count,
             page=page,
             page_size=page_size,
             total_pages=total_pages,
             has_next=page < total_pages,
             has_previous=page > 1,
-            users=[DepartmentUserInfo(**{k: v for k, v in u.items() if k != "department"}) for u in paginated_users]
+            users=[
+                UserInfoWithDepartment(
+                    email=user["mail_id"],
+                    user_name=user.get("user_name"),
+                    role=user["role"],
+                    department_name=user.get("department_name"),
+                    is_active=user.get("is_active", True) if user.get("is_active") is not None else True
+                )
+                for user in paginated_users
+            ]
         )
     
     # Handle specific department request

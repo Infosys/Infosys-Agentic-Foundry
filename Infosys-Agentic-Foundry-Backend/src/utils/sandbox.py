@@ -18,6 +18,44 @@ import types
 
 # Pre-import load_model so it's available for tool code namespaces
 from src.models.model import load_model
+from src.utils.secrets_handler import (
+    get_user_secrets,
+    current_user_email,
+    current_user_department,
+    get_public_key,
+    get_group_secrets,
+    current_request_headers,
+)
+from src.decorators.tool_access import (
+    resource_access,
+    require_role,
+    authorized_tool,
+    current_tool_user,
+    get_tool_user_context,
+)
+
+# ============================================================================
+# 0. SYSTEM TOOL EXEMPTIONS
+# ============================================================================
+# Holds entries that bypass sandbox restrictions. Two kinds of entries are
+# supported and checked at the exec() call sites:
+#
+#   1. Tool NAMES — exempted only when the tool record's created_by == "system".
+#      Listed here statically for fresh installs where system tools follow
+#      the `_system` naming convention.
+#   2. Tool IDs   — exempted unconditionally. Registered at server startup
+#      (see AppContainer.initialize_services) by resolving the
+#      "Tool Onboard Agent" system workflow → its agent → its tool_ids.
+#      Covers legacy/test-server tools whose names don't match the convention
+#      but are trusted because they're attached to a system workflow's agent.
+#
+# This set IS mutated at startup. Do NOT make it a frozenset.
+SANDBOX_EXEMPT_TOOLS: set[str] = {
+    "build_vector_store_system",
+    "hybrid_rag_search_system",
+    "send_tool_data_system",
+    "get_code_by_version_number_system",
+}
 
 # ============================================================================
 # 1. BLOCKED DIRECT IMPORTS
@@ -28,16 +66,33 @@ BLOCKED_IMPORT_PREFIXES = (
     "src.",
     "main",
     "agent_worker",
+    "tool_worker",
+    "Export_Agent",
+    "tool_chatbot",
+    "user_uploads",
+    "knowledgebase_server",
+    "call_categorizer",
+    "github_pusher",
+    "litellm_standalone_tracker",
+    "run_server",
+    "run_agent_worker",
+    "generate_master_secret_key",
 )
 
 # Exceptions: these specific modules ARE allowed through the import gate
 ALLOWED_IMPORT_EXCEPTIONS = (
     "src.models.model",
+    "src.utils.remote_model_client",
+    "telemetry_wrapper",
+    "data_extraction",
 )
 
 # For each allowed module, restrict which names can be imported
 ALLOWED_IMPORT_NAMES = {
     "src.models.model": ("load_model",),
+    "src.utils.remote_model_client": ("RemoteSentenceTransformer",),
+    "telemetry_wrapper": ("logger",),
+    "data_extraction": ("DataExtractor",),
 }
 
 _real_import = __import__
@@ -130,6 +185,49 @@ _restricted_os_module = _make_restricted_os()
 _restricted_sys_module = _make_restricted_sys()
 
 
+def _make_safe_db_manager_module() -> types.ModuleType:
+    """
+    Fake 'MultiDBConnection_Manager' module for tool code.
+
+    Exposes only get_connection_manager(), returning a proxy limited to
+    get_sql_session() / get_mongo_database(). Credential attributes and the
+    internal config/decrypt helpers on the real manager are hidden so tool
+    code cannot read DB passwords (e.g. manager.pg_password).
+    """
+    safe_mod = types.ModuleType("MultiDBConnection_Manager")
+
+    def get_connection_manager():
+        # Resolve the real singleton via the real import (bypasses this sandbox)
+        real_mgr = _real_import(
+            "MultiDBConnection_Manager", None, None, ("get_connection_manager",), 0
+        ).get_connection_manager()
+
+        class _SafeConnectionManager:
+            def get_sql_session(self, connection_name):
+                return real_mgr.get_sql_session(connection_name)
+
+            def get_mongo_database(self, connection_name):
+                return real_mgr.get_mongo_database(connection_name)
+
+            def __getattr__(self, attr):
+                raise AttributeError(
+                    "Access to connection manager internals is not allowed in tool code"
+                )
+
+            def __setattr__(self, attr, value):
+                raise AttributeError(
+                    "Modifying the connection manager is not allowed in tool code"
+                )
+
+        return _SafeConnectionManager()
+
+    safe_mod.get_connection_manager = get_connection_manager
+    return safe_mod
+
+
+_safe_db_manager_module = _make_safe_db_manager_module()
+
+
 def _make_sandbox_import():
     """
     Returns a custom __import__ that:
@@ -171,6 +269,10 @@ def _make_sandbox_import():
         if name == "sys":
             return _restricted_sys_module
 
+        # Intercept data-connector manager → credential-safe facade
+        if name == "MultiDBConnection_Manager":
+            return _safe_db_manager_module
+
         # Everything else: normal import
         return _real_import(name, globals, locals, fromlist, level)
 
@@ -181,6 +283,9 @@ def _make_sandbox_import():
 # 6. PUBLIC API — build sandboxed builtins for exec()
 # ============================================================================
 
+def get_builtins() -> dict:
+    return dict(__builtins__) if isinstance(__builtins__, dict) else vars(__builtins__).copy()
+
 def get_sandbox_builtins() -> dict:
     """
     Returns a __builtins__ dict with:
@@ -188,7 +293,7 @@ def get_sandbox_builtins() -> dict:
     - Restricted open() (blocks .env files)
     - All other builtins preserved
     """
-    safe_builtins = dict(__builtins__) if isinstance(__builtins__, dict) else vars(__builtins__).copy()
+    safe_builtins = get_builtins()
     safe_builtins["__import__"] = _make_sandbox_import()
     safe_builtins["open"] = _restricted_open
     return safe_builtins
@@ -198,7 +303,22 @@ def get_sandbox_extras() -> dict:
     """
     Returns extra names to inject into the exec() namespace
     so tool code can use them without importing.
+
+    Includes load_model, secrets handlers, and tool access control decorators.
     """
     return {
         "load_model": load_model,
+        "get_user_secrets": get_user_secrets,
+        "current_user_email": current_user_email,
+        "current_user_department": current_user_department,
+        "get_public_secrets": get_public_key,
+        "get_group_secrets": get_group_secrets,
+        "current_request_headers": current_request_headers,
+        # Tool access control decorators - available for tool creators
+        "resource_access": resource_access,
+        "require_role": require_role,
+        "authorized_tool": authorized_tool,
+        "current_tool_user": current_tool_user,
+        "get_tool_user_context": get_tool_user_context,
     }
+

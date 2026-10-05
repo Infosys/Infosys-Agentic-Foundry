@@ -17,7 +17,7 @@ from pytz import timezone
 
 from src.schemas import GroundTruthEvaluationRequest, AgentInferenceRequest
 from src.database.services import EvaluationService, ConsistencyService
-from src.database.core_evaluation_service import CoreEvaluationService, CoreConsistencyEvaluationService, CoreRobustnessEvaluationService
+from src.database.services.core_evaluation_service import CoreEvaluationService, CoreConsistencyEvaluationService, CoreRobustnessEvaluationService
 from src.models.model_service import ModelService
 from src.inference import CentralizedAgentInference
 from src.api.dependencies import ServiceProvider # Dependency provider
@@ -25,6 +25,7 @@ from src.api.dependencies import ServiceProvider # Dependency provider
 from groundtruth import evaluate_ground_truth_file
 from phoenix.otel import register
 from telemetry_wrapper import logger as log, update_session_context
+from src.utils.llm_request_tracker import with_request_tracking
 from src.utils.phoenix_manager import ensure_project_registered, traced_project_context
 
 # Authorization imports
@@ -108,6 +109,22 @@ async def _upload_evaluation_file(file: UploadFile = File(...), subdirectory: st
 
         log.info(f"Evaluation file '{file.filename}' uploaded as '{safe_filename}' at '{full_file_path}'")
 
+        # --- Hyper-scale blob sync: upload to blob storage ---
+        try:
+            _sp = os.getenv('STORAGE_PROVIDER', '')
+            if _sp:
+                from src.utils.workspace_blob_sync import WorkspaceBlobSync
+                from src.storage import get_storage_client
+                _client = get_storage_client(_sp)
+                _syncer = WorkspaceBlobSync(
+                    storage_client=_client,
+                    project_root=os.path.abspath("."),
+                )
+                _rel = f"{subdirectory}/{safe_filename}" if subdirectory else safe_filename
+                _syncer.schedule_evaluation_upload_sync(_rel)
+        except Exception:
+            pass
+
         relative_path = os.path.relpath(full_file_path, start=os.getcwd())
         return {
             "info": f"File '{file.filename}' saved as '{safe_filename}' at '{relative_path}'",
@@ -126,6 +143,22 @@ async def _evaluate_agent_performance(
     Wrapper function to evaluate an agent against a ground truth file.
     Supports optional progress_callback for SSE streaming.
     """
+    if not os.path.isfile(file_path):
+        # --- Auto-restore evaluation file from blob if missing locally ---
+        try:
+            _sp = os.getenv('STORAGE_PROVIDER', '')
+            if _sp:
+                from src.utils.workspace_blob_sync import WorkspaceBlobSync
+                from src.storage import get_storage_client
+                _client = get_storage_client(_sp)
+                _syncer = WorkspaceBlobSync(
+                    storage_client=_client,
+                    project_root=os.path.abspath("."),
+                )
+                _rel = os.path.relpath(file_path, start=os.path.join(os.getcwd(), 'evaluation_uploads'))
+                await _syncer.restore_evaluation_upload(_rel)
+        except Exception:
+            pass
     if not os.path.isfile(file_path):
         raise FileNotFoundError(f"File not found: {file_path}")
 
@@ -250,7 +283,12 @@ async def process_unprocessed_evaluations_endpoint(
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
     user = current_user  # Use current_user instead of get_user_info_from_request for consistency
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(
+        user_session=user_session, 
+        user_id=user_id,
+        session_id=user_session,
+        call_category="evaluation_process"
+    )
 
     register(
         project_name='evaluation-metrics',
@@ -307,7 +345,12 @@ async def get_evaluation_data_endpoint(
     
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(
+        user_session=user_session, 
+        user_id=user_id,
+        session_id=user_session,
+        call_category="evaluation"
+    )
 
     # Use InferenceUtils to parse agent names
     parsed_names = await _parse_agent_names(agent_names)
@@ -353,7 +396,12 @@ async def get_tool_metrics_endpoint(
     
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(
+        user_session=user_session, 
+        user_id=user_id,
+        session_id=user_session,
+        call_category="evaluation"
+    )
 
     parsed_names = await _parse_agent_names(agent_names)
     parsed_types = await _parse_agent_names(agent_types)
@@ -398,7 +446,12 @@ async def get_agent_metrics_endpoint(
     
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(
+        user_session=user_session, 
+        user_id=user_id,
+        session_id=user_session,
+        call_category="evaluation"
+    )
 
     parsed_names = await _parse_agent_names(agent_names)
     parsed_types = await _parse_agent_names(agent_types)
@@ -435,10 +488,31 @@ async def download_evaluation_result_endpoint(
     
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(
+        user_session=user_session, 
+        user_id=user_id,
+        session_id=user_session,
+        call_category="evaluation"
+    )
 
     # Full path to file (assuming 'outputs' is a subdirectory in the current working directory)
     file_path = os.path.join(Path.cwd(), 'outputs', file_name)
+
+    # --- Hyper-scale blob restore: pull from blob if missing locally ---
+    if not os.path.exists(file_path):
+        try:
+            _sp = os.getenv('STORAGE_PROVIDER', '')
+            if _sp:
+                from src.utils.workspace_blob_sync import WorkspaceBlobSync
+                from src.storage import get_storage_client
+                _client = get_storage_client(_sp)
+                _syncer = WorkspaceBlobSync(
+                    storage_client=_client,
+                    project_root=os.path.abspath("."),
+                )
+                await _syncer.restore_output_file(file_name)
+        except Exception:
+            pass
 
     if not os.path.exists(file_path):
         log.error(f"File not found: {file_path}")
@@ -474,7 +548,12 @@ async def download_groundtruth_template_endpoint(
     
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(
+        user_session=user_session, 
+        user_id=user_id,
+        session_id=user_session,
+        call_category="evaluation"
+    )
 
     file_path = os.path.join(Path.cwd(), 'src/file_templates', file_name)
 
@@ -487,6 +566,7 @@ async def download_groundtruth_template_endpoint(
 
 
 @router.post("/upload-and-evaluate-json")
+@with_request_tracking("evaluation")
 async def upload_and_evaluate_json(
     fastapi_request: Request,
     file: UploadFile = File(...),
@@ -530,7 +610,14 @@ async def upload_and_evaluate_json(
     
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    
+    # Set session context with proper session_id and call_category
+    update_session_context(
+        user_session=user_session, 
+        user_id=user_id,
+        session_id=user_session,  # Use user_session as the session_id for tracking
+        call_category="evaluation"
+    )
 
     upload_resp = await _upload_evaluation_file(file, subdirectory)
 
@@ -621,7 +708,12 @@ async def download_consistency_template_endpoint(
     
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(
+        user_session=user_session, 
+        user_id=user_id,
+        session_id=user_session,
+        call_category="evaluation"
+    )
 
     file_path = os.path.join(Path.cwd(), 'src/file_templates', file_name)
 
@@ -634,6 +726,7 @@ async def download_consistency_template_endpoint(
 
 
 
+@with_request_tracking("evaluation_consistency_preview")
 @router.post("/consistency/preview-responses", summary="Preview Agent Responses for Consistency")
 async def preview_agent_responses(
     file: Union[UploadFile, str, None] = File(None, description="Upload an Excel file with a 'queries' column"),
@@ -801,6 +894,7 @@ async def preview_agent_responses(
     }
 
 
+@with_request_tracking("evaluation_consistency_rerun")
 @router.post("/consistency/rerun-response", summary="Re-run Agent for Consistency")
 async def rerun_agent_responses(
     # Parameters from user request
@@ -1052,6 +1146,7 @@ def get_robustness_preview_path(agentic_id: str) -> Path:
     """Returns the path for a temporary robustness preview file."""
     return PREVIEW_DIR / f"robustness_preview_{agentic_id}.json"
 
+@with_request_tracking("evaluation_robustness_preview")
 @router.post("/robustness/preview-queries/{agentic_application_id}", summary="Preview Robustness Queries")
 async def preview_robustness_queries(
     agentic_application_id: str,
@@ -1142,6 +1237,7 @@ def get_robustness_preview_path(agentic_id: str) -> Path:
 
 
 
+@with_request_tracking("evaluation_robustness_approval")
 @router.post("/approve-robustness-evaluation/{agentic_application_id}", summary="Approve and Run Robustness Evaluation")
 async def approve_robustness_evaluation(
     agentic_application_id: str,
@@ -1218,7 +1314,7 @@ async def approve_robustness_evaluation(
         raise HTTPException(status_code=500, detail="An internal server error occurred during the evaluation.")
 
 
-@router.get("/available_agents/", summary="Get All Agent Evaluation Records")
+@router.get("/available_agents", summary="Get All Agent Evaluation Records")
 async def get_all_agents_from_consistency_robustness_details_table(
     agent_type: Optional[str] = Query(None, description="Filter agents by type (e.g., 'ReAct', 'Meta', etc.)"),
     consistency_service: ConsistencyService = Depends(ServiceProvider.get_consistency_service),
@@ -1262,7 +1358,7 @@ def get_temp_paths(agentic_application_id: str):
     meta_path = base.with_suffix(".meta.json")
     return xlsx_path, meta_path
 
-@router.put("/generate-update-preview/{agentic_application_id}", summary="Generate a Preview for an Agent Update")
+@router.api_route("/generate-update-preview/{agentic_application_id}", methods=["PUT", "POST"], summary="Generate a Preview for an Agent Update")
 async def generate_update_preview(
     agentic_application_id: str,
     request: UpdateEvaluationRequest,
@@ -1373,7 +1469,7 @@ class DeleteAgentEvaluationsRequest(BaseModel):
     agentic_application_ids: List[str]
     is_admin: bool = Field(False, description="Indicates if the user has admin privileges.")
 
-@router.delete("/delete-agent", summary="Delete One or More Agents and All Associated Data")
+@router.api_route("/delete-agent", methods=["DELETE", "POST"], summary="Delete One or More Agents and All Associated Data")
 async def delete_agent_details(
     delete_request: DeleteAgentEvaluationsRequest,
     consistency_service: ConsistencyService = Depends(ServiceProvider.get_consistency_service),

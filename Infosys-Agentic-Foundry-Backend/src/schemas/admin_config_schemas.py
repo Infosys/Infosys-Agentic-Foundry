@@ -73,6 +73,12 @@ class AdminConfigLimits(BaseModel):
         description="Interval for chat summarization (1-100)"
     )
 
+    # RAI Guardrails Settings
+    guardrail_type: str = Field(
+        default="none",
+        description="Guardrail provider for non-inference LLM calls."
+    )
+
 
 class AdminConfigResponse(AdminConfigLimits):
     """Response model including audit fields."""
@@ -96,3 +102,4 @@ class UpdateAdminConfigRequest(BaseModel):
     max_validation_epochs: Optional[int] = Field(None, ge=1, le=Limits.MAX_CONFIGURABLE_EPOCHS)
     langgraph_recursion_limit: Optional[int] = Field(None, ge=20, le=200)
     chat_summary_interval: Optional[int] = Field(None, ge=1, le=100)
+    guardrail_type: Optional[str] = Field(None, description="Guardrail provider key for non-inference LLM calls ('none' to disable)")

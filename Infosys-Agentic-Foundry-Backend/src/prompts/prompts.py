@@ -164,13 +164,51 @@ The `/agent/facts/` directory should contain files **relevant to the agent's pur
 
 **Generate relevant fact files based on {{agent_goal}}**
 
-#### Key Shell Commands:
-- `cat /path/to/file.md` - Read file contents
+#### Key Shell Commands (18 commands + pipe support):
+
+**Reading:**
+- `cat [-n] /path/to/file.md` - Read file contents (-n adds line numbers)
+- `head -n 20 /file` / `tail -n 20 /file` - First/last 20 lines
+- `sed -n '10,20p' /file` - Read specific line range (efficient for large files)
+- `stat /file` - Check file size, line count, modified time
+- `wc [-lwc] /path/*.md` - Count lines/words/chars (supports glob patterns)
+- `diff /file1 /file2` - Compare two files (unified diff)
+
+**Navigation:**
 - `ls /path/` - List directory contents
+- `tree [--size] /path` - Show directory tree (--size shows file sizes)
+- `cd /path` - Change directory
+- `pwd` - Print working directory
+
+**Searching:**
+- `grep [-rinlv] [-A N] [-B N] [-C N] [-e pat] "pattern" /path/` - Search for pattern
+  - `-A/-B/-C N`: show N lines context after/before/both around matches
+  - `-e pat`: multi-pattern search
+  - `-v`: invert match (show non-matching lines)
+- `semgrep "concept" /path` - Semantic search by meaning
+- `find /path -name|-iname "*.md"` - Find files (-iname: case-insensitive)
+
+**Writing:**
 - `echo "content" > /path/file.md` - Write to file (overwrite)
 - `echo "content" >> /path/file.md` - Append to file
 - `mkdir /path/dir` - Create directory
-- `grep "pattern" /path/` - Search for pattern
+- `touch /path/file` - Create empty file
+
+**Pipes (chain up to 5 commands):**
+- `grep "pattern" file | head -5` - First 5 matches
+- `cat file | grep "word"` - Search within file output
+- `find / -name "*.md" | wc -l` - Count matching files
+
+**MANDATORY Shell Usage Rules (follow these ALWAYS):**
+1. **Before reading any file**, run `stat /file` first to check its size. If large (>50 lines), use `sed -n '1,50p'` instead of `cat`.
+2. **When searching**, ALWAYS use `grep -C 3` (context) instead of plain `grep` — context helps understand matches.
+3. **For multiple search terms**, use `grep -e "term1" -e "term2"` (multi-pattern) in one call.
+4. **When you only need first few results**, pipe: `grep "pattern" file | head -10`
+5. **When exploring directories**, use `tree --size /path` instead of `ls` to see structure with sizes.
+6. **When you need line numbers**, use `cat -n` or `grep -n`.
+7. **To compare files**, use `diff /file1 /file2`.
+8. **To count files/lines**, use `wc` with globs: `wc /path/*.md`
+9. **To find files case-insensitively**, use `find -iname` instead of `-name`.
 
 ---
 
@@ -756,38 +794,50 @@ Please consider the following details:
   4. **Decision Logic**: Provide clear guidelines on when to:
      - **Respond Directly**: For greetings, simple questions, or queries about its own capabilities/role.
      - **Generate a Plan**: If tools are required to fulfill the user's request.
-  5. **Planning Guidelines**: If a plan is generated:
+  5. **Mandatory Plan-First Rule**: The generated SYSTEM PROMPT MUST explicitly and forcefully state that whenever a tool is required and no plan yet exists in the conversation, the agent MUST FIRST generate a step-by-step plan and MUST NOT call any tool in that same turn. Tools may only be invoked AFTER a plan has been produced. Calling a tool directly without first producing a plan is strictly forbidden.
+  6. **Planning Guidelines**: If a plan is generated:
      - It must be a simple, step-by-step plan.
      - Each step should start with "STEP #: [Step Description]".
      - Each step must contain all necessary information.
-     - **DO NOT attempt to solve the step, just return the steps.**
+     - **DO NOT attempt to solve the step in the same turn while generating the step, just return the steps.**
      - The final step should yield the final answer.
-  6. **Execution Guidelines**: If executing a plan:
-     - Process the current step using appropriate tools.
-     - Return only the result of the current step.
+  7. **Execution Guidelines**: If executing a plan:
+     - Process each step using appropriate tools.
      - Include the exact response from invoked tools without modification.
-  7. **Feedback Handling**: If feedback on a plan is provided, revise the plan accordingly.
-  8. **Output Format for Plan**: When generating a plan, the agent must return a JSON object:
+  8. **Feedback Handling**: If feedback on a plan is provided, revise the plan accordingly.
+  9. **Output Format for Plan**: When generating a plan, the agent must return a JSON object:
     ```json
     {{
         "plan": ["STEP 1: [Step Description]", "STEP 2: [Step Description]", ...]
     }}
     ```
-  9. **Output Format for Direct Response**: When providing a direct response, the agent must return a JSON object:
+  10. **Output Format for Direct Response**: When providing a direct response, the agent must return a JSON object:
     ```json
     {{
         "response": "Your direct answer here."
     }}
     ```
-  10. **Output Format for Tool Execution**: When executing a tool, the agent's output will be the raw tool output.
+  11. **Output Format for Tool Execution**: When executing a tool, the agent's output will be the raw tool output.
 - **Response Format**:
   - Present the SYSTEM PROMPT in a clear and organized manner.
   - Use appropriate headings and bullet points where necessary.
   - The generated system prompt should be in markdown format, **do not wrap it in ```plaintext ``` notation**.
-  - **Do not include any example(s), explanations, or notes in the SYSTEM PROMPT.**
-
-**SYSTEM PROMPT:**
 """
+
+hybrid_agent_planning_enforcement_prompt = """
+
+---
+
+## MANDATORY EXECUTION CONTRACT (HIGHEST PRIORITY — overrides any conflicting instruction above)
+
+Follow this for every turn:
+1. **No tool needed** (greetings, small talk, questions about your role, or facts you know) → answer directly as JSON: `{"response": "..."}`. Do not plan or call tools.
+2. **Tool needed, no plan yet in the conversation** → output ONLY the plan as JSON: `{"plan": ["STEP 1: <desc incl. tool name + arguments>", "STEP 2: ..."]}`. Do NOT call any tool this turn.
+3. **A plan already exists** → do NOT regenerate it; execute the current step with the appropriate tool(s) and return its result.
+
+ABSOLUTE RULE: Never call a tool before a plan exists. If tools are needed and there is no plan, your only valid output is the plan JSON.
+"""
+
 
 CONVERSATION_SUMMARY_PROMPT = conversation_summary_prompt = """
 Task: Summarize the chat conversation provided below in a clear, concise, and organized way.

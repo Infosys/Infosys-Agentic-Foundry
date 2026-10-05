@@ -396,7 +396,7 @@ async def get_workflow_endpoint(
         raise HTTPException(status_code=500, detail=f"Error retrieving workflow: {str(e)}")
 
 # EXPORT:EXCLUDE:START
-@router.put("/update/{workflow_id}")
+@router.api_route("/update/{workflow_id}", methods=["PUT", "POST"])
 async def update_workflow_endpoint(
     request: Request,
     workflow_id: str,
@@ -494,7 +494,7 @@ async def update_workflow_endpoint(
         raise HTTPException(status_code=500, detail=f"Error updating workflow: {str(e)}")
 
 
-@router.delete("/delete")
+@router.api_route("/delete", methods=["DELETE", "POST"])
 async def delete_workflow_endpoint(
     request: Request,
     delete_request: DeleteWorkflowRequest,
@@ -617,7 +617,7 @@ class UpdateWorkflowSharingRequest(BaseModel):
     shared_with_departments: List[str] = None
 
 
-@router.put("/{workflow_id}/sharing")
+@router.api_route("/{workflow_id}/sharing", methods=["PUT", "POST"])
 async def update_workflow_sharing_endpoint(
     request: Request,
     workflow_id: str,

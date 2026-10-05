@@ -87,7 +87,7 @@ async def get_approval_by_agent_id_endpoint(request: Request, agent_id: str, fee
     return approval
 
 
-@router.put("/update/approval-response")
+@router.api_route("/update/approval-response", methods=["PUT", "POST"])
 async def update_approval_response_endpoint(
     request: Request,
     approval_request: ApprovalRequest,

@@ -18,6 +18,7 @@ from src.api.dependencies import ServiceProvider
 from src.auth.dependencies import get_current_user
 from src.auth.authorization_service import AuthorizationService
 from src.auth.models import User, UserRole
+from src.utils.llm_request_tracker import with_request_tracking
 from src.models.model_service import ModelService
 from telemetry_wrapper import logger,update_session_context
 
@@ -222,6 +223,7 @@ Generate only the description (no quotes):"""
 
 # ==================== Endpoints ====================
 
+@with_request_tracking("mcp_server_generation")
 @router.post("/generate-server-from-all", response_model=GenerateMCPServerResponse)
 async def process_conversion(
     request: Request,
@@ -236,10 +238,10 @@ async def process_conversion(
     
     # Department-based permission check
     user_department = user_data.department_name
-    if not await authorization_service.check_operation_permission(
-        user_data.email, user_data.role, "create", "mcp_servers", user_department
+    if not await authorization_service.check_convert_to_mcp_access(
+        user_data.role, user_department
     ):
-        raise HTTPException(status_code=403, detail="You don't have permission to create MCP servers.")
+        raise HTTPException(status_code=403, detail="You don't have permission to convert tools to MCP servers.")
     
     all_funcs: List[FunctionInfo] = []
     

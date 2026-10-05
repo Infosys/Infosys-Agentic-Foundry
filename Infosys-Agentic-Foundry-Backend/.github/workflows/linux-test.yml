@@ -1,0 +1,178 @@
+# =====================================================================
+# Build and Deploy to Self-Hosted Linux Server
+# =====================================================================
+# This pipeline automatically deploys your backend/frontend app
+# to a self-hosted Linux server whenever you push code.
+#
+# HOW IT WORKS:
+#   1. Pulls your latest code from GitHub
+#   2. Sets up Proxy & SSL (needed for corporate networks like Infosys)
+#   3. Copies code to the deployment folder on the server
+#   4. Installs Python packages inside a virtual environment
+#   5. Restarts the app service so new code goes live
+#
+# -----------------------------------------------------------------------
+# BEFORE YOU USE THIS TEMPLATE — SET THESE UP IN YOUR REPO:
+# -----------------------------------------------------------------------
+#
+# 1. Go to: Your Repo → Settings → Secrets and Variables → Actions
+#
+#    SECRETS (sensitive values — hidden from logs):
+#      - APP_ENV_FILE_TEST_VM  → Paste your entire .env file content here
+#                                (all your app config like DB_URL, API keys etc.)
+#
+#    VARIABLES (non-sensitive values — visible in logs):
+#      - DEPLOY_PATH     → Folder on server where app will be deployed
+#                          e.g.  /home/projadmin/CICD/MyApp
+#      - SERVICE_NAME    → The systemctl service that runs your app
+#                          e.g.  my-fastapi.service
+#      - SSL_CERT_PATH   → Path to SSL certificate on your server
+#                          e.g.  /home/projadmin/cerifi.crt
+#
+#    OPTIONAL VARIABLES (only needed if you are behind a corporate proxy):
+#      - HTTP_PROXY      → Your proxy URL
+#                          e.g.  http://proxy.ad.corporate.com:123
+#      - NO_PROXY        → Hosts that should bypass the proxy
+#                          e.g.  .corporate.com,localhost,123.0.0.1
+#
+# 2. Update the 'branches' and 'runs-on' sections below for your project.
+# =====================================================================
+
+name: Backend/Frontend Deploy
+
+on:
+  # Auto-trigger: runs when you push code to your branch
+  push:
+    branches:
+      - "your-branch"   # Change this to your branch name e.g. dev, test-env
+
+  # Manual trigger: run anytime from GitHub → Actions tab → Run workflow
+  workflow_dispatch:
+
+# -----------------------------------------------------------------------
+# Global Variables — values used across all steps
+# Reads from repository variables first, falls back to default values
+# -----------------------------------------------------------------------
+env:
+  DEPLOY_PATH:         ${{ vars.DEPLOY_PATH      || '/home/projadmin/CICD/ABC' }}
+  SERVICE_NAME:        ${{ vars.SERVICE_NAME      || 'CICD-fastapi.service' }}
+  SSL_CERT:            ${{ vars.SSL_CERT_PATH     || '/home/projadmin/cerifi.crt' }}
+  NODE_EXTRA_CA_CERTS: ${{ vars.SSL_CERT_PATH     || '/home/projadmin/cerifi.crt' }}  # For Node.js SSL
+
+jobs:
+  deploy:
+    name: Deploy to Linux Server
+    # Replace 'your-label-name' with your runner label
+    # To find your labels: GitHub → Settings → Actions → Runners
+    runs-on: [self-hosted, linux, x64, your-label-name]
+
+    steps:
+
+      # ---------------------------------------------------------------
+      # STEP 1: Checkout Code
+      # Downloads your repository code onto the runner machine
+      # 'ref: main' means it always deploys from the main branch
+      # even if the pipeline was triggered by another branch
+      # ---------------------------------------------------------------
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: main   # Change if you want to deploy from a different branch
+
+      # ---------------------------------------------------------------
+      # STEP 2: Setup Proxy and SSL
+      # Required for corporate networks (e.g. Infosys) to reach internet
+      # - http_proxy / https_proxy → routes traffic through corporate proxy
+      # - no_proxy                 → internal servers that skip the proxy
+      # - SSL_CERT_FILE            → custom SSL certificate for HTTPS calls
+      # If you are NOT behind a proxy, this step will do nothing
+      # ---------------------------------------------------------------
+      - name: Setup Proxy and SSL
+        run: |
+          export http_proxy=${{ vars.HTTP_PROXY }}
+          export https_proxy=${{ vars.HTTP_PROXY }}
+          export no_proxy=${{ vars.NO_PROXY  }}
+          export SSL_CERT_FILE=${{ env.SSL_CERT }}
+
+      # ---------------------------------------------------------------
+      # STEP 3: Copy Files to Server
+      # Copies all code from the GitHub runner workspace to your
+      # actual deployment folder on the server.
+      # Also writes your .env file from the GitHub secret so your
+      # app gets its configuration (DB URL, API keys, ports etc.)
+      #
+      # NOTE: APP_ENV_FILE_TEST_VM secret should contain your full
+      # .env file content. You can rename this secret to match
+      # your project e.g. APP_ENV_FILE_PROD, MY_APP_ENV etc.
+      # Just update the secret name below if you rename it.
+      # ---------------------------------------------------------------
+      - name: Copy files to server
+        env:
+          ENV_FILE_CONTENT: ${{ secrets.APP_ENV_FILE_TEST_VM }}  # Rename if needed
+        run: |
+          echo "Deploying to ${{ env.DEPLOY_PATH }}..."
+          mkdir -p ${{ env.DEPLOY_PATH }}          # Create folder if it doesn't exist
+          cp -rfv ./* ${{ env.DEPLOY_PATH }}        # Copy all code files
+          printf "%s" "$ENV_FILE_CONTENT" > ${{ env.DEPLOY_PATH }}/.env  # Write .env file
+
+      # ---------------------------------------------------------------
+      # STEP 4: Install Python Requirements
+      # Sets up a Python virtual environment (venv) and installs
+      # all packages listed in requirements.txt
+      #
+      # - venv is only created if it doesn't already exist (saves time)
+      # - uses 'uv' instead of plain pip (uv is much faster)
+      # - PIP_CERT tells pip to use your custom SSL cert
+      #   (needed in corporate networks with SSL inspection)
+      # ---------------------------------------------------------------
+      - name: Install Python Requirements
+        run: |
+          VENV_PATH="${{ env.DEPLOY_PATH }}/venv"
+
+          # Create virtual environment only if it doesn't already exist
+          if [ ! -d "$VENV_PATH" ]; then
+            echo "Creating virtual environment..."
+            python -m venv "$VENV_PATH"
+          fi
+
+          # Activate virtual environment
+          source "$VENV_PATH/bin/activate"
+
+          # Install uv (fast Python package installer)
+          pip install uv
+
+          # Point to custom SSL cert (needed in Infosys/corporate network)
+          export PIP_CERT="${{ env.SSL_CERT }}"
+
+          # Install packages from requirements.txt
+          REQ_FILE="${{ env.DEPLOY_PATH }}/requirements.txt"
+          if [ -f "$REQ_FILE" ]; then
+            uv pip install -r "$REQ_FILE"
+          else
+            echo "WARNING: requirements.txt not found at $REQ_FILE"
+            exit 1   # Stop pipeline if requirements file is missing
+          fi
+
+      # ---------------------------------------------------------------
+      # STEP 5: Restart Service
+      # Restarts your app's systemctl service so the new code goes live
+      # After restart, prints the current status so you can confirm
+      # the service is running correctly in the pipeline logs
+      # ---------------------------------------------------------------
+      - name: Restart service
+        run: |
+          echo "Restarting ${{ env.SERVICE_NAME }}..."
+          sudo systemctl restart ${{ env.SERVICE_NAME }}
+          sudo systemctl status  ${{ env.SERVICE_NAME }} --no-pager
+
+      # ---------------------------------------------------------------
+      # STEP 6: Debug on Failure (runs ONLY if any step above fails)
+      # Automatically prints the last 50 lines of your service logs
+      # so you can see exactly what went wrong — without having to
+      # manually SSH into the server to check logs
+      # ---------------------------------------------------------------
+      - name: Debug on Failure
+        if: failure()
+        run: |
+          echo "=== Something went wrong. Printing service logs... ==="
+          sudo journalctl -u ${{ env.SERVICE_NAME }} --no-pager --tail=50

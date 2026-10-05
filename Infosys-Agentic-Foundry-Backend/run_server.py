@@ -21,6 +21,8 @@ if __name__ == "__main__":
     parser.add_argument("--workers", type=int, help="Number of worker processes")
     parser.add_argument("--reload-excludes", nargs='*', default=[],
                         help="Paths (files or directories with glob patterns) to exclude from reload watching (e.g., --reload-excludes 'user_uploads/*' '.env')")
+    parser.add_argument("--ssl-keyfile", type=str, default=None, help="Path to SSL keyfile")
+    parser.add_argument("--ssl-certfile", type=str, default=None, help="Path to SSL certfile")
 
     args = parser.parse_args()
 
@@ -60,6 +62,9 @@ if __name__ == "__main__":
     except Exception as e:
         log.error(f"[Main] Error starting file server: {e}")
 
+    # Fix #23 — Graceful shutdown timeout: drain in-flight requests before exit
+    shutdown_timeout = int(os.getenv("SHUTDOWN_DRAIN_TIMEOUT", "15"))
+
     uvicorn.run(
         app,
         host=args.host,
@@ -67,6 +72,9 @@ if __name__ == "__main__":
         reload=args.reload,
         workers=args.workers,
         reload_dirs=["."] if args.reload else None, # Explicitly watch the current directory
-        reload_excludes=reload_excludes_list
+        reload_excludes=reload_excludes_list,
+        timeout_graceful_shutdown=shutdown_timeout,
+        ssl_keyfile=args.ssl_keyfile,
+        ssl_certfile=args.ssl_certfile,
     )
 

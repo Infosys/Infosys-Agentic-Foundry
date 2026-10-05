@@ -403,3 +403,207 @@ class AuthorizationService:
         except Exception as e:
             log.error(f"Export agents access check error for role '{role}': {e}")
             return False
+
+    async def check_export_tools_access(self, role: str, department_name: str = "General") -> bool:
+        """
+        Check if user has export tools access permission.
+        This permission controls the ability to export tools.
+        
+        Args:
+            role: Role name of the user
+            department_name: Department name (defaults to "General")
+            
+        Returns:
+            bool: True if user can export tools, False otherwise
+        """
+        try:
+            # SuperAdmin bypass - no permission checks needed
+            if role == 'SuperAdmin':
+                log.info(f"SuperAdmin bypass - granted export tools access without permission check")
+                return True
+            
+            # Get role permissions from role_access table for the specific department
+            role_permissions = await self.role_repo.get_role_permissions(department_name, role)
+            if not role_permissions:
+                log.warning(f"No permissions found for role '{role}' in department '{department_name}'")
+                return False
+            
+            # Get export_tools_access permission
+            export_tools_access = role_permissions.get('export_tools_access', False)
+            
+            log.info(f"Role '{role}' in department '{department_name}' export tools access: {export_tools_access}")
+            return export_tools_access
+            
+        except Exception as e:
+            log.error(f"Export tools access check error for role '{role}': {e}")
+            return False
+
+    async def check_export_servers_access(self, role: str, department_name: str = "General") -> bool:
+        """
+        Check if user has export servers access permission.
+        This permission controls the ability to export MCP servers/tools.
+        
+        Args:
+            role: Role name of the user
+            department_name: Department name (defaults to "General")
+            
+        Returns:
+            bool: True if user can export MCP servers, False otherwise
+        """
+        try:
+            # SuperAdmin bypass - no permission checks needed
+            if role == 'SuperAdmin':
+                log.info(f"SuperAdmin bypass - granted export servers access without permission check")
+                return True
+            
+            # Get role permissions from role_access table for the specific department
+            role_permissions = await self.role_repo.get_role_permissions(department_name, role)
+            if not role_permissions:
+                log.warning(f"No permissions found for role '{role}' in department '{department_name}'")
+                return False
+            
+            # Get export_servers_access permission
+            export_servers_access = role_permissions.get('export_servers_access', False)
+            
+            log.info(f"Role '{role}' in department '{department_name}' export servers access: {export_servers_access}")
+            return export_servers_access
+            
+        except Exception as e:
+            log.error(f"Export servers access check error for role '{role}': {e}")
+            return False
+
+    async def check_convert_to_mcp_access(self, role: str, department_name: str = "General") -> bool:
+        """
+        Check if user has convert to MCP access permission.
+        This permission controls the ability to convert tools into MCP servers.
+        
+        Args:
+            role: Role name of the user
+            department_name: Department name (defaults to "General")
+            
+        Returns:
+            bool: True if user can convert tools to MCP servers, False otherwise
+        """
+        try:
+            # SuperAdmin bypass - no permission checks needed
+            if role == 'SuperAdmin':
+                log.info(f"SuperAdmin bypass - granted convert to MCP access without permission check")
+                return True
+            
+            # Get role permissions from role_access table for the specific department
+            role_permissions = await self.role_repo.get_role_permissions(department_name, role)
+            if not role_permissions:
+                log.warning(f"No permissions found for role '{role}' in department '{department_name}'")
+                return False
+            
+            # Get convert_to_mcp_access permission
+            convert_to_mcp_access = role_permissions.get('convert_to_mcp_access', False)
+            
+            log.info(f"Role '{role}' in department '{department_name}' convert to MCP access: {convert_to_mcp_access}")
+            return convert_to_mcp_access
+            
+        except Exception as e:
+            log.error(f"Convert to MCP access check error for role '{role}': {e}")
+            return False
+
+    async def check_import_tools_access(self, role: str, department_name: str = "General") -> bool:
+        """
+        Check if user has import tools access permission.
+        This permission controls the ability to import tools.
+        
+        Args:
+            role: Role name of the user
+            department_name: Department name (defaults to "General")
+            
+        Returns:
+            bool: True if user can import tools, False otherwise
+        """
+        try:
+            # SuperAdmin bypass - no permission checks needed
+            if role == 'SuperAdmin':
+                log.info(f"SuperAdmin bypass - granted import tools access without permission check")
+                return True
+            
+            # Get role permissions from role_access table for the specific department
+            role_permissions = await self.role_repo.get_role_permissions(department_name, role)
+            if not role_permissions:
+                log.warning(f"No permissions found for role '{role}' in department '{department_name}'")
+                return False
+            
+            # Get import_tools_access permission
+            import_tools_access = role_permissions.get('import_tools_access', False)
+            
+            log.info(f"Role '{role}' in department '{department_name}' import tools access: {import_tools_access}")
+            return import_tools_access
+            
+        except Exception as e:
+            log.error(f"Import tools access check error for role '{role}': {e}")
+            return False
+
+    async def check_import_servers_access(self, role: str, department_name: str = "General") -> bool:
+        """
+        Check if user has import servers access permission.
+        This permission controls the ability to import MCP servers.
+        
+        Args:
+            role: Role name of the user
+            department_name: Department name (defaults to "General")
+            
+        Returns:
+            bool: True if user can import MCP servers, False otherwise
+        """
+        try:
+            # SuperAdmin bypass - no permission checks needed
+            if role == 'SuperAdmin':
+                log.info(f"SuperAdmin bypass - granted import servers access without permission check")
+                return True
+            
+            # Get role permissions from role_access table for the specific department
+            role_permissions = await self.role_repo.get_role_permissions(department_name, role)
+            if not role_permissions:
+                log.warning(f"No permissions found for role '{role}' in department '{department_name}'")
+                return False
+            
+            # Get import_servers_access permission
+            import_servers_access = role_permissions.get('import_servers_access', False)
+            
+            log.info(f"Role '{role}' in department '{department_name}' import servers access: {import_servers_access}")
+            return import_servers_access
+            
+        except Exception as e:
+            log.error(f"Import servers access check error for role '{role}': {e}")
+            return False
+
+    async def check_import_agents_access(self, role: str, department_name: str = "General") -> bool:
+        """
+        Check if user has import agents access permission.
+        This permission controls the ability to import agents.
+        
+        Args:
+            role: Role name of the user
+            department_name: Department name (defaults to "General")
+            
+        Returns:
+            bool: True if user can import agents, False otherwise
+        """
+        try:
+            # SuperAdmin bypass - no permission checks needed
+            if role == 'SuperAdmin':
+                log.info(f"SuperAdmin bypass - granted import agents access without permission check")
+                return True
+            
+            # Get role permissions from role_access table for the specific department
+            role_permissions = await self.role_repo.get_role_permissions(department_name, role)
+            if not role_permissions:
+                log.warning(f"No permissions found for role '{role}' in department '{department_name}'")
+                return False
+            
+            # Get import_agents_access permission
+            import_agents_access = role_permissions.get('import_agents_access', False)
+            
+            log.info(f"Role '{role}' in department '{department_name}' import agents access: {import_agents_access}")
+            return import_agents_access
+            
+        except Exception as e:
+            log.error(f"Import agents access check error for role '{role}': {e}")
+            return False

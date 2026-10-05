@@ -10,3 +10,4 @@ from src.schemas.tag_schemas import *
 from src.schemas.tool_schemas import *
 from src.schemas.user_agent_access_schemas import *
 from src.schemas.output_schemas import *
+from src.schemas.scheduler_schemas import *
