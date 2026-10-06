@@ -5,6 +5,7 @@ import { useMessage } from "../../Hooks/MessageContext";
 import useFetch from "../../Hooks/useAxios.js";
 import NewCommonDropdown from "./NewCommonDropdown";
 import { APIs } from "../../constant";
+import { encodePassword } from "../../utils/encodeUtils";
 import Loader from "./Loader.jsx";
 import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
 
@@ -359,9 +360,10 @@ const ExecutorPanel = ({
       } else {
         const isTool = mode === "tool";
         const url = isTool ? APIs.EXECUTE_CODE : APIs.INLINE_MCP_RUN;
+        const encodedCode = encodePassword(code);
         const payload = isTool
-          ? { code, inputs: buildArguments(), handle_default: true }
-          : { code, tool_name: selectedTool, arguments: buildArguments(), timeout_sec: 5, debug: false, handle_default: true };
+          ? { code: encodedCode, inputs: buildArguments(), handle_default: true }
+          : { code: encodedCode, tool_name: selectedTool, arguments: buildArguments(), timeout_sec: 5, debug: false, handle_default: true };
 
         const response = await postData(url, payload);
         processResponse(response);
@@ -398,7 +400,7 @@ const ExecutorPanel = ({
         } else {
           const isTool = mode === "tool";
           const url = isTool ? APIs.EXECUTE_CODE : APIs.INLINE_MCP_RUN;
-          const payload = { code, handle_default: false };
+          const payload = { code: encodePassword(code), handle_default: false };
           const response = await postData(url, payload);
           processResponse(response);
         }

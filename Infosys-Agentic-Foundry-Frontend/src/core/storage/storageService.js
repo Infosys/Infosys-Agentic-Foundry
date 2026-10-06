@@ -16,8 +16,9 @@ import Cookies from "js-cookie";
 
 const COOKIE_OPTIONS = {
   path: "/",
-  expires: 0.25, // 6 hours (matches session timeout)
-  sameSite: "Lax",
+  expires: 14, // 14 days (matches session timeout)
+  sameSite: "Strict",
+  secure: typeof window !== "undefined" && window.location.protocol === "https:",
 };
 
 class StorageService {

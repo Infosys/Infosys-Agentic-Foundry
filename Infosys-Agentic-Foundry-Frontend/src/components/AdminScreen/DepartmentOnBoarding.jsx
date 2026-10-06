@@ -49,7 +49,7 @@ function DepartmentOnBoarding(props) {
     if (!deptName) return;
     setRolesLoading(true);
     try {
-      const resp = await fetchData(`${APIs.GET_DEPARTMENT_ROLES}${encodeURIComponent(deptName)}/roles`);
+      const resp = await fetchData(`${APIs.GET_DEPARTMENT_ROLES}/${encodeURIComponent(deptName)}/roles`);
       let rolesData = [];
       if (Array.isArray(resp)) rolesData = resp;
       else if (resp && Array.isArray(resp.roles)) rolesData = resp.roles;
@@ -116,7 +116,7 @@ function DepartmentOnBoarding(props) {
     if (!isAddDepartment && formData.name) {
       setRolesLoading(true);
       try {
-        const response = await postData(`${APIs.ADD_DEPARTMENT_ROLE}${encodeURIComponent(formData.name)}/roles/add`, {
+        const response = await postData(`${APIs.ADD_DEPARTMENT_ROLE}/${encodeURIComponent(formData.name)}/roles/add`, {
           role_name: newRoleName.trim()
         });
         if (response && response.success === false) {
@@ -147,7 +147,7 @@ function DepartmentOnBoarding(props) {
     if (!isAddDepartment && formData.name) {
       setRolesLoading(true);
       try {
-        const response = await deleteData(`${APIs.DELETE_DEPARTMENT_ROLE}${encodeURIComponent(formData.name)}/roles/${encodeURIComponent(roleName)}`);
+        const response = await deleteData(`${APIs.DELETE_DEPARTMENT_ROLE}/${encodeURIComponent(formData.name)}/roles/${encodeURIComponent(roleName)}/delete`);
         if (response && response.success === false) {
           addMessage(response.message || "Failed to remove role", "error");
           return;
@@ -199,7 +199,7 @@ function DepartmentOnBoarding(props) {
           for (const role of roles) {
             const roleName = role.role_name || role.name;
             try {
-              await postData(`${APIs.ADD_DEPARTMENT_ROLE}${encodeURIComponent(formData.name.trim())}/roles/add`, {
+              await postData(`${APIs.ADD_DEPARTMENT_ROLE}/${encodeURIComponent(formData.name.trim())}/roles/add`, {
                 role_name: roleName
               });
             } catch (roleErr) {
@@ -210,7 +210,7 @@ function DepartmentOnBoarding(props) {
       } else {
         // Update existing department - just update the description
         // Note: We can't change department name, roles are managed separately
-        const updateUrl = `${APIs.DELETE_DEPARTMENT}${encodeURIComponent(editDepartment.department_name || editDepartment.name)}/update`;
+        const updateUrl = `${APIs.DELETE_DEPARTMENT}/${encodeURIComponent(editDepartment.department_name || editDepartment.name)}/update`;
         result = await putData(updateUrl, payload);
       }
 

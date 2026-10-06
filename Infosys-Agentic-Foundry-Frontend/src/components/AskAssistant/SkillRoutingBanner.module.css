@@ -1,0 +1,140 @@
+/* SkillRoutingBanner - Displays skill routing info for skill_agent responses */
+
+.banner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--app-primary-color);
+  border-radius: 8px;
+  font-size: var(--font-size-xs, 12px);
+  color: var(--text-secondary);
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.bannerContent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.skillInfo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.icon {
+  color: var(--app-primary-color);
+  font-size: 12px;
+}
+
+.smallIcon {
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+.label {
+  color: var(--muted);
+  font-weight: var(--font-weight-normal, 400);
+}
+
+.skillName {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium, 500);
+  text-transform: capitalize;
+}
+
+.routingDetails {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.routingMethod {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.confidence {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: var(--font-weight-medium, 500);
+}
+
+/* Confidence level colors */
+.highConfidence {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+
+.mediumConfidence {
+  background: rgba(234, 179, 8, 0.15);
+  color: #eab308;
+}
+
+.lowConfidence {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.description {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+  margin-top: 2px;
+}
+
+/* Dark mode adjustments */
+:global(.dark) .highConfidence {
+  background: rgba(34, 197, 94, 0.2);
+}
+
+:global(.dark) .mediumConfidence {
+  background: rgba(234, 179, 8, 0.2);
+}
+
+:global(.dark) .lowConfidence {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .bannerContent {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .routingDetails {
+    gap: 8px;
+  }
+}

@@ -31,12 +31,13 @@ const ToolCallFinalResponse = (props) => {
     setIsRequestingChanges(false);
   }, [props?.messageData?.toolcallData]);
 
-  // Extract tool call data safely
+  // Extract tool call data safely — fall back to interrupt_metadata for async responses
+  const interruptMeta = props.interruptMetadata;
   const toolCallFunction = props?.messageData?.toolcallData?.additional_details?.[0]?.additional_kwargs?.tool_calls?.[0]?.function;
-  const toolName = toolCallFunction?.name || "";
-
-  // Get raw arguments from toolCallFunction.arguments (this is the correct source)
-  const toolArgumentsRaw = toolCallFunction?.arguments || "{}";
+  const toolName = toolCallFunction?.name || interruptMeta?.tool_name || "";
+  const toolArgumentsRaw =
+    toolCallFunction?.arguments ||
+    (interruptMeta?.tool_args ? JSON.stringify(interruptMeta.tool_args) : "{}");
   const hasToolCallData = Boolean(toolName);
 
   // Parse tool arguments - handle string, object, or nested string scenarios
@@ -83,9 +84,29 @@ const ToolCallFinalResponse = (props) => {
 
   const toolArguments = getToolArguments();
 
+  const allowedActions = interruptMeta?.actions || ["approve", "modify", "reject"];
+  const canModify = allowedActions.includes("modify");
+  const canApprove = allowedActions.includes("approve");
+  const canReject = allowedActions.includes("reject");
+  const reason = interruptMeta?.reason;
+  const interruptType = interruptMeta?.interrupt_type;
+
   const isAgentCall = props.agentType === PLANNER_META_AGENT || props.agentType === META_AGENT;
-  const entityLabel = isAgentCall ? "Agent" : "Tool";
-  const headerTitle = isAgentCall ? "Agent Call Request – Awaiting Approval" : "Tool Call Request – Awaiting Approval";
+
+  // Dynamic header based on interrupt_type
+  const getHeaderTitle = () => {
+    if (isAgentCall) return "Agent Call Request – Awaiting Approval";
+    switch (interruptType) {
+      case "hook_approval":
+        return "Hook Approval Required";
+      case "skill_interrupt":
+        return "Skill Routing Verification";
+      case "tool_interrupt":
+      default:
+        return "Tool Verification Required";
+    }
+  };
+  const headerTitle = getHeaderTitle();
 
   // Handle Request Changes click - enable editing mode
   const handleRequestChanges = () => {
@@ -164,9 +185,9 @@ const ToolCallFinalResponse = (props) => {
                           <textarea
                             className={toolCallCSS.toolcallArgInput}
                             value={value}
-                            disabled={!isRequestingChanges}
+                            disabled={!isRequestingChanges || !canModify}
                             rows={2}
-                            onChange={isRequestingChanges ? (e) => props.handleEditChange(key, e.target.value, currentVal) : undefined}
+                            onChange={isRequestingChanges && canModify ? (e) => props.handleEditChange(key, e.target.value, currentVal) : undefined}
                           />
                         </div>
                       );
@@ -174,22 +195,39 @@ const ToolCallFinalResponse = (props) => {
                   </div>
                 );
               })()}
+
+              {/* Reason (from hook or approval_rules) */}
+              {reason && (
+                <div className={toolCallCSS.toolcallRow} style={{ marginTop: 6 }}>
+                  <span className={toolCallCSS.toolcallLabel}>Reason:</span>
+                  <span className={toolCallCSS.toolcallValue}>{reason}</span>
+                </div>
+              )}
             </div>
 
-            {/* Action buttons - only show when execution access is allowed */}
+            {/* Action buttons — driven by interrupt_metadata.actions array */}
             {props?.canExecute !== false && props?.isEditable && (!props?.generating || !props?.fetching) && props?.sendIconShow && (
               <div className={toolCallCSS.toolcallActions}>
                 {!isRequestingChanges ? (
-                  // Initial state: Show Approve and Request Changes buttons
                   <>
-                    <button className={toolCallCSS.toolcallUpdateBtn} onClick={() => props?.submitFeedbackYes?.(props?.messageData)} title="Approve">
-                      <SVGIcons icon="thumbs-up" width={15} height={15} stroke="white" />
-                      <span className={toolCallCSS.toolcallBtnLabel}>Approve</span>
-                    </button>
-                    <button className={toolCallCSS.toolcallCancelBtn} onClick={handleRequestChanges} title="Request Changes">
-                      <SVGIcons icon="thumbs-down" width={15} height={15} stroke="#1A1A1A" />
-                      <span className={toolCallCSS.toolcallBtnLabel}>Request Changes</span>
-                    </button>
+                    {canApprove && (
+                      <button className={toolCallCSS.toolcallUpdateBtn} onClick={() => props?.submitFeedbackYes?.(props?.messageData)} title="Approve">
+                        <SVGIcons icon="thumbs-up" width={15} height={15} stroke="white" />
+                        <span className={toolCallCSS.toolcallBtnLabel}>Approve</span>
+                      </button>
+                    )}
+                    {canReject && (
+                      <button className={toolCallCSS.toolcallRejectBtn} onClick={() => props?.submitFeedbackNo?.(props?.messageData)} title="Reject">
+                        <SVGIcons icon="close" width={15} height={15} />
+                        <span className={toolCallCSS.toolcallBtnLabel}>Reject</span>
+                      </button>
+                    )}
+                    {canModify && (
+                      <button className={toolCallCSS.toolcallCancelBtn} onClick={handleRequestChanges} title="Request Changes">
+                        <SVGIcons icon="thumbs-down" width={15} height={15} stroke="#1A1A1A" />
+                        <span className={toolCallCSS.toolcallBtnLabel}>Request Changes</span>
+                      </button>
+                    )}
                   </>
                 ) : (
                   // Editing state: Show Submit and Cancel buttons

@@ -156,6 +156,17 @@
   flex: 0 0 auto;
 }
 
+.customActionsSlot {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+}
+
+.customActionsSlot:empty {
+  display: none;
+}
+
 .setting {
   position: relative;
   display: flex;

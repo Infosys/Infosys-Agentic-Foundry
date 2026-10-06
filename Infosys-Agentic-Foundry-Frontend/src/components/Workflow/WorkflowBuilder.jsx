@@ -17,7 +17,7 @@ import Button from "../../iafComponents/GlobalComponents/Buttons/Button";
 import FullModal from "../../iafComponents/GlobalComponents/FullModal";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faPlus, faMinus, faExpand, faTrash, faTimes, faRobot, faCodeBranch, faFlag, faComments, faSignInAlt, faCog, faHand, faCubes } from "@fortawesome/free-solid-svg-icons";
-import { useWorkflowService } from "../../services/workflowService";
+import { useWorkflowService, parseWorkflowDeleteResponse, resolveWorkflowId } from "../../services/workflowService";
 import { useMessage } from "../../Hooks/MessageContext";
 import { useErrorHandler } from "../../Hooks/useErrorHandler";
 import styles from "../../css_modules/Workflow.module.css";
@@ -192,6 +192,7 @@ const WorkflowBuilder = ({ workflow, onBack, onSave, readOnly = false }) => {
   // Available agents
   const [availableAgents, setAvailableAgents] = useState([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Permissions
   const { hasPermission } = usePermissions();
@@ -201,7 +202,7 @@ const WorkflowBuilder = ({ workflow, onBack, onSave, readOnly = false }) => {
   const canvasRef = useRef(null);
   const svgRef = useRef(null);
 
-  const { createWorkflow, updateWorkflow, deleteWorkflow, getAvailableAgents } = useWorkflowService();
+  const { createWorkflow, updateWorkflow, deleteWorkflowsBulk, getAvailableAgents } = useWorkflowService();
   const { addMessage } = useMessage();
   const { handleError } = useErrorHandler();
 
@@ -809,8 +810,8 @@ const WorkflowBuilder = ({ workflow, onBack, onSave, readOnly = false }) => {
     };
 
     try {
-      if (workflow?.workflow_id) {
-        await updateWorkflow(workflow.workflow_id, workflowData);
+      if (resolveWorkflowId(workflow)) {
+        await updateWorkflow(resolveWorkflowId(workflow), workflowData);
         addMessage("Workflow updated successfully", "success");
       } else {
         await createWorkflow(workflowData);
@@ -871,56 +872,52 @@ const WorkflowBuilder = ({ workflow, onBack, onSave, readOnly = false }) => {
 
   // ============ Delete Workflow from Modal ============
   const handleDeleteWorkflowFromModal = async () => {
-    const workflowId = workflow?.workflow_id;
-    if (!workflowId) return;
-
-    try {
-      const response = await deleteWorkflow(workflowId);
-
-      if (response) {
-        const statusMsg = response.status_message || response.message || "Workflow deleted successfully";
-        addMessage(statusMsg, "success");
-      }
-
+    const workflowId = resolveWorkflowId(workflow);
+    if (!workflowId) {
+      addMessage("Workflow ID not found. Cannot delete.", "error");
       setShowDeleteConfirm(false);
-      if (onSave) onSave();
-      onBack();
+      return;
+    }
+
+    setDeleteLoading(true);
+    try {
+      const response = await deleteWorkflowsBulk({ workflow_ids: [workflowId] });
+      const { ok, message } = parseWorkflowDeleteResponse(response);
+
+      addMessage(message, ok ? "success" : "error");
+      setShowDeleteConfirm(false);
+
+      if (ok) {
+        if (onSave) onSave();
+        onBack();
+      }
     } catch (e) {
       console.error("Delete workflow error:", e);
-      addMessage("Failed to delete workflow", "error");
+      addMessage(e?.response?.data?.detail || e?.message || "Failed to delete workflow", "error");
       setShowDeleteConfirm(false);
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
-  /** Renders the footer buttons */
   const renderFooter = () => (
     <>
-      {readOnly ? (
-        <Button type="secondary" onClick={onBack}>
-          Close
+      <Button type="secondary" onClick={onBack}>
+        {readOnly ? "Close" : "Cancel"}
+      </Button>
+      {workflow && canDeleteWorkflows && (
+        <Button type="primary" onClick={() => setShowDeleteConfirm(true)} disabled={deleteLoading}>
+          Delete
         </Button>
-      ) : (
-        <>
-          <Button type="secondary" onClick={onBack}>
-            Cancel
-          </Button>
-          {/* Delete Button - shown for all roles with delete permission in edit mode */}
-          {workflow && canDeleteWorkflows && (
-            <Button
-              type="primary"
-              onClick={() => setShowDeleteConfirm(true)}
-            >
-              Delete
-            </Button>
-          )}
-          <Button
-            type="primary"
-            onClick={() => setShowSaveModal(true)}
-            disabled={!canOpenSaveModal}
-            title={!canOpenSaveModal ? "Add at least one node to the canvas" : "Save Workflow"}>
-            Save
-          </Button>
-        </>
+      )}
+      {!readOnly && (
+        <Button
+          type="primary"
+          onClick={() => setShowSaveModal(true)}
+          disabled={!canOpenSaveModal}
+          title={!canOpenSaveModal ? "Add at least one node to the canvas" : "Save Workflow"}>
+          Save
+        </Button>
       )}
     </>
   );
@@ -931,7 +928,7 @@ const WorkflowBuilder = ({ workflow, onBack, onSave, readOnly = false }) => {
         isOpen={true}
         onClose={onBack}
         title={workflow ? "Edit Workflow" : "New Workflow"}
-        footer={readOnly ? undefined : renderFooter()}
+        footer={renderFooter()}
         closeOnOverlayClick={false}
         fullHeight={true}
         contentClassName={styles.workflowModalContent}>
@@ -1540,6 +1537,8 @@ const WorkflowBuilder = ({ workflow, onBack, onSave, readOnly = false }) => {
           message={`Are you sure you want to delete "${workflowName || "this workflow"}"? This action cannot be undone.`}
           onConfirm={handleDeleteWorkflowFromModal}
           setShowConfirmation={setShowDeleteConfirm}
+          loading={deleteLoading}
+          confirmLabel="Delete"
         />
       )}
     </>

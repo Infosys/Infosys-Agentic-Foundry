@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import Cookies from "js-cookie";
-import axios from "axios";
 import { getDepartmentFromToken, getRoleFromToken } from "../../utils/jwtUtils";
 
 import styles from "./AgentAssignment.module.css";
 import { useMessage } from "../../Hooks/MessageContext";
-import useFetch from "../../Hooks/useAxios.js";
-import { APIs, BASE_URL } from "../../constant";
+import useFetch, { axiosInstance } from "../../Hooks/useAxios.js";
+import { APIs } from "../../constant";
 import { extractErrorMessage } from "../../utils/errorUtils";
 import Loader from "../commonComponents/Loader";
 import ConfirmationModal from "../commonComponents/ToastMessages/ConfirmationPopup";
@@ -76,18 +74,32 @@ const RolePermissionsSection = ({ selectedRole, userDepartment }) => {
       }
     });
 
-    // Inject export_agents_access directly into the Agents category
-    if (typeof perms.export_agents_access === "boolean") {
-      if (!dynamicPermissions["Agents"]) {
-        dynamicPermissions["Agents"] = {};
+    // Permissions that belong to specific entity categories (not standalone)
+    const entityCategoryPermissions = {
+      export_agents_access: "Agents",
+      import_agents_access: "Agents",
+      export_tools_access: "Tools",
+      import_tools_access: "Tools",
+      export_servers_access: "MCP Servers",
+      import_servers_access: "MCP Servers",
+      convert_to_mcp_access: "MCP Servers",
+    };
+
+    // Inject entity-specific permissions into their categories
+    Object.entries(entityCategoryPermissions).forEach(([permKey, category]) => {
+      if (typeof perms[permKey] === "boolean") {
+        if (!dynamicPermissions[category]) {
+          dynamicPermissions[category] = {};
+        }
+        dynamicPermissions[category][permKey] = Boolean(perms[permKey]);
       }
-      dynamicPermissions["Agents"]["export_agents_access"] = Boolean(perms.export_agents_access);
-    }
+    });
 
     // Build other categories from standalone permission flags
-    // Exclude export_agents_access since it's handled above
+    // Exclude entity-specific permissions since they're handled above
+    const entityPermKeys = Object.keys(entityCategoryPermissions);
     const standalonePermissions = Object.keys(perms).filter(
-      (key) => !accessCategories.includes(key) && key !== "export_agents_access" && typeof perms[key] === "boolean"
+      (key) => !accessCategories.includes(key) && !entityPermKeys.includes(key) && typeof perms[key] === "boolean"
     );
 
     // Group standalone permissions by category
@@ -126,7 +138,9 @@ const RolePermissionsSection = ({ selectedRole, userDepartment }) => {
     // Ensure key permission categories always exist with expected permissions
     // These are core permissions that should always be visible in the UI
     const ensuredPermissions = {
-      "MCP Servers": ["read", "create", "update", "delete"],
+      "Tools": ["read", "create", "update", "delete", "execute_access", "export_tools_access", "import_tools_access"],
+      "Agents": ["read", "create", "update", "delete", "execute_access", "export_agents_access", "import_agents_access"],
+      "MCP Servers": ["read", "create", "update", "delete", "execute_access", "export_servers_access", "import_servers_access", "convert_to_mcp_access"],
       "Workflows": ["read", "create", "update", "delete"],
       "Other Features": ["vault_access", "data_connector_access", "evaluation_access", "knowledgebase_access"],
       "Chat": ["execution_steps_access", "tool_verifier_flag_access", "plan_verifier_flag_access", "online_evaluation_flag_access", "validator_access", "file_context_access", "canvas_view_access", "context_access"],
@@ -186,18 +200,11 @@ const RolePermissionsSection = ({ selectedRole, userDepartment }) => {
     setLoading(true);
 
     try {
-      // Use POST request with request body as per API spec
-      const url = `${BASE_URL}${APIs.GET_ROLE_PERMISSIONS}`;
-      const response = await axios.post(
-        url,
+      const response = await axiosInstance.post(
+        APIs.GET_ROLE_PERMISSIONS,
         {
           role_name: roleName,
           department_name: userDepartment || "",
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${Cookies.get("jwt-token")}`,
-          },
         }
       );
       const data = response.data;
@@ -326,6 +333,19 @@ const RolePermissionsSection = ({ selectedRole, userDepartment }) => {
           };
         }
 
+        // When create is disabled, also disable import and convert_to_mcp permissions
+        if (permission === "create" && !newValue) {
+          const dependentPerms = ["import_tools_access", "import_agents_access", "import_servers_access", "convert_to_mcp_access"];
+          dependentPerms.forEach((depPerm) => {
+            if (depPerm in (prev[category] || {})) {
+              updates[category] = {
+                ...updates[category],
+                [depPerm]: false,
+              };
+            }
+          });
+        }
+
         // If unchecking Agents.execute_access, also reset Chat permissions
         if (category === "Agents" && permission === "execute_access" && !newValue && prev["Chat"]) {
           updates["Chat"] = Object.keys(prev["Chat"]).reduce((acc, key) => {
@@ -446,6 +466,13 @@ const RolePermissionsSection = ({ selectedRole, userDepartment }) => {
       update: "Update",
       delete: "Delete",
       execute_access: "Execute Access",
+      export_tools_access: "Export Tools",
+      import_tools_access: "Import Tools",
+      export_agents_access: "Export Agents",
+      import_agents_access: "Import Agents",
+      export_servers_access: "Export MCP Servers",
+      import_servers_access: "Import MCP Servers",
+      convert_to_mcp_access: "Convert to MCP",
       execution_steps_access: "Execution Steps",
       tool_verifier_flag_access: "Tool Verifier Flag",
       plan_verifier_flag_access: "Plan Verifier Flag",
@@ -462,7 +489,14 @@ const RolePermissionsSection = ({ selectedRole, userDepartment }) => {
     const isChecked = permissions[category][permission];
     // Disable non-read checkboxes if read is not checked
     const hasRead = Object.keys(permissions[category] || {}).includes("read");
-    const shouldDisable = hasRead && permission !== "read" && !permissions[category]["read"];
+    let shouldDisable = hasRead && permission !== "read" && !permissions[category]["read"];
+
+    // Import and convert permissions require 'create' to be enabled
+    const createDependentPerms = ["import_tools_access", "import_agents_access", "import_servers_access", "convert_to_mcp_access"];
+    if (!shouldDisable && createDependentPerms.includes(permission) && !permissions[category]["create"]) {
+      shouldDisable = true;
+    }
+
     return (
       <div
         key={permission}
@@ -657,13 +691,11 @@ const RoleAgentAssignment = ({ externalSearchTerm = "", onPlusClickRef, onClearS
     try {
       setLoading(true);
       let rolesArray = [];
-      const token = Cookies.get("jwt-token");
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
       if (effectiveDepartment) {
         try {
-          const url = `${BASE_URL}${APIs.GET_DEPARTMENT_ROLES}${encodeURIComponent(effectiveDepartment)}/roles`;
-          const response = await axios.get(url, { headers });
+          const url = `${APIs.GET_DEPARTMENT_ROLES}/${encodeURIComponent(effectiveDepartment)}/roles`;
+          const response = await axiosInstance.get(url);
           const deptRolesResponse = response.data;
           if (Array.isArray(deptRolesResponse)) {
             rolesArray = deptRolesResponse;
@@ -674,8 +706,7 @@ const RoleAgentAssignment = ({ externalSearchTerm = "", onPlusClickRef, onClearS
           }
         } catch (deptError) {
           // Fallback to all roles if department roles fail
-          const url = `${BASE_URL}${APIs.GET_ROLES}`;
-          const response = await axios.get(url, { headers });
+          const response = await axiosInstance.get(APIs.GET_ROLES);
           const data = response.data;
           if (Array.isArray(data)) {
             rolesArray = data;
@@ -688,8 +719,7 @@ const RoleAgentAssignment = ({ externalSearchTerm = "", onPlusClickRef, onClearS
           }
         }
       } else {
-        const url = `${BASE_URL}${APIs.GET_ROLES}`;
-        const response = await axios.get(url, { headers });
+        const response = await axiosInstance.get(APIs.GET_ROLES);
         const data = response.data;
         if (Array.isArray(data)) {
           rolesArray = data;
@@ -806,7 +836,7 @@ const RoleAgentAssignment = ({ externalSearchTerm = "", onPlusClickRef, onClearS
 
       // Use department-specific endpoint for Admin users with department
       const apiUrl = effectiveDepartment
-        ? `${APIs.ADD_DEPARTMENT_ROLE}${encodeURIComponent(effectiveDepartment)}/roles/add`
+        ? `${APIs.ADD_DEPARTMENT_ROLE}/${encodeURIComponent(effectiveDepartment)}/roles/add`
         : APIs.ADD_ROLE;
 
       const response = await postData(apiUrl, payload);
@@ -855,7 +885,7 @@ const RoleAgentAssignment = ({ externalSearchTerm = "", onPlusClickRef, onClearS
     setLoading(true);
     try {
       // Use DELETE request to /departments/{department_name}/roles/{role_name} endpoint
-      const deleteUrl = `${APIs.DELETE_ROLE}/${encodeURIComponent(effectiveDepartment)}/roles/${encodeURIComponent(roleName)}`;
+      const deleteUrl = `${APIs.DELETE_ROLE}/${encodeURIComponent(effectiveDepartment)}/roles/${encodeURIComponent(roleName)}/delete`;
       const result = await deleteData(deleteUrl);
 
       if (result && result.success !== false) {

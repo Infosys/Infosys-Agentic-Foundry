@@ -1,0 +1,80 @@
+﻿.mtm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mtm-card {
+  background: var(--card-bg, #1e1e2e);
+  border: 1px solid var(--border, #2e2e3e);
+  border-radius: var(--radius-lg, 12px);
+  padding: 28px 32px;
+  width: 480px;
+  max-width: 90vw;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: var(--shadow-lg, 0 8px 32px rgba(0, 0, 0, 0.4));
+  font-family: var(--font-primary, "Inter", sans-serif);
+}
+
+.mtm-title {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: var(--font-size-lg, 18px);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--header-color, #f0f0f0);
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+
+.mtm-desc {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: var(--font-weight-normal, 400);
+  color: var(--text-secondary, #9ca3af);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.mtm-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--input-bg, #141420);
+  border: 1px solid var(--border, #2e2e3e);
+  border-radius: var(--radius, 8px);
+  color: var(--text-primary, #f0f0f0);
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: var(--font-weight-normal, 400);
+  padding: 12px 14px;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.mtm-textarea:focus {
+  border-color: var(--app-primary-color, #37acea);
+  box-shadow: var(--focus-ring, 0 0 0 3px rgba(55, 172, 234, 0.15));
+}
+
+.mtm-textarea::placeholder {
+  color: var(--muted, #9ca3af);
+  font-weight: var(--font-weight-normal, 400);
+}
+
+.mtm-error {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: var(--font-size-xs, 12px);
+  font-weight: var(--font-weight-normal, 400);
+  color: var(--danger, #f87171);
+}
+
+.mtm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}

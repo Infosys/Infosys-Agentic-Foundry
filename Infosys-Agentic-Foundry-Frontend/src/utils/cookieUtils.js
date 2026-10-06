@@ -34,6 +34,14 @@ const getPortPrefix = () => {
   }
 };
 
+/** Baseline security attributes applied to every cookie set via js-cookie.
+ *  HttpOnly cannot be set from JavaScript — it must be configured server-side.
+ */
+const getSecureDefaults = () => ({
+  sameSite: "Strict",
+  secure: typeof window !== "undefined" && window.location.protocol === "https:",
+});
+
 /** Prefix a cookie name if it's an auth cookie */
 const toScopedName = (name) => {
   if (SCOPED_COOKIE_NAMES.has(name)) {
@@ -68,9 +76,9 @@ export const patchCookiesForPortScoping = () => {
     return originalGet(toScopedName(name), ...rest);
   };
 
-  // Patch set
+  // Patch set — merge security defaults so every cookie gets Secure + SameSite
   Cookies.set = function (name, value, options) {
-    return originalSet(toScopedName(name), value, options);
+    return originalSet(toScopedName(name), value, { ...getSecureDefaults(), ...options });
   };
 
   // Patch remove

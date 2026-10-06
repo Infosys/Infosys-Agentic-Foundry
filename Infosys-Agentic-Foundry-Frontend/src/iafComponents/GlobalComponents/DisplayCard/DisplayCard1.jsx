@@ -2,6 +2,7 @@ import Card from "../Card/Card.jsx";
 import SVGIcons from "../../../Icons/SVGIcons.js";
 import { agentTypesDropdown } from "../../../constant.js";
 import { formatDateTimeWithTimezone } from "../../../utils/timeFormatter";
+import Loader from "../../../components/commonComponents/Loader.jsx";
 import "./DisplayCard1.css";
 
 // Helper function to get display label for agent type using existing dropdown config
@@ -168,7 +169,7 @@ const DisplayCard1 = ({
 
   // Show loading state
   if (loading) {
-    return <div className="display-card-loading">Loading...</div>;
+    return <Loader />;
   }
 
   // Show empty state only if no data AND no create card to show

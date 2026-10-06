@@ -39,22 +39,30 @@
   padding: 10px 16px;
   font-size: 14px;
   font-weight: 500;
-  color: #fff;
-  background: var(--app-primary-color, #3b82f6);
-  border: none;
+  color: var(--primary-button-color, #fff);
+  background: var(--gradient-primary, linear-gradient(135deg, #025d8a, #041c29));
+  border: 1px solid var(--accent, #37acea);
   border-radius: var(--radius-lg, 8px);
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
   white-space: nowrap;
 }
 
 .addButton:hover:not(:disabled) {
-  background: var(--app-primary-color-hover, #2563eb);
+  box-shadow: var(--shadow-glow, 0 4px 16px rgba(55, 172, 234, 0.35));
+  transform: translateY(-1px);
 }
 
 .addButton:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+:root[data-theme="dark"] .addButton {
+  background: linear-gradient(135deg, var(--accent), var(--app-primary-color));
+  border-color: var(--accent);
 }
 
 /* Chip Styles */

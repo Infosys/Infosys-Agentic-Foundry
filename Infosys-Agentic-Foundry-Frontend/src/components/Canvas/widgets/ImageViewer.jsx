@@ -3,7 +3,7 @@ import styles from "./ImageViewer.module.css";
 import SVGIcons from "../../../Icons/SVGIcons";
 
 import { BASE_URL, APIs } from "../../../constant";
-import Cookies from "js-cookie";
+import { axiosInstance } from "../../../Hooks/useAxios";
 
 // Constants for magic numbers
 const ZOOM_STEP = 1.25;
@@ -138,23 +138,14 @@ const ImageViewer = ({ content, messageId }) => {
     );
 
     if (isProtected) {
-      const jwtToken = Cookies.get("jwt-token");
       const fetchUrl = imageSrc.startsWith("/") ? resolveImageUrl(imageSrc) : imageSrc;
-      const fetchOptions = {
-        credentials: "include",
-        headers: jwtToken ? { Authorization: `Bearer ${jwtToken}` } : {},
-      };
-      fetch(fetchUrl, fetchOptions)
+      axiosInstance.get(fetchUrl, { responseType: "blob" })
         .then((response) => {
-          if (!response.ok) throw new Error("Failed to fetch image");
-          return response.blob();
-        })
-        .then((blob) => {
-          objectUrl = URL.createObjectURL(blob);
+          objectUrl = URL.createObjectURL(response.data);
           setProtectedImageUrl(objectUrl);
           setIsLoading(false);
         })
-        .catch((err) => {
+        .catch(() => {
           setProtectedImageUrl(null);
           setIsLoading(false);
           setError(
@@ -225,14 +216,11 @@ const ImageViewer = ({ content, messageId }) => {
         document.body.removeChild(link);
         return;
       }
-      // Otherwise, fetch and download
-      const response = await fetch(downloadUrl, { credentials: 'include' });
-      if (!response.ok) {
-        throw new Error(`Failed to fetch image: ${response.statusText}`);
-      }
-      const blob = await response.blob();
+      // Otherwise, fetch and download — axiosInstance attaches the MSAL/JWT token
+      const response = await axiosInstance.get(downloadUrl, { responseType: 'blob' });
+      const blob = response.data;
       const url = window.URL.createObjectURL(blob);
-      const contentType = response.headers.get('content-type') || 'image/png';
+      const contentType = response.headers['content-type'] || 'image/png';
       const extension = contentType.split('/')[1] || 'png';
       const link = document.createElement('a');
       link.href = url;

@@ -325,7 +325,7 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
               value={connectionDescription}
               onChange={(e) => setConnectionDescription(e.target.value)}
               className="input"
-              placeholder="Human-readable description (optional)"
+              placeholder="Human-readable description"
             />
           </div>
 

@@ -2,6 +2,7 @@ import { APIs } from "../constant";
 import useFetch from "../Hooks/useAxios";
 import { extractErrorMessage } from "../utils/errorUtils";
 import { getRoleFromToken, getEmailFromToken } from "../utils/jwtUtils";
+import { isAsyncModeEnabled, submitAndPollAsync } from "../utils/asyncTaskPoller";
 
 export const useToolsAgentsService = () => {
   const { fetchData, postData, putData, deleteData } = useFetch();
@@ -69,7 +70,7 @@ export const useToolsAgentsService = () => {
     try {
       if (!sessionId) throw new Error("session_id is required");
       const response = await fetchData(
-        `${APIs.TOOL_VERSION_LIST}${encodeURIComponent(sessionId)}?include_code=${includeCode}`
+        `${APIs.TOOL_VERSION_LIST}/${encodeURIComponent(sessionId)}?include_code=${includeCode}`
       );
       return response;
     } catch (error) {
@@ -82,7 +83,7 @@ export const useToolsAgentsService = () => {
     try {
       if (!sessionId || versionNumber == null) throw new Error("session_id and version_number are required");
       const response = await fetchData(
-        `${APIs.TOOL_VERSION_GET}${encodeURIComponent(sessionId)}/${encodeURIComponent(versionNumber)}`
+        `${APIs.TOOL_VERSION_GET}/${encodeURIComponent(sessionId)}/${encodeURIComponent(versionNumber)}`
       );
       return response;
     } catch (error) {
@@ -95,7 +96,7 @@ export const useToolsAgentsService = () => {
     try {
       if (!sessionId) throw new Error("session_id is required");
       const response = await fetchData(
-        `${APIs.TOOL_VERSION_CURRENT}${encodeURIComponent(sessionId)}`
+        `${APIs.TOOL_VERSION_CURRENT}/${encodeURIComponent(sessionId)}`
       );
       return response;
     } catch (error) {
@@ -138,7 +139,7 @@ export const useToolsAgentsService = () => {
     try {
       if (!sessionId) throw new Error("session_id is required");
       const response = await deleteData(
-        `${APIs.TOOL_VERSION_CLEAR}${encodeURIComponent(sessionId)}`
+        `${APIs.TOOL_VERSION_CLEAR}/${encodeURIComponent(sessionId)}`
       );
       return response;
     } catch (error) {
@@ -151,7 +152,7 @@ export const useToolsAgentsService = () => {
     try {
       if (!sessionId) throw new Error("session_id is required");
       const response = await fetchData(
-        `${APIs.TOOL_VERSION_COUNT}${encodeURIComponent(sessionId)}`
+        `${APIs.TOOL_VERSION_COUNT}/${encodeURIComponent(sessionId)}`
       );
       return response;
     } catch (error) {
@@ -164,7 +165,7 @@ export const useToolsAgentsService = () => {
     try {
       if (!sessionId) throw new Error("session_id is required");
       const response = await fetchData(
-        `${APIs.TOOL_CONVERSATION_HISTORY}${encodeURIComponent(sessionId)}`
+        `${APIs.TOOL_CONVERSATION_HISTORY}/${encodeURIComponent(sessionId)}`
       );
       return response;
     } catch (error) {
@@ -177,7 +178,7 @@ export const useToolsAgentsService = () => {
     try {
       if (!sessionId) throw new Error("session_id is required");
       const response = await fetchData(
-        `${APIs.TOOL_CONVERSATION_LATEST_CODE}${encodeURIComponent(sessionId)}`
+        `${APIs.TOOL_CONVERSATION_LATEST_CODE}/${encodeURIComponent(sessionId)}`
       );
       return response;
     } catch (error) {
@@ -190,7 +191,7 @@ export const useToolsAgentsService = () => {
     try {
       if (!sessionId) throw new Error("session_id is required");
       const response = await deleteData(
-        `${APIs.TOOL_CONVERSATION_CLEAR}${encodeURIComponent(sessionId)}`
+        `${APIs.TOOL_CONVERSATION_CLEAR}/${encodeURIComponent(sessionId)}`
       );
       return response;
     } catch (error) {
@@ -305,7 +306,9 @@ export const useToolsAgentsService = () => {
       } else {
         // /tools/add -> plain JSON body
         const apiUrl = APIs.ADD_TOOLS;
-        const response = await postData(apiUrl, toolData);
+        const response = isAsyncModeEnabled()
+          ? await submitAndPollAsync(postData, apiUrl, toolData)
+          : await postData(apiUrl, toolData);
         return response;
       }
     } catch (error) {
@@ -323,7 +326,7 @@ export const useToolsAgentsService = () => {
       const params = [];
       if (force_add) params.push("force_add=true");
       const queryString = params.length > 0 ? `?${params.join("&")}` : "";
-      const apiUrl = `${APIs.UPDATE_TOOLS}${toolId}${queryString}`;
+      const apiUrl = `${APIs.UPDATE_TOOLS}/${toolId}${queryString}`;
       const response = await putData(apiUrl, toolData);
       return response;
     } catch (error) {
@@ -614,7 +617,7 @@ export const useToolsAgentsService = () => {
   // Test server tool (play button) - send JSON, not FormData
   const testServerTool = async (toolId, payload) => {
     try {
-      const apiUrl = `${APIs.MCP_TEST_TOOL}${toolId}`;
+      const apiUrl = `${APIs.MCP_TEST_TOOL}/${toolId}`;
       // Use postData with JSON payload
       const response = await postData(apiUrl, payload);
       return response;

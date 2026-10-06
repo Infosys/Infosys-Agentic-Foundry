@@ -10,6 +10,7 @@ import CodeEditor from "./CodeEditor";
 import { useChatServices } from "../../services/chatService.js";
 import { sanitizeInput } from "../../utils/sanitization";
 import NewCommonDropdown from "./NewCommonDropdown";
+import UnconfiguredModelCostWarning from "./UnconfiguredModelCostWarning";
 
 /**
  * ChatPanel - A mini chat interface for code assistance
@@ -25,7 +26,7 @@ import NewCommonDropdown from "./NewCommonDropdown";
  * @param {string} chatSessionId - External session ID from parent (optional)
  * @param {function} onSessionIdChange - Callback when new session ID is generated (optional)
  */
-const ChatPanel = forwardRef(({ messages, setMessages, workflowId = "", models = [], onCodeUpdate = () => { }, onClose = () => { }, codeSnippet = "", toolId = "", chatSessionId = "", onSessionIdChange = () => { } }, ref) => {
+const ChatPanel = forwardRef(({ messages, setMessages, workflowId = "", models = [], unconfiguredCostModels = [], onCodeUpdate = () => { }, onClose = () => { }, codeSnippet = "", toolId = "", chatSessionId = "", onSessionIdChange = () => { } }, ref) => {
   const { addMessage } = useMessage();
   const { fetchData, postData, deleteData } = useFetch();
 
@@ -283,9 +284,6 @@ const ChatPanel = forwardRef(({ messages, setMessages, workflowId = "", models =
 
         const response = await postData(APIs.WORKFLOW_CHAT, payload);
 
-        // Debug: Log the response to check version_number
-        console.log("ChatPanel API Response:", response);
-
         // Extract response content
         const botContent = response?.message || "I couldn't generate a response.";
 
@@ -538,6 +536,10 @@ const ChatPanel = forwardRef(({ messages, setMessages, workflowId = "", models =
 
       {/* Input Area */}
       <div className={style.inputArea}>
+        <UnconfiguredModelCostWarning
+          selectedModel={selectedModel}
+          unconfiguredCostModels={unconfiguredCostModels}
+        />
         {/* Compact Model Dropdown */}
         <div className={style.modelChip}>
           <NewCommonDropdown

@@ -588,6 +588,7 @@
 .nav a.active [data-icon],
 .nav button.active [data-icon] {
   color: white !important;
+  fill: white !important;
 }
 
 .nav a span,
@@ -984,4 +985,38 @@
 .nav a .navBadge {
   top: -6px;
   right: -8px;
+}
+
+/* Department Switcher Wrapper */
+.departmentSwitcherWrapper {
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  overflow: visible;
+  position: relative;
+}
+
+/* Hide department switcher when nav is collapsed */
+.navCollapsed .departmentSwitcherWrapper {
+  display: none;
+}
+
+/* Show department switcher when nav is expanded (hovered) */
+.navCollapsed:hover .departmentSwitcherWrapper {
+  display: block;
+}
+
+/* Logout overlay */
+.logoutOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999999;
 }

@@ -2,8 +2,8 @@ import { useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import Cookies from "js-cookie";
 
-// Session timeout: 5 hours 59 minutes (just under 6h) in ms
-const SESSION_TIMEOUT_MS = (5 * 60 * 60 + 59 * 60) * 1000; // 21,540,000 ms
+// Session timeout: 14 days in ms
+const SESSION_TIMEOUT_MS = 1_209_600_000;
 
 const LOGIN_TS_KEY = "login_timestamp";
 
@@ -16,7 +16,7 @@ export const setSessionStart = () => {
   } catch (_) {}
 };
 
-// Hook: auto logout user exactly after 6 hours since login timestamp
+// Hook: auto logout user after 14 days since login timestamp
 export default function useAutoLogout() {
   const { logout, isAuthenticated } = useAuth();
   const timerRef = useRef(null);

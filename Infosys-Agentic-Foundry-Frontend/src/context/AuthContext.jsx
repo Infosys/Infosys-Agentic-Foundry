@@ -1,6 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import Cookies from "js-cookie";
 import { useNavigate } from "react-router-dom";
+import authStorage from "../utils/authStorage";
+import { clearMyDepartmentsCache } from "../services/myDepartmentsService";
+import { APIs } from "../constant";
+import useFetch from "../Hooks/useAxios";
+import { msalInstance } from "../auth/msalConfig";
+import {
+  clearMsalSession,
+  isMsalLoginPending,
+  suppressMsalAutoLogin,
+} from "../auth/msalSessionUtils";
 // import { useMessage } from "../Hooks/MessageContext";
 
 // Enhanced Auth Context with single-session & cross-tab coordination
@@ -10,6 +20,19 @@ let tabIdCounter = 0;
 // Helper utilities (internal)
 const getCookie = (name) => {
   try {
+    // Read from localStorage first, fallback to cookie for migration
+    const keyMap = {
+      "userName": () => authStorage.getUserName(),
+      "role": () => authStorage.getRole(),
+      "user_session": () => authStorage.getSession(),
+      "jwt-token": () => authStorage.getJwt(),
+      "refresh-token": () => authStorage.getRefresh(),
+      "email": () => authStorage.getEmail(),
+    };
+    const getter = keyMap[name];
+    if (getter) {
+      return getter() || Cookies.get(name) || null;
+    }
     return Cookies.get(name) || null;
   } catch (_) {
     return null;
@@ -18,11 +41,27 @@ const getCookie = (name) => {
 
 const setCookie = (name, value, options = {}) => {
   try {
-    // Set 6-hour expiration to match session timeout (0.25 days = 6 hours)
+    // Store in localStorage (persists across restarts)
+    const keyMap = {
+      "userName": () => authStorage.setUserName(value),
+      "role": () => authStorage.setRole(value),
+      "user_session": () => authStorage.setSession(value),
+      "jwt-token": () => authStorage.setJwt(value),
+      "refresh-token": () => authStorage.setRefresh(value),
+      "email": () => authStorage.setEmail(value),
+      "department_name": () => authStorage.setDepartment(value),
+      "department": () => authStorage.setDepartment(value),
+    };
+    const setter = keyMap[name];
+    if (setter) {
+      setter();
+    }
+    // Also set cookie as fallback for any code still reading from cookies
     const defaultOptions = {
       path: "/",
-      expires: 0.25, // 6 hours
-      sameSite: "Lax",
+      expires: 14,
+      sameSite: "Strict",
+      secure: typeof window !== "undefined" && window.location.protocol === "https:",
       ...options,
     };
     Cookies.set(name, value, defaultOptions);
@@ -31,11 +70,23 @@ const setCookie = (name, value, options = {}) => {
 
 const deleteCookie = (name) => {
   try {
+    const keyMap = {
+      "userName": () => authStorage.removeUserName(),
+      "role": () => authStorage.removeRole(),
+      "user_session": () => authStorage.removeSession(),
+      "jwt-token": () => authStorage.removeJwt(),
+      "refresh-token": () => authStorage.removeRefresh(),
+      "email": () => authStorage.removeEmail(),
+      "department_name": () => authStorage.removeDepartment(),
+      "department": () => authStorage.removeDepartment(),
+    };
+    const remover = keyMap[name];
+    if (remover) remover();
     Cookies.remove(name, { path: "/" });
   } catch (_) { }
 };
 
-// Minimal localStorage helpers (guarding SSR)
+// Minimal localStorage helpers (guarding SSR) — for non-sensitive keys only
 const lsGet = (k) => {
   if (typeof window === "undefined") return null;
   try {
@@ -57,35 +108,69 @@ const lsRemove = (k) => {
   } catch (_) { }
 };
 
+// sessionStorage helpers for sensitive identity data that should not persist
+// across browser sessions (tab-scoped, cleared when the browser is closed)
+const ssGet = (k) => {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.sessionStorage.getItem(k);
+  } catch (_) {
+    return null;
+  }
+};
+const ssSet = (k, v) => {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(k, v);
+    window.localStorage.removeItem(k); // remove any stale localStorage copy
+  } catch (_) { }
+};
+const ssRemove = (k) => {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(k);
+    window.localStorage.removeItem(k); // clean up legacy copy
+  } catch (_) { }
+};
+
 // Core artifact checks (strict by default). If strict=false, only require userName + user_session.
 // Also checks localStorage as fallback since browsers may temporarily hide cookies on tab switch.
 const hasAuthArtifacts = (strict = true) => {
-  const userName = getCookie("userName");
-  const session = getCookie("user_session");
-  const jwt = getCookie("jwt-token");
-  if (!strict) return !!(userName && session);
-  return !!(userName && session && jwt);
+  const userName = authStorage.getUserName() || getCookie("userName");
+  const session = authStorage.getSession() || getCookie("user_session");
+  const jwt = authStorage.getJwt() || getCookie("jwt-token");
+  if (!strict) return Boolean(userName && session);
+  return Boolean(userName && session && jwt);
 };
 
 const getActiveUser = () => {
-  return getCookie("userName") || lsGet("active_user_name") || null;
+  return authStorage.getUserName() || getCookie("userName") || null;
 };
 
 const setActiveUser = (name) => {
   if (!name) return;
-  setCookie("userName", name, { expires: 0.25 }); // 6 hours
-  lsSet("active_user_name", name);
+  setCookie("userName", name, { expires: 14 }); // 14 days
+  ssSet("active_user_name", name);
 };
 
 const clearAuthArtifacts = () => {
+  authStorage.clearAll();
   deleteCookie("userName");
   deleteCookie("jwt-token");
   deleteCookie("user_session");
   deleteCookie("role");
   deleteCookie("refresh-token");
   deleteCookie("email");
-  lsRemove("active_user_name");
-  lsRemove("user_session");
+  deleteCookie("department_name");
+  deleteCookie("login_timestamp");
+  ssRemove("active_user_name");
+  ssRemove("user_session");
+  ssRemove("user_department");
+  lsRemove("login_timestamp");
+  ssRemove("id_token");
+  lsRemove("auth_type");
+  lsRemove("available_roles");
+  clearMyDepartmentsCache();
 };
 
 // Broadcast channel constants
@@ -94,8 +179,9 @@ const FALLBACK_STORAGE_KEY = "auth_event"; // ephemeral single-use
 
 const AuthContext = createContext({
   isAuthenticated: false,
-  user: null, // { name, role }
+  user: null, // { name, role, department }
   role: null,
+  department: null,
   sessionId: null,
   loading: true,
   // API
@@ -110,26 +196,32 @@ const AuthContext = createContext({
 
 export const AuthProvider = ({ children }) => {
   const navigate = useNavigate();
+  const { postData } = useFetch();
 
   // Tab identity
   const tabIdRef = useRef(`tab-${++tabIdCounter}-${Date.now()}`);
   const channelRef = useRef(null);
   const mountedRef = useRef(false);
+  // Prevents concurrent/cascade logout calls (e.g. ProtectedRoute firing after SSO clearAuthArtifacts)
+  const isLoggingOutRef = useRef(false);
 
-  const [userState, setUserState] = useState(null);
+  const [userState, setUserState] = useState(null); // { name, role, department }
   const [sessionId, setSessionId] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const role = userState?.role || getCookie("role") || null;
+  const department = userState?.department || getCookie("department_name") || ssGet("user_department") || null;
 
   // Hydration
   const syncFromCookies = useCallback(() => {
     const name = getActiveUser();
     const r = getCookie("role") || null;
-    const sid = getCookie("user_session") || lsGet("user_session");
-    if (name && r && hasAuthArtifacts()) {
-      setUserState({ name, role: r });
-    } else if (!hasAuthArtifacts()) {
+    const dept = getCookie("department_name") || ssGet("user_department") || null;
+    const sid = getCookie("user_session") || ssGet("user_session");
+    // Restore session from core artifacts even when JWT is expired (refresh can recover)
+    if (name && r && hasAuthArtifacts(false)) {
+      setUserState({ name, role: r, department: dept });
+    } else if (!hasAuthArtifacts(false)) {
       setUserState(null);
     }
     setSessionId(sid);
@@ -137,6 +229,17 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     syncFromCookies();
+
+    // Clear orphaned session fragments left by expired logins (userName + session but no role)
+    const name = getActiveUser();
+    const session = authStorage.getSession() || getCookie("user_session");
+    const role = getCookie("role");
+    if (name && session && !role) {
+      clearAuthArtifacts();
+      setUserState(null);
+      setSessionId(null);
+    }
+
     setLoading(false);
   }, [syncFromCookies]);
 
@@ -156,7 +259,17 @@ export const AuthProvider = ({ children }) => {
       }
     } catch (_) { }
     try {
-      window.localStorage.setItem(FALLBACK_STORAGE_KEY, JSON.stringify(message));
+      // Only store non-sensitive routing metadata in localStorage for the
+      // cross-tab fallback. The receiving onStorage handler only reads
+      // msg.type and msg.sourceTabId — it never reads userName or role.
+      // Writing the full message would move sessionStorage-scoped identity
+      // data into persistent localStorage (Fortify: Cross-Session Contamination).
+      const fallbackMessage = {
+        type: message.type,
+        ts: Date.now(),
+        sourceTabId: message.sourceTabId,
+      };
+      window.localStorage.setItem(FALLBACK_STORAGE_KEY, JSON.stringify(fallbackMessage));
       setTimeout(() => {
         try {
           window.localStorage.removeItem(FALLBACK_STORAGE_KEY);
@@ -175,7 +288,7 @@ export const AuthProvider = ({ children }) => {
       clearAuthArtifacts();
       performLogoutStateClear();
       broadcast("LOGOUT", { reason });
-      if (window.location.pathname !== "/login") {
+      if (!isMsalLoginPending() && window.location.pathname !== "/login") {
         navigate("/login", { replace: true });
       }
     },
@@ -185,21 +298,27 @@ export const AuthProvider = ({ children }) => {
   const login = useCallback(
     (payload) => {
       if (!payload || typeof payload !== "object") return;
-      const { userName, role: newRole, refresh_token } = payload;
+      const { userName, role: newRole, refresh_token, department_name, email } = payload;
       const sessionCandidate = payload.user_session || payload.session_id || payload.sessionId || payload.session || null;
 
       if (userName) {
         setActiveUser(userName);
       }
-      if (newRole) setCookie("role", newRole, { expires: 0.25 });
+      if (email) setCookie("email", email, { expires: 14 });
+      if (newRole) setCookie("role", newRole, { expires: 14 });
+      if (department_name) {
+        setCookie("department_name", department_name, { expires: 14 });
+        ssSet("user_department", department_name);
+      }
       if (sessionCandidate) {
-        setCookie("user_session", sessionCandidate, { expires: 0.25 });
-        lsSet("user_session", sessionCandidate);
+        setCookie("user_session", sessionCandidate, { expires: 14 });
+        ssSet("user_session", sessionCandidate);
         setSessionId(sessionCandidate);
       }
-      if (refresh_token) setCookie("refresh-token", refresh_token, { expires: 0.25 });
+      if (refresh_token) setCookie("refresh-token", refresh_token, { expires: 14 });
 
-      setUserState({ name: userName, role: newRole });
+      // Update state after artifacts to align with validator
+      setUserState({ name: userName, role: newRole, department: department_name });
       broadcast("LOGIN");
     },
     [broadcast]
@@ -214,13 +333,61 @@ export const AuthProvider = ({ children }) => {
   );
 
   const logout = useCallback(
-    (reason = "manual", redirectPath = "/login") => {
+    async (reason = "manual", redirectPath = "/login") => {
+      // Prevent concurrent/cascade calls — e.g. ProtectedRoute detecting missing
+      // artifacts and calling logout again while SSO logout is already in progress.
+      if (isLoggingOutRef.current) return;
+      isLoggingOutRef.current = true;
+
+      const authType = localStorage.getItem("auth_type"); // "sso" | "msal" | "local" | null
+      const idToken = sessionStorage.getItem("id_token") || null;
+      // Read JWT before clearing artifacts so we know if there is anything to invalidate.
+      // Login flows persist JWT via authStorage.setJwt(); the cookie is only a legacy
+      // fallback for older sessions. Read authStorage first, then cookie.
+      const jwt = authStorage.getJwt() || Cookies.get("jwt-token") || null;
+
+      // Block MSAL auto-login for any logout path (sign-out, session expiry, etc.)
+      suppressMsalAutoLogin();
+
+      if (authType === "msal" || msalInstance.getAllAccounts().length > 0) {
+        // MSAL logout — clear cached MSAL accounts silently (no browser redirect).
+        await clearMsalSession();
+        clearAuthArtifacts();
+        performLogoutStateClear();
+      } else if (authType === "sso") {
+        // SSO logout — call oauth logout endpoint, then redirect browser to Keycloak end-session URL
+        try {
+          const response = await postData(APIs.OAUTH_LOGOUT, {
+            id_token: idToken || undefined,
+          });
+          clearAuthArtifacts();
+          performLogoutStateClear();
+          if (response && response.logout_url) {
+            // Page navigates away — no need to reset the ref
+            window.location.href = response.logout_url;
+            return;
+          }
+        } catch (err) {
+          // Non-critical — fall through to local cleanup
+        }
+      } else if (jwt) {
+        // Local logout — only call backend if a JWT token actually exists.
+        // Skipping when jwt is absent prevents 401 spam when this function is
+        // called a second time after artifacts are already cleared.
+        try {
+          await postData(APIs.LOGOUT, {});
+        } catch (err) {
+          // Non-critical — clear state regardless
+        }
+      }
+
       clearAuthArtifacts();
       performLogoutStateClear();
       broadcast("LOGOUT", { reason });
+      isLoggingOutRef.current = false;
       navigate(redirectPath, { replace: true });
     },
-    [broadcast, navigate, performLogoutStateClear]
+    [broadcast, navigate, performLogoutStateClear, postData]
   );
 
   // Cross-tab listeners
@@ -234,6 +401,7 @@ export const AuthProvider = ({ children }) => {
         if (!msg || msg.sourceTabId === tabIdRef.current) return; // ignore self
         switch (msg.type) {
           case "LOGOUT":
+            suppressMsalAutoLogin();
             performLogoutStateClear();
             // Ensure artifacts cleared locally (in case broadcast arrived first)
             clearAuthArtifacts();
@@ -396,14 +564,15 @@ export const AuthProvider = ({ children }) => {
     };
   }, [internalLogout, syncFromCookies, userState]);
 
-  const isAuthenticated = !!(userState?.name && hasAuthArtifacts(false) && getActiveUser() === userState.name);
+  const isAuthenticated = Boolean(userState?.name && hasAuthArtifacts(false) && getActiveUser() === userState.name);
 
   const value = useMemo(
     () => ({
       isAuthenticated,
-      user: userState ? { name: userState.name, role: userState.role } : null,
+      user: userState ? { name: userState.name, role: userState.role, department: userState.department } : null,
       userName: userState?.name || null,
       role,
+      department,
       sessionId,
       loading,
       login,
@@ -414,7 +583,7 @@ export const AuthProvider = ({ children }) => {
       hasAuthArtifacts: (strict) => hasAuthArtifacts(strict),
       getActiveUser,
     }),
-    [isAuthenticated, userState, role, sessionId, loading, login, logout, internalLogout, forceReplaceLogin, syncFromCookies]
+    [isAuthenticated, userState, role, department, sessionId, loading, login, logout, internalLogout, forceReplaceLogin, syncFromCookies]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

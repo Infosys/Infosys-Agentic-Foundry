@@ -1,0 +1,272 @@
+/* ================================================================
+   SampleHooksModal.module.css
+   Modal for displaying sample hook templates in a tabbed layout
+   ================================================================ */
+
+/* Override z-index to render above FullModal (z-index: 1000001) */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000010;
+  animation: fadeIn 0.15s ease;
+}
+
+.modal {
+  background: var(--card-bg, #ffffff);
+  border-radius: var(--radius-lg, 20px);
+  width: 900px;
+  max-width: 95vw;
+  max-height: 90vh;
+  overflow: hidden;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  animation: modalEnter 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  border: 1px solid var(--border, #e5e7eb);
+}
+
+.closeBtn {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  background: none;
+  border: none;
+  font-size: 22px;
+  color: var(--muted);
+  cursor: pointer;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: all 0.15s;
+  z-index: 1;
+}
+
+.closeBtn:hover {
+  background: var(--hover-background);
+  color: var(--text-primary);
+}
+
+@keyframes modalEnter {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.container {
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+  gap: 14px;
+  height: 80vh;
+  overflow: hidden;
+}
+
+/* ── Header ─────────────────────────────────────────── */
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.subtitle {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin: 0;
+}
+
+/* ── Tab Bar ────────────────────────────────────────── */
+.tabBar {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0;
+}
+
+.tab {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 14px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s ease;
+  border-radius: 8px 8px 0 0;
+  min-width: 0;
+  flex: 1 1 0;
+  max-width: 33.33%;
+}
+
+.tab:hover {
+  background: var(--hover-background);
+}
+
+.tabActive {
+  border-bottom-color: var(--accent, #4a90d9);
+  background: var(--hover-background);
+}
+
+.tabName {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-word;
+  line-height: 1.3;
+}
+
+/* ── Event Badges ───────────────────────────────────── */
+.eventBadge {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.badgeblue {
+  background: rgba(74, 144, 217, 0.12);
+  color: #4a90d9;
+}
+
+.badgegreen {
+  background: rgba(52, 199, 89, 0.12);
+  color: #34c759;
+}
+
+.badgeorange {
+  background: rgba(255, 149, 0, 0.12);
+  color: #ff9500;
+}
+
+.tabblue.tabActive {
+  border-bottom-color: #4a90d9;
+}
+
+.tabgreen.tabActive {
+  border-bottom-color: #34c759;
+}
+
+.taborange.tabActive {
+  border-bottom-color: #ff9500;
+}
+
+/* ── Code Section ───────────────────────────────────── */
+.codeSection {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 10px);
+  overflow: hidden;
+}
+
+.codeSectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: var(--hover-background);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.codeSectionLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.codeWrap {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.panel {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.panelActive {
+  display: block;
+}
+
+/* ── Action Buttons ─────────────────────────────────── */
+.actionRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Loading / Empty ────────────────────────────────── */
+.loadingWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 0;
+}
+
+.emptyState {
+  text-align: center;
+  padding: 40px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ── Responsive ─────────────────────────────────────── */
+@media (max-width: 768px) {
+  .container {
+    padding: 16px;
+  }
+
+  .tabBar {
+    gap: 4px;
+  }
+
+  .tab {
+    padding: 8px 10px;
+  }
+
+  .tabName {
+    font-size: 11px;
+  }
+}

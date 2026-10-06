@@ -82,7 +82,7 @@ const DepartmentManagement = ({ externalSearchTerm = "", onPlusClickRef, onClear
     setRolesLoading(true);
     try {
       const resp = await fetchData(
-        `${APIs.GET_DEPARTMENT_ROLES}${encodeURIComponent(selectedDepartment.department_name)}/roles`
+        `${APIs.GET_DEPARTMENT_ROLES}/${encodeURIComponent(selectedDepartment.department_name)}/roles`
       );
       let roles = [];
       if (Array.isArray(resp)) roles = resp;
@@ -180,7 +180,7 @@ const DepartmentManagement = ({ externalSearchTerm = "", onPlusClickRef, onClear
     setSaveLoading(true);
     try {
       const response = await postData(
-        `${APIs.ADD_DEPARTMENT_ROLE}${encodeURIComponent(selectedDepartment.department_name)}/roles/add`,
+        `${APIs.ADD_DEPARTMENT_ROLE}/${encodeURIComponent(selectedDepartment.department_name)}/roles/add`,
         { role_name: newRoleName.trim() }
       );
       if (response && response.success === false) {
@@ -205,7 +205,7 @@ const DepartmentManagement = ({ externalSearchTerm = "", onPlusClickRef, onClear
     setSaveLoading(true);
     try {
       const response = await deleteData(
-        `${APIs.DELETE_DEPARTMENT_ROLE}${encodeURIComponent(selectedDepartment.department_name)}/roles/${encodeURIComponent(roleName)}`
+        `${APIs.DELETE_DEPARTMENT_ROLE}/${encodeURIComponent(selectedDepartment.department_name)}/roles/${encodeURIComponent(roleName)}/delete`
       );
       if (response && response.success === false) {
         addMessage(response.message || "Failed to remove role", "error");
@@ -228,7 +228,7 @@ const DepartmentManagement = ({ externalSearchTerm = "", onPlusClickRef, onClear
     setLoading(true);
     try {
       const response = await deleteData(
-        `${APIs.DELETE_DEPARTMENT}${encodeURIComponent(deptName)}`
+        `${APIs.DELETE_DEPARTMENT}/${encodeURIComponent(deptName)}/delete`
       );
       if (response && response.success === false) {
         addMessage(response.message || "Failed to delete department", "error");

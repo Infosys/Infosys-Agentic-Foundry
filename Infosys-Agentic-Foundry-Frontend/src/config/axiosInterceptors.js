@@ -77,8 +77,6 @@ export function registerAxiosInterceptors(instance = axios) {
       metadata.prevResCount = performance.getEntriesByType("resource").length;
     }
     config.metadata = metadata;
-    config.headers = config.headers || {};
-    if (!config.headers["x-request-id"]) config.headers["x-request-id"] = reqId;
     // Propagate instance support for silent token refresh so error interceptor can decide whether to auto logout
     if (instance.__supportsTokenRefresh) config.__supportsTokenRefresh = true;
     return config;

@@ -1,0 +1,316 @@
+/* ModelCosts Component Styles */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+}
+
+/* Results Section */
+.resultsSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.resultsTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--header-color, #1a202c);
+}
+
+/* Cards Grid */
+.cardsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.modelCard {
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius, 10px);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: box-shadow 0.2s ease, transform 0.15s ease;
+}
+
+.modelCard:hover {
+  box-shadow: var(--shadow-md, 0 2px 12px rgba(0, 0, 0, 0.06));
+  transform: translateY(-1px);
+}
+
+.modelCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.modelName {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--header-color, #1a202c);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modelDisplayName {
+  font-size: 13px;
+  color: var(--muted, #64748b);
+  margin-top: -4px;
+}
+
+.modelMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.providerCode {
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+  font-size: 11px;
+  background: var(--menu-bg, #f1f5f9);
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: var(--header-color, #334155);
+  word-break: break-all;
+}
+
+.modelVersion {
+  font-size: 11px;
+  color: var(--muted, #94a3b8);
+  background: var(--menu-bg, #f1f5f9);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+/* Cost Row */
+.costRow {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.costItem {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  background: var(--menu-bg, rgba(59, 130, 246, 0.04));
+  border-radius: var(--radius, 6px);
+}
+
+.costLabel {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--muted, #94a3b8);
+}
+
+.costValue {
+  font-size: 12px;
+  font-weight: 600;
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+  color: var(--header-color, #1a202c);
+}
+
+.modelDate {
+  font-size: 11px;
+  color: var(--muted, #94a3b8);
+  margin-top: 2px;
+}
+
+/* Field hint inside form */
+.fieldHint {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 4px 0 0 0;
+  line-height: 1.4;
+}
+
+/* Delete confirmation in footer */
+.deleteConfirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  animation: fadeIn 0.15s ease;
+}
+
+.deleteText {
+  font-size: 13px;
+  color: var(--header-color, #1a202c);
+  white-space: nowrap;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+
+/* InfoTag tooltip wrapper - position below icon */
+.infoTagWrap {
+  display: inline-flex;
+  position: relative;
+}
+
+.infoTagWrap [class*="tooltip-text"] {
+  bottom: auto;
+  top: calc(100% + 8px);
+  white-space: normal;
+  width: max-content;
+  max-width: 320px;
+  text-align: left;
+  left: 0;
+  transform: none;
+  line-height: 1.5;
+  padding: 8px 12px;
+  z-index: 10001;
+}
+
+.infoTagWrap [class*="tooltip-container"]::after {
+  top: auto;
+  bottom: -3px;
+  left: 10px;
+  transform: none;
+  border-color: transparent transparent #ccc transparent;
+}
+
+
+/* Model costs cards - compact like installed modules */
+:global(.modelCostsCards) :global(.card-container) {
+  height: 75px;
+  min-height: 75px;
+}
+
+:global(.modelCostsCards) :global(.card) {
+  min-height: 75px;
+}
+
+:global(.modelCostsCards) :global(.card-description) {
+  display: none;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .cardsGrid {
+    grid-template-columns: 1fr;
+  }
+  .costRow {
+    flex-direction: column;
+  }
+}
+/* Table overrides for model costs layout */
+.tableWrapper {
+  background: var(--card-bg);
+  border-radius: var(--radius, 10px);
+  border: 1px solid var(--border-color);
+  overflow: auto;
+  max-height: 90vh;
+}
+
+.tableWrapper table {
+  table-layout: auto;
+  background: var(--card-bg);
+}
+
+.tableWrapper [class*="tableContainer"] {
+  min-height: auto;
+}
+
+/* Header row */
+.tableWrapper th {
+  width: auto !important;
+  background: var(--hover-background);
+  color: var(--app-primary-color);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 10px 14px;
+  text-align: left;
+  white-space: nowrap;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+/* Data cells */
+.tableWrapper td {
+  width: auto !important;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  word-wrap: normal;
+  overflow-wrap: normal;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+
+/* Model name column */
+.tableWrapper td:nth-child(1) {
+  font-weight: 600;
+  color: var(--header-color);
+}
+
+/* Model name (2nd col) */
+.tableWrapper td:nth-child(2) {
+  color: var(--text-primary);
+}
+
+/* Version column */
+.tableWrapper td:nth-child(3) {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Provider key */
+.tableWrapper td:nth-child(4) {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Cost columns - right-align for numeric values */
+.tableWrapper th:nth-child(5),
+.tableWrapper th:nth-child(6),
+.tableWrapper th:nth-child(7) {
+  text-align: right;
+}
+
+.tableWrapper td:nth-child(5),
+.tableWrapper td:nth-child(6),
+.tableWrapper td:nth-child(7) {
+  text-align: right;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+/* Date columns */
+.tableWrapper td:nth-child(8),
+.tableWrapper td:nth-child(9) {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Row interactions */
+.tableWrapper tbody tr {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.tableWrapper tbody tr:hover {
+  background-color: var(--hover-background);
+}
+
+.tableWrapper tbody tr:last-child td {
+  border-bottom: none;
+}

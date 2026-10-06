@@ -346,14 +346,13 @@ const ConnectionManagementModal = ({
                             {loading === "activate" ? <Loader /> : <SVGIcons icon="check" width={14} height={14} />}
                           </button>
                         )}
-                        {/* View Details - hidden
+                        {/* View Details */}
                         <button
                           className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
                           onClick={() => openDetails(conn)}
                           title="View Details">
                           <SVGIcons icon="eye" width={14} height={14} />
                         </button>
-                        */}
                         {/* Disconnect */}
                         <button
                           className={`${styles.actionBtn} ${styles.actionBtnDanger}`}

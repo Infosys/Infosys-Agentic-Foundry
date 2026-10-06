@@ -24,6 +24,7 @@ export const getAvailableRoutes = (hasPermission) => {
     // Routes without permission toggles - always accessible as default screens
     { path: "/chat", permission: true, label: "Chat" },
     { path: "/files", permission: true, label: "Files" },
+    { path: "/token-usage", permission: role && ["USER", "DEVELOPER"].includes(role.toUpperCase()), label: "Token Usage" },
     { path: "/admin", permission: isAdminRole, label: "Admin" },
     { path: "/super-admin", permission: isSuperAdmin, label: "Super Admin" },
   ];

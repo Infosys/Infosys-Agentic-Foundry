@@ -23,6 +23,8 @@ import UploadBox from "../commonComponents/UploadBox.jsx";
 import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
 import TextareaWithActions from "../commonComponents/TextareaWithActions";
 import AccessControlGuide from "../commonComponents/AccessControlGuide";
+import { getUnconfiguredCostModels } from "../../utils/modelUtils";
+import UnconfiguredModelCostWarning from "../commonComponents/UnconfiguredModelCostWarning";
 import { FullModal } from "../../iafComponents/GlobalComponents/FullModal";
 
 import { sanitizeFormField, isValidEvent } from "../../utils/sanitization";
@@ -79,6 +81,7 @@ function ToolOnBoarding(props) {
 
   const [models, setModels] = useState([]);
   const [modelsLoading, setModelsLoading] = useState(false);
+  const [unconfiguredCostModels, setUnconfiguredCostModels] = useState([]);
   const [updateModal, setUpdateModal] = useState(false);
 
   const [hideCloseIcon, setHideCloseIcon] = useState(false);
@@ -118,8 +121,8 @@ function ToolOnBoarding(props) {
 
   const activeTab = contextType === "servers" ? "addServer" : "toolOnboarding"; // 'toolOnboarding' | 'addServer'
 
-  // In update mode, lock code/description editing when "All Versions" is selected (no specific version picked)
-  const isAllVersionsLocked = !isAddTool && !props?.recycle && toolVersions.length > 0 && !selectedVersion;
+  // No longer needed since "All Versions" option is removed - always a specific version is selected
+  const isAllVersionsLocked = false;
 
   const { fetchData, deleteData, postData } = useFetch();
 
@@ -187,15 +190,21 @@ function ToolOnBoarding(props) {
       if (Array.isArray(toolVersionsArr) && toolVersionsArr.length > 0) {
         setToolVersions(toolVersionsArr);
         const toolStatus = editTool?.tool_status || currentEditTool?.tool_status || "deleted";
-        if (props?.recycle && toolStatus === "active") {
-          // Active tool = only specific version(s) were deleted
-          // Auto-select the first version so user can restore/delete immediately
-          const v = toolVersionsArr[0];
-          const label = typeof v === "string" ? v : (v?.version || v?.version_label || `v${v?.version_number}`);
-          setSelectedVersion(label);
-        } else {
-          // Deleted tool or non-recycle mode: default to "All Versions" (empty)
-          setSelectedVersion("");
+        // Always auto-select the latest version (last in array)
+        const latestV = toolVersionsArr[toolVersionsArr.length - 1];
+        const latestLabel = typeof latestV === "string" ? latestV : (latestV?.version || latestV?.version_label || `v${latestV?.version_number}`);
+        setSelectedVersion(latestLabel);
+
+        // Load version-specific data for the auto-selected version
+        const versioning = currentEditTool?.versioning || editToolProp?.versioning || editTool?.versioning;
+        if (versioning && versioning[latestLabel]) {
+          const versionData = versioning[latestLabel];
+          setFormData((prev) => ({
+            ...prev,
+            code: versionData.code_snippet || prev.code,
+            description: versionData.tool_description || prev.description,
+            model: versionData.model_name || prev.model,
+          }));
         }
       }
     }
@@ -260,12 +269,31 @@ function ToolOnBoarding(props) {
             try {
               const toolDetailsArr = await getToolById(toolId);
               const toolDetails = Array.isArray(toolDetailsArr) ? toolDetailsArr[0] : toolDetailsArr;
+
+              // Get version-specific data: prefer latest version's data over outer response
+              const versioning = toolDetails?.versioning;
+              const versions = toolDetails?.versions;
+              let versionDescription = "";
+              let versionCode = "";
+              let versionModel = "";
+
+              if (versioning && versions && Array.isArray(versions) && versions.length > 0) {
+                const latestVersion = versions[versions.length - 1];
+                const latestLabel = typeof latestVersion === "string" ? latestVersion : (latestVersion?.version || latestVersion?.version_label || `v${latestVersion?.version_number}`);
+                const versionData = versioning[latestLabel];
+                if (versionData) {
+                  versionDescription = versionData.tool_description || "";
+                  versionCode = versionData.code_snippet || "";
+                  versionModel = versionData.model_name || "";
+                }
+              }
+
               const newFormData = {
                 ...formObject,
                 id: toolDetails?.tool_id || "",
-                description: toolDetails?.tool_description || "",
-                code: toolDetails?.code_snippet || "",
-                model: toolDetails?.model_name || "",
+                description: versionDescription || toolDetails?.tool_description || "",
+                code: versionCode || toolDetails?.code_snippet || "",
+                model: versionModel || toolDetails?.model_name || "",
                 userEmail: loggedInUserEmail || "",
                 name: toolDetails?.tool_name || "",
                 createdBy: userName === "Guest" ? null : toolDetails?.created_by || "",
@@ -458,7 +486,7 @@ function ToolOnBoarding(props) {
           let allSuccess = true;
           let lastResponse = null;
           for (const ver of versionsToDelete) {
-            const url = `${APIs.DELETE_TOOL_VERSION_PERMANENTLY}${editTool?.tool_id}/${encodeURIComponent(ver)}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
+            const url = `${APIs.DELETE_TOOL_VERSION_PERMANENTLY}/${editTool?.tool_id}/${encodeURIComponent(ver)}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
             const res = await deleteData(url);
             lastResponse = res;
             if (!res?.is_delete) {
@@ -483,7 +511,7 @@ function ToolOnBoarding(props) {
         setLoading(false);
       } else {
         // Fully deleted tool — delete entire tool permanently
-        const url = `${APIs.DELETE_TOOLS_PERMANENTLY}${editTool?.tool_id}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
+        const url = `${APIs.DELETE_TOOLS_PERMANENTLY}/${editTool?.tool_id}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
         try {
           const response = await deleteData(url);
           const statusMsg = response?.status_message || response?.message;
@@ -738,7 +766,7 @@ function ToolOnBoarding(props) {
             let allSuccess = true;
             let lastResponse = null;
             for (const ver of versionsToRestore) {
-              let url = `${APIs.RESTORE_TOOL_VERSION}${editTool?.tool_id}/${encodeURIComponent(ver)}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
+              let url = `${APIs.RESTORE_TOOL_VERSION}/${editTool?.tool_id}/${encodeURIComponent(ver)}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
               if (restoreNewName.trim()) url += `&new_name=${encodeURIComponent(restoreNewName.trim())}`;
               const res = await postData(url);
               lastResponse = res;
@@ -763,7 +791,7 @@ function ToolOnBoarding(props) {
           }
         } else {
           // Fully deleted tool — restore entire tool
-          let url = `${APIs.RESTORE_TOOLS}${editTool?.tool_id}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
+          let url = `${APIs.RESTORE_TOOLS}/${editTool?.tool_id}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
           // Append conflict resolution params as query parameters
           if (restoreAction) url += `&action=${encodeURIComponent(restoreAction)}`;
           if (restoreAction === "create_new_tool" && restoreNewName.trim()) url += `&new_name=${encodeURIComponent(restoreNewName.trim())}`;
@@ -1015,6 +1043,7 @@ function ToolOnBoarding(props) {
     setModelsLoading(true);
     try {
       const data = await fetchData(APIs.GET_MODELS);
+      setUnconfiguredCostModels(getUnconfiguredCostModels(data));
       if (data?.models && Array.isArray(data.models)) {
         const formattedModels = data.models.map((model) => ({
           label: model,
@@ -1296,6 +1325,7 @@ function ToolOnBoarding(props) {
         setMessages={setChatMessages}
         workflowId={codingAgentWorkflowId}
         models={models}
+        unconfiguredCostModels={unconfiguredCostModels}
         onCodeUpdate={(code) => {
           setFormData((prev) => ({ ...prev, code }));
           addMessage("Code snippet updated successfully", "success");
@@ -1408,7 +1438,7 @@ function ToolOnBoarding(props) {
                           <span>
                             {toolVersions.length === 0
                               ? "No versions"
-                              : selectedVersion || "All Versions"}
+                              : selectedVersion || "Select Version"}
                           </span>
                           {toolVersions.length > 0 && (
                             <span style={{
@@ -1422,14 +1452,6 @@ function ToolOnBoarding(props) {
                         </button>
                         {showVersionDropdown && toolVersions.length > 0 && (
                           <div className={style.versionDropdownMenu}>
-                            {/* "All Versions" option - selects all versions for bulk restore/delete */}
-                            <div
-                              key="all-versions"
-                              className={`${style.versionDropdownItem} ${!selectedVersion ? style.versionDropdownItemActive : ""}`}
-                              onClick={handleAllVersionsSelect}
-                            >
-                              <span className={style.versionItemLabel}>All Versions</span>
-                            </div>
                             {toolVersions.map((version, idx) => {
                               const label = getVersionLabel(version);
                               const isActive = selectedVersion === label;
@@ -1517,6 +1539,10 @@ function ToolOnBoarding(props) {
                             showSearch={true}
                             disabled={isReadOnly || modelsLoading}
                             selectFirstByDefault={true}
+                          />
+                          <UnconfiguredModelCostWarning
+                            selectedModel={formData.model}
+                            unconfiguredCostModels={unconfiguredCostModels}
                           />
                         </div>
                       </div>

@@ -1,4 +1,5 @@
 import Cookies from "js-cookie";
+import authStorage from "./authStorage";
 
 /**
  * Decode the payload of a JWT token without verifying the signature.
@@ -22,26 +23,51 @@ export const decodeJwtPayload = (token) => {
   }
 };
 
+const getAppAuthType = () => {
+  try {
+    return localStorage.getItem("auth_type");
+  } catch {
+    return null;
+  }
+};
+
+const getStoredDepartment = () =>
+  authStorage.getDepartment() ||
+  Cookies.get("department_name") ||
+  Cookies.get("department") ||
+  (typeof window !== "undefined" ? window.localStorage.getItem("user_department") : null) ||
+  "";
+
 /**
  * Get the department_name from the JWT bearer token.
- * Falls back to the "department" cookie if the token is missing or invalid.
+ * Falls back to stored auth artifacts when the token is missing or invalid.
+ * MSAL sessions store a Microsoft access token — not the app JWT — so always use storage fallbacks.
  * @returns {string} The department name, or empty string if unavailable
  */
 export const getDepartmentFromToken = () => {
-  const token = Cookies.get("jwt-token");
+  if (getAppAuthType() === "msal") {
+    return getStoredDepartment();
+  }
+
+  const token = authStorage.getJwt();
   const payload = decodeJwtPayload(token);
-  return payload?.department_name || Cookies.get("department") || "";
+  return payload?.department_name || getStoredDepartment();
 };
 
 /**
  * Get the role from the JWT bearer token.
- * Falls back to the "role" cookie if the token is missing or invalid.
+ * Falls back to stored auth artifacts when the token is missing or invalid.
+ * MSAL sessions store a Microsoft access token — not the app JWT — so always use storage fallbacks.
  * @returns {string} The role, or empty string if unavailable
  */
 export const getRoleFromToken = () => {
-  const token = Cookies.get("jwt-token");
+  if (getAppAuthType() === "msal") {
+    return authStorage.getRole() || Cookies.get("role") || "";
+  }
+
+  const token = authStorage.getJwt();
   const payload = decodeJwtPayload(token);
-  return payload?.role || Cookies.get("role") || "";
+  return payload?.role || authStorage.getRole() || Cookies.get("role") || "";
 };
 
 /**
@@ -50,9 +76,13 @@ export const getRoleFromToken = () => {
  * @returns {string} The user email, or empty string if unavailable
  */
 export const getEmailFromToken = () => {
-  const token = Cookies.get("jwt-token");
+  if (getAppAuthType() === "msal") {
+    return authStorage.getEmail() || Cookies.get("email") || "";
+  }
+
+  const token = authStorage.getJwt();
   const payload = decodeJwtPayload(token);
-  return payload?.mail_id || Cookies.get("email") || "";
+  return payload?.mail_id || authStorage.getEmail() || Cookies.get("email") || "";
 };
 
 /**
@@ -61,7 +91,11 @@ export const getEmailFromToken = () => {
  * @returns {string} The user name, or empty string if unavailable
  */
 export const getUserNameFromToken = () => {
-  const token = Cookies.get("jwt-token");
+  if (getAppAuthType() === "msal") {
+    return authStorage.getUserName() || Cookies.get("userName") || "";
+  }
+
+  const token = authStorage.getJwt();
   const payload = decodeJwtPayload(token);
-  return payload?.user_name || Cookies.get("userName") || "";
+  return payload?.user_name || authStorage.getUserName() || Cookies.get("userName") || "";
 };

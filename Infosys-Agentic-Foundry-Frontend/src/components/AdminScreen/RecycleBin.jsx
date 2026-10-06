@@ -48,12 +48,12 @@ const RecycleBin = ({ initialType = "agents", heading, externalSearchTerm, selec
     setLoader(true);
     let url = "";
     if (selectedType === "agents") {
-      url = `${APIs.RESTORE_AGENTS}${editAgentData?.agentic_application_id}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
+      url = `${APIs.RESTORE_AGENTS}/${editAgentData?.agentic_application_id}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
     } else if (selectedType === "tools") {
-      url = `${APIs.RESTORE_TOOLS}${editAgentData?.tool_id}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
+      url = `${APIs.RESTORE_TOOLS}/${editAgentData?.tool_id}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
     } else if (selectedType === "servers") {
       const serverId = editAgentData?.tool_id || editAgentData?.id;
-      url = `${APIs.RESTORE_SERVERS}${serverId}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
+      url = `${APIs.RESTORE_SERVERS}/${serverId}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
     }
     if (restoreNewName.trim()) url += `&new_name=${encodeURIComponent(restoreNewName.trim())}`;
     try {
@@ -84,12 +84,12 @@ const RecycleBin = ({ initialType = "agents", heading, externalSearchTerm, selec
     setLoader(true);
     let url = "";
     if (selectedType === "agents") {
-      url = `${APIs.DELETE_AGENTS_PERMANENTLY}${editAgentData?.agentic_application_id}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
+      url = `${APIs.DELETE_AGENTS_PERMANENTLY}/${editAgentData?.agentic_application_id}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
     } else if (selectedType === "tools") {
-      url = `${APIs.DELETE_TOOLS_PERMANENTLY}${editAgentData?.tool_id}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
+      url = `${APIs.DELETE_TOOLS_PERMANENTLY}/${editAgentData?.tool_id}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
     } else if (selectedType === "servers") {
       const serverId = editAgentData?.tool_id || editAgentData?.id;
-      url = `${APIs.DELETE_SERVERS_PERMANENTLY}${serverId}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
+      url = `${APIs.DELETE_SERVERS_PERMANENTLY}/${serverId}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
     }
     const response = await deleteData(url);
     const statusMsg = response?.status_message || response?.message;

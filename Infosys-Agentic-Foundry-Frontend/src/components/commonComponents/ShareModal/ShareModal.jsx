@@ -61,15 +61,15 @@ function ShareModal({ show, onClose, itemData, entityType = "tool" }) {
 
     switch (entityType) {
       case "tool":
-        return `${APIs.GET_TOOL_SHARING}${encodeURIComponent(id)}/sharing-info`;
+        return `${APIs.GET_TOOL_SHARING}/${encodeURIComponent(id)}/sharing-info`;
       case "agent":
-        return `${APIs.GET_AGENT_SHARING}${encodeURIComponent(id)}/sharing-info`;
+        return `${APIs.GET_AGENT_SHARING}/${encodeURIComponent(id)}/sharing-info`;
       case "server":
-        return `${APIs.GET_SERVER_SHARING}${encodeURIComponent(id)}/sharing-info`;
+        return `${APIs.GET_SERVER_SHARING}/${encodeURIComponent(id)}/sharing-info`;
       case "knowledge base":
-        return `${APIs.GET_KB_SHARING}${encodeURIComponent(id)}/sharing-info`;
+        return `${APIs.GET_KB_SHARING}/${encodeURIComponent(id)}/sharing-info`;
       case "workflow":
-        return `${APIs.GET_WORKFLOW_SHARING}${encodeURIComponent(id)}/sharing-info`;
+        return `${APIs.GET_WORKFLOW_SHARING}/${encodeURIComponent(id)}/sharing-info`;
       default:
         return null;
     }
@@ -82,15 +82,15 @@ function ShareModal({ show, onClose, itemData, entityType = "tool" }) {
 
     switch (entityType) {
       case "tool":
-        return `${APIs.UPDATE_TOOL_SHARING}${encodeURIComponent(id)}/sharing`;
+        return `${APIs.UPDATE_TOOL_SHARING}/${encodeURIComponent(id)}/sharing`;
       case "agent":
-        return `${APIs.UPDATE_AGENT_SHARING}${encodeURIComponent(id)}/sharing`;
+        return `${APIs.UPDATE_AGENT_SHARING}/${encodeURIComponent(id)}/sharing`;
       case "server":
-        return `${APIs.UPDATE_SERVER_SHARING}${encodeURIComponent(id)}/sharing`;
+        return `${APIs.UPDATE_SERVER_SHARING}/${encodeURIComponent(id)}/sharing`;
       case "knowledge base":
-        return `${APIs.UPDATE_KB_SHARING}${encodeURIComponent(id)}/sharing`;
+        return `${APIs.UPDATE_KB_SHARING}/${encodeURIComponent(id)}/sharing`;
       case "workflow":
-        return `${APIs.UPDATE_WORKFLOW_SHARING}${encodeURIComponent(id)}/sharing`;
+        return `${APIs.UPDATE_WORKFLOW_SHARING}/${encodeURIComponent(id)}/sharing`;
       default:
         return null;
     }

@@ -422,6 +422,7 @@
   gap: 8px;
   border-bottom: 1px solid var(--border);
   background: var(--hover-background);
+  flex-shrink: 0;
 }
 
 /* Ensure TextField fits properly inside dropdown */
@@ -456,6 +457,26 @@
   position: relative;
   overflow-y: auto;
   overflow-x: hidden;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb, rgba(148, 163, 184, 0.45)) transparent;
+}
+
+.dropdownOptionsContainer::-webkit-scrollbar {
+  width: 8px;
+}
+
+.dropdownOptionsContainer::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dropdownOptionsContainer::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb, rgba(148, 163, 184, 0.45));
+  border-radius: 4px;
+}
+
+.dropdownOptionsContainer::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover, rgba(148, 163, 184, 0.65));
 }
 
 .dropdownListDown {
@@ -544,6 +565,7 @@
   flex-direction: column;
   justify-content: space-between;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .clearButton {

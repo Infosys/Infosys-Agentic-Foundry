@@ -11,7 +11,14 @@ import { getRoleFromToken, getEmailFromToken, getUserNameFromToken } from "../..
 import styles from "./KnowledgeBaseForm.module.css";
 import { formatDateTimeWithTimezone } from "../../utils/timeFormatter";
 import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
-import { useKnowledgeBaseService } from "../../services/knowledgeBaseService";
+import {
+  useKnowledgeBaseService,
+  getKbUploadToast,
+  getKbDeleteToast,
+  KB_SUPPORTED_EXTENSIONS,
+  KB_ACCEPT_TYPES,
+  KB_SUPPORTED_TEXT,
+} from "../../services/knowledgeBaseService";
 import ConfirmationModal from "../commonComponents/ToastMessages/ConfirmationPopup";
 
 /**
@@ -30,7 +37,7 @@ const KnowledgeBaseForm = ({ mode = "create", kbData = null, onClose, onSave }) 
   const userName = getUserNameFromToken();
 
   const { addMessage } = useMessage();
-  const { handleApiError, handleApiSuccess } = useErrorHandler();
+  const { handleApiError, handleApiSuccess, extractSuccessMessage } = useErrorHandler();
   const { postData, fetchData } = useFetch();
   const { deleteKnowledgeBases } = useKnowledgeBaseService();
   const fileInputRef = useRef(null);
@@ -91,13 +98,12 @@ const KnowledgeBaseForm = ({ mode = "create", kbData = null, onClose, onSave }) 
   };
 
   const handleFilesAdded = (newFiles) => {
-    const validExtensions = [".pdf", ".txt", ".md", ".doc", ".docx"];
     const validFiles = newFiles.filter((file) =>
-      validExtensions.some((ext) => file.name.toLowerCase().endsWith(ext))
+      KB_SUPPORTED_EXTENSIONS.some((ext) => file.name.toLowerCase().endsWith(ext))
     );
 
     if (validFiles.length !== newFiles.length) {
-      addMessage("Some files were skipped. Only PDF, TXT, MD, DOC, DOCX files are allowed.", "error");
+      addMessage(`Some files were skipped. ${KB_SUPPORTED_TEXT.replace("Supported: ", "Only ")} files are allowed.`, "error");
     }
 
     setFiles((prev) => [...prev, ...validFiles]);
@@ -192,9 +198,11 @@ const KnowledgeBaseForm = ({ mode = "create", kbData = null, onClose, onSave }) 
       } else {
         const operationType = response?.is_new ? "created" : "updated";
         const kbName = response?.kb_name || formData.name;
-        handleApiSuccess(response, {
-          fallbackMessage: `Knowledge Base "${kbName}" ${operationType} successfully`,
-        });
+        const { message, type } = getKbUploadToast(
+          response,
+          extractSuccessMessage(response) || `Knowledge Base "${kbName}" ${operationType} successfully`
+        );
+        addMessage(message, type);
       }
 
       if (onSave) {
@@ -227,15 +235,15 @@ const KnowledgeBaseForm = ({ mode = "create", kbData = null, onClose, onSave }) 
       setLoading(true);
       const response = await deleteKnowledgeBases([kbId], loggedInUserEmail);
 
-      if (response) {
-        const statusMsg = response.status_message || response.message || "Knowledge Base deleted successfully";
-        addMessage(statusMsg, "success");
-      }
+      const { message, type } = getKbDeleteToast(response);
+      if (message) addMessage(message, type);
 
-      setShowDeleteConfirm(false);
       setLoading(false);
-      if (onSave) onSave();
-      onClose();
+      if (type === "success") {
+        setShowDeleteConfirm(false);
+        if (onSave) onSave();
+        onClose();
+      }
     } catch (e) {
       console.error("Delete KB error:", e);
       addMessage("Failed to delete knowledge base", "error");
@@ -257,9 +265,11 @@ const KnowledgeBaseForm = ({ mode = "create", kbData = null, onClose, onSave }) 
             Delete
           </IAFButton>
         )}
-        <IAFButton type="primary" onClick={handleSubmit} disabled={loading}>{/* disabled={loading || !isFormValid} */}
-          {isCreateMode ? "Create Knowledge Base" : "Update"}
-        </IAFButton>
+        {isCreateMode && (
+          <IAFButton type="primary" onClick={handleSubmit} disabled={loading}>{/* disabled={loading || !isFormValid} */}
+            Create Knowledge Base
+          </IAFButton>
+        )}
       </div>
     </div>
   );
@@ -336,8 +346,8 @@ const KnowledgeBaseForm = ({ mode = "create", kbData = null, onClose, onSave }) 
                   onRemoveFile={handleRemoveFile}
                   loading={loading}
                   fileInputId="kb-file-input"
-                  acceptedFileTypes=".pdf,.txt,.md,.doc,.docx"
-                  supportedText="Supported: PDF, TXT, MD, DOC, DOCX"
+                  acceptedFileTypes={KB_ACCEPT_TYPES}
+                  supportedText={KB_SUPPORTED_TEXT}
                   uploadText="Click to upload"
                   dragDropText=" or drag and drop"
                   multiple={true}
@@ -348,7 +358,7 @@ const KnowledgeBaseForm = ({ mode = "create", kbData = null, onClose, onSave }) 
                   id="kb-file-input"
                   type="file"
                   multiple
-                  accept=".pdf,.txt,.md,.doc,.docx"
+                  accept={KB_ACCEPT_TYPES}
                   onChange={handleFileInputChange}
                   style={{ display: "none" }}
                 />

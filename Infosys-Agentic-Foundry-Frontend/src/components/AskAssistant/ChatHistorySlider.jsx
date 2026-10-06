@@ -6,6 +6,7 @@ import { faTimes, faSearch, faFilter, faSpinner, faTrash, faCheck } from "@forta
 import styles from "./ChatHistorySlider.module.css";
 import SVGIcons from "../../Icons/SVGIcons";
 import { useChatServices } from "../../services/chatService";
+import { useMessage } from "../../Hooks/MessageContext";
 
 const ChatHistorySlider = ({ chats, onClose, onSelectChat, fetchChatHistory, setOldSessionId, agentSelectValue, agentType, onChatDeleted, framework_type }) => {
   const [searchTerm, setSearchTerm] = useState("");
@@ -18,6 +19,7 @@ const ChatHistorySlider = ({ chats, onClose, onSelectChat, fetchChatHistory, set
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState(null);
   const { resetChat } = useChatServices();
+  const { addMessage } = useMessage();
 
   const filterChats = useCallback(() => {
     if (!Array.isArray(chats)) {
@@ -85,24 +87,24 @@ const ChatHistorySlider = ({ chats, onClose, onSelectChat, fetchChatHistory, set
       if (isNaN(date.getTime())) {
         return "Invalid date";
       }
-      
+
       // Format time in local timezone with 12-hour format
       const timeStr = date.toLocaleTimeString([], {
         hour: "numeric",
         minute: "2-digit",
         hour12: true,
       });
-      
+
       // Calculate relative date for display (in local timezone)
       const now = new Date();
       // Reset to start of day in local timezone for accurate day comparison
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const msgDateStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-      
+
       // Calculate difference in days (positive = past, negative = future)
       const diffMs = todayStart.getTime() - msgDateStart.getTime();
       const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
-      
+
       // Build display text with date prefix
       if (diffDays === 0) {
         return timeStr; // Today - just show time
@@ -159,14 +161,17 @@ const ChatHistorySlider = ({ chats, onClose, onSelectChat, fetchChatHistory, set
       };
       const response = await resetChat(data);
       if (response?.status === "success") {
+        addMessage(response.message || "Chat deleted successfully", "success");
         setFilteredChats((prev) => prev.filter((chat) => chat.session_id !== pendingDeleteSessionId));
         if (onChatDeleted) {
           onChatDeleted(pendingDeleteSessionId);
-          onChatDeleted(pendingDeleteSessionId);
         }
+      } else {
+        addMessage(response?.message || "Failed to delete chat", "error");
       }
     } catch (error) {
       console.error("Error deleting chat:", error);
+      addMessage("Failed to delete chat", "error");
     } finally {
       setDeletingChatId(null);
       setPendingDeleteSessionId(null);

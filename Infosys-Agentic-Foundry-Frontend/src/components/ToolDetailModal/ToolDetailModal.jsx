@@ -94,10 +94,8 @@ const ToolDetailModal = ({
 
     if (!toolId) return;
 
-    // Always fetch for servers to get fresh data from MCP_GET_SERVER_BY_ID
-    // For tools, fetch if we don't have the needed data OR if a specific version is selected
-    const hasToolData = codeSnippet && !codeSnippet.includes("No code available");
-    const needsFetch = isServer || !hasToolData || selectedVersion;
+    // Always fetch fresh data to get version-specific description and code
+    const needsFetch = true;
 
     if (!needsFetch) return;
 
@@ -133,6 +131,18 @@ const ToolDetailModal = ({
             const versionData = fullData.versioning[selectedVersion];
             if (versionData.code_snippet) setFetchedCodeSnippet(versionData.code_snippet);
             if (versionData.tool_description) setFetchedDescription(versionData.tool_description);
+          } else if (fullData?.versioning) {
+            // No specific version selected — use latest version's data from versioning
+            const versions = fullData?.versions;
+            if (Array.isArray(versions) && versions.length > 0) {
+              const latestVersion = versions[versions.length - 1];
+              const latestLabel = typeof latestVersion === "string" ? latestVersion : (latestVersion?.version || latestVersion?.version_label || `v${latestVersion?.version_number}`);
+              const latestData = fullData.versioning[latestLabel];
+              if (latestData?.code_snippet) setFetchedCodeSnippet(latestData.code_snippet);
+              if (latestData?.tool_description) setFetchedDescription(latestData.tool_description);
+            } else if (fullData?.code_snippet) {
+              setFetchedCodeSnippet(fullData.code_snippet);
+            }
           } else if (fullData?.code_snippet) {
             setFetchedCodeSnippet(fullData.code_snippet);
           }

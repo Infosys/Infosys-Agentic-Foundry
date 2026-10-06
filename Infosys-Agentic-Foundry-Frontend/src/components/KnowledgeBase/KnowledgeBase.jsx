@@ -7,7 +7,7 @@ import Loader from "../commonComponents/Loader.jsx";
 import useFetch from "../../Hooks/useAxios.js";
 import { APIs } from "../../constant";
 import { useToolsAgentsService } from "../../services/toolService.js";
-import { useKnowledgeBaseService } from "../../services/knowledgeBaseService.js";
+import { useKnowledgeBaseService, getKbDeleteToast } from "../../services/knowledgeBaseService.js";
 import DisplayCard1 from "../../iafComponents/GlobalComponents/DisplayCard/DisplayCard1.jsx";
 import { useErrorHandler } from "../../Hooks/useErrorHandler";
 import EmptyState from "../commonComponents/EmptyState.jsx";
@@ -17,12 +17,6 @@ import ShareModal from "../commonComponents/ShareModal/ShareModal.jsx";
 import useMultiSelect from "../../Hooks/useMultiSelect";
 import ConfirmationModal from "../commonComponents/ToastMessages/ConfirmationPopup";
 import { useActiveNavClick } from "../../events/navigationEvents";
-
-// Layout constants for card calculation
-const CARD_MIN_WIDTH = 200;
-const CARD_HEIGHT = 75;
-const CARD_GAP = 16;
-const DEBOUNCE_DELAY = 300;
 
 export default function KnowledgeBase() {
   // No granular delete_access for KB in permissions structure — use role-based check
@@ -79,10 +73,12 @@ export default function KnowledgeBase() {
 
   // Fetch knowledge bases from API
   const getKnowledgeBases = useCallback(
-    async () => {
+    async (searchOverride) => {
       if (isLoadingRef.current) return [];
       isLoadingRef.current = true;
       setLoading(true);
+
+      const activeSearch = searchOverride !== undefined ? searchOverride : searchTerm;
 
       try {
         const response = await fetchData(APIs.KB_GET_LIST);
@@ -91,9 +87,9 @@ export default function KnowledgeBase() {
         let filteredData = knowledgeBases;
 
         // Apply search filter
-        if (searchTerm.trim()) {
+        if (activeSearch.trim()) {
           filteredData = filteredData.filter((kb) =>
-            kb.kb_name?.toLowerCase().includes(searchTerm.toLowerCase())
+            kb.kb_name?.toLowerCase().includes(activeSearch.toLowerCase())
           );
         }
 
@@ -160,10 +156,8 @@ export default function KnowledgeBase() {
   const clearSearch = () => {
     setSearchTerm("");
     setVisibleData([]);
-    setTimeout(() => {
-      pageRef.current = 1;
-      getKnowledgeBases();
-    }, DEBOUNCE_DELAY);
+    pageRef.current = 1;
+    getKnowledgeBases("");
   };
 
   // Refresh
@@ -172,7 +166,7 @@ export default function KnowledgeBase() {
       setSearchTerm("");
       setVisibleData([]);
       pageRef.current = 1;
-      await getKnowledgeBases();
+      await getKnowledgeBases("");
     } catch (e) {
       // swallow
     }
@@ -217,16 +211,12 @@ export default function KnowledgeBase() {
     try {
       const response = await deleteKnowledgeBases([item.kb_id || item.id], loggedInUserEmail);
 
-      if (response && typeof response !== "string") {
-        const statusMsg = response.status_message || response.message;
-        if (statusMsg) {
-          const hasAnyFailure = Array.isArray(response.results) && response.results.some((r) => r.is_delete === false);
-          addMessage(statusMsg, hasAnyFailure ? "error" : "success");
-        }
-      }
+      const { message, type } = getKbDeleteToast(response);
+      if (message) addMessage(message, type);
 
-      // Refresh the list
-      getKnowledgeBases();
+      if (type === "success") {
+        getKnowledgeBases();
+      }
     } catch (error) {
       handleApiError(error, { context: "KnowledgeBase.handleDeleteClick" });
     }
@@ -257,15 +247,21 @@ export default function KnowledgeBase() {
   // Bulk delete handler — single API call
   const handleBulkDeleteKBs = async () => {
     if (multiSelectIds.length === 0) return;
-    // Filter out items created by the current user (creator cannot delete own items)
     const currentEmail = (loggedInUserEmail || "").trim().toLowerCase();
-    const ownItems = visible.filter((item) => multiSelectIds.includes(item.kb_id) && (item.created_by || "").trim().toLowerCase() === currentEmail);
-    const deletableIds = multiSelectIds.filter((id) => {
-      const item = visible.find((d) => d.kb_id === id);
-      return !item || (item.created_by || "").trim().toLowerCase() !== currentEmail;
-    });
-    if (ownItems.length > 0) {
-      addMessage(`${ownItems.length} knowledge base(s) created by you were skipped. You cannot delete your own knowledge bases.`, "error");
+    const canDeleteItem = (item) => {
+      if (!item) return false;
+      if (isAdmin) return true;
+      return (item.created_by || "").trim().toLowerCase() === currentEmail;
+    };
+    const skippedItems = visible.filter(
+      (item) => multiSelectIds.includes(item.kb_id) && !canDeleteItem(item)
+    );
+    const deletableIds = multiSelectIds.filter((id) => canDeleteItem(visible.find((d) => d.kb_id === id)));
+    if (skippedItems.length > 0) {
+      addMessage(
+        `${skippedItems.length} knowledge base(s) skipped. Only the owner can delete a knowledge base.`,
+        "error"
+      );
     }
     if (deletableIds.length === 0) {
       clearMultiSelection();
@@ -276,13 +272,8 @@ export default function KnowledgeBase() {
     try {
       const response = await deleteKnowledgeBases(deletableIds, loggedInUserEmail);
 
-      if (response && typeof response !== "string") {
-        const statusMsg = response.status_message || response.message;
-        if (statusMsg) {
-          const hasAnyFailure = Array.isArray(response.results) && response.results.some((r) => r.is_delete === false);
-          addMessage(statusMsg, hasAnyFailure ? "error" : "success");
-        }
-      }
+      const { message, type } = getKbDeleteToast(response);
+      if (message) addMessage(message, type);
     } catch (error) {
       handleApiError(error, { context: "KnowledgeBase.handleBulkDelete" });
     }
@@ -350,10 +341,7 @@ export default function KnowledgeBase() {
               filters={[
                 ...(searchTerm.trim() ? [`Search: ${searchTerm}`] : []),
               ]}
-              onClearFilters={() => {
-                setSearchTerm("");
-                handleRefreshClick();
-              }}
+              onClearFilters={clearSearch}
               onCreateClick={handleCreateClick}
               createButtonLabel="New Knowledge Base"
             />

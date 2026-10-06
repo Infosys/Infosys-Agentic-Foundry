@@ -1,0 +1,1198 @@
+/* ── Scheduler.module.css ────────────────────────────────── */
+
+/* ── Filter bar (below SubHeader) ────────────────────────── */
+.filterBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  flex-wrap: wrap;
+}
+
+.filterChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-normal, 250ms) var(--transition-smooth, ease);
+  user-select: none;
+  letter-spacing: 0.2px;
+}
+
+.filterChip:hover {
+  border-color: var(--accent-primary);
+  color: var(--text-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(55, 172, 234, 0.1);
+}
+
+.filterChipActive {
+  background: linear-gradient(135deg, rgba(55, 172, 234, 0.15), rgba(2, 93, 138, 0.1));
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+  box-shadow: 0 0 16px rgba(55, 172, 234, 0.12), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+/* ── Schedule grid ───────────────────────────────────────── */
+.listWrapper {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 0;
+}
+
+.scheduleGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  padding: 0;
+  padding-right: 18px;
+  padding-bottom: 10px;
+  width: 100%;
+}
+
+/* ── Schedule card ───────────────────────────────────────── */
+.scheduleCard {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-left: 5px solid var(--accent, #37acea);
+  border-radius: var(--radius, 16px);
+  border-top-left-radius: 10px;
+  border-bottom-left-radius: 10px;
+  padding: 14px;
+  min-height: 160px;
+  transition:
+    transform var(--transition-normal, 250ms) var(--transition-smooth, cubic-bezier(0.4, 0, 0.2, 1)),
+    box-shadow var(--transition-normal, 250ms) var(--transition-smooth, cubic-bezier(0.4, 0, 0.2, 1)),
+    border-color var(--transition-fast, 150ms) ease,
+    background var(--transition-fast, 150ms) ease;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+  overflow: hidden;
+  word-break: break-word;
+  box-sizing: border-box;
+  cursor: default;
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.06),
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  animation: iafCardEnter var(--transition-slow, 350ms) var(--transition-smooth, cubic-bezier(0.4, 0, 0.2, 1)) backwards;
+}
+
+:root[data-theme="dark"] .scheduleCard {
+  background: rgba(20, 28, 43, 0.85);
+  border: 1px solid rgba(55, 172, 234, 0.2);
+  border-left: 5px solid var(--accent, #37acea);
+  border-top-left-radius: 10px;
+  border-bottom-left-radius: 10px;
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.35),
+    0 1px 2px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(55, 172, 234, 0.1);
+}
+
+/* Border light effect */
+.scheduleCard::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(55, 172, 234, 0.85), rgba(2, 93, 138, 1), rgba(55, 172, 234, 0.85), transparent);
+  opacity: 0;
+  transition: opacity var(--transition-fast, 150ms) ease;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.scheduleCard:hover::before {
+  opacity: 1;
+  animation: borderLightMove 1.5s ease-in-out infinite;
+}
+
+@keyframes borderLightMove {
+  0% { left: -100%; }
+  100% { left: 100%; }
+}
+
+.scheduleCard:hover {
+  transform: scale(1.02);
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(55, 172, 234, 0.55);
+  box-shadow:
+    0 8px 32px rgba(55, 172, 234, 0.18),
+    0 16px 48px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+:root[data-theme="dark"] .scheduleCard:hover {
+  background: rgba(20, 28, 43, 0.95);
+  border-color: #37acea;
+  box-shadow:
+    0 8px 32px rgba(55, 172, 234, 0.25),
+    0 16px 48px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(55, 172, 234, 0.15);
+}
+
+/* Staggered card entry */
+.scheduleGrid > :nth-child(1) { animation-delay: 0ms; }
+.scheduleGrid > :nth-child(2) { animation-delay: 50ms; }
+.scheduleGrid > :nth-child(3) { animation-delay: 100ms; }
+.scheduleGrid > :nth-child(4) { animation-delay: 150ms; }
+.scheduleGrid > :nth-child(5) { animation-delay: 200ms; }
+.scheduleGrid > :nth-child(6) { animation-delay: 250ms; }
+.scheduleGrid > :nth-child(n+7) { animation-delay: 300ms; }
+
+@keyframes iafCardEnter {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ── Card inner elements ─────────────────────────────────── */
+
+.cardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cardTitle {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-weight: var(--font-weight-bold, 700);
+  font-size: var(--font-size-sm, 14px);
+  color: var(--header-color, var(--text-primary));
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  word-wrap: break-word;
+  word-break: break-word;
+  text-transform: capitalize;
+  margin-bottom: 4px;
+}
+
+.cardBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 16px;
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold, 600);
+  white-space: nowrap;
+  flex-shrink: 0;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  transition:
+    transform var(--transition-fast, 150ms) ease,
+    box-shadow var(--transition-fast, 150ms) ease;
+}
+
+.scheduleCard:hover .cardBadge {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.badgeActive {
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.25);
+}
+
+.badgePaused {
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.badgeDeleted {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.badgeDot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ── Card description (cron + human readable) ────────────── */
+.cardDescription {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-weight: var(--font-weight-normal, 400);
+  font-size: var(--font-size-xs, 12px);
+  color: var(--content-color, var(--text-tertiary));
+  line-height: 1.5;
+  letter-spacing: 0.2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cronCode {
+  font-family: "Consolas", "Monaco", monospace;
+  font-size: 11px;
+  background: rgba(55, 172, 234, 0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: var(--accent, #37acea);
+  border: 1px solid rgba(55, 172, 234, 0.2);
+}
+
+.humanText {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  color: var(--content-color, var(--text-tertiary));
+  font-style: normal;
+}
+
+.cardInfo {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: var(--font-size-xs, 12px);
+  color: var(--content-color, var(--text-tertiary));
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.4;
+}
+
+.nextRun {
+  color: var(--accent, #37acea);
+  font-weight: var(--font-weight-medium, 500);
+}
+
+/* ── Card spacer ─────────────────────────────────────────── */
+.cardSpacer {
+  flex: 1;
+}
+
+/* ── Card footer ─────────────────────────────────────────── */
+.cardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding-top: 6px;
+  margin-top: auto;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+/* ── Card stats ──────────────────────────────────────────── */
+.cardStats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stat {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: 11px;
+  color: var(--content-color, var(--text-secondary));
+  font-weight: var(--font-weight-medium, 500);
+  white-space: nowrap;
+}
+
+.statSuccess {
+  color: #22c55e;
+}
+
+.statFail {
+  color: #ef4444;
+}
+
+/* ── Card action buttons (icon-only) ─────────────────────── */
+.cardActionsContainer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity var(--transition-fast, 150ms) ease;
+}
+
+.scheduleCard:hover .cardActionsContainer {
+  opacity: 1;
+}
+
+.actionBtn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--content-color, var(--text-tertiary));
+  font-size: 13px;
+  transition: all 0.2s ease-in-out;
+}
+
+.actionBtn:hover {
+  background: rgba(55, 172, 234, 0.12);
+  color: var(--accent, #37acea);
+  transform: scale(1.1);
+}
+
+.actionBtnAccent {
+  color: var(--accent, #37acea);
+}
+
+.actionBtnDanger {
+  color: #dc2626;
+}
+
+.actionBtnDanger:hover {
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+}
+
+/* ── Create/Edit Modal form ──────────────────────────────── */
+.formGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.formGridFull {
+  grid-column: 1 / -1;
+}
+
+.formField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.formLabel {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+/* ── Date Picker (react-datepicker) theme ──────────────── */
+.datePickerWrapper {
+  width: 100%;
+}
+
+.datePickerWrapper :global(.react-datepicker-wrapper) {
+  width: 100%;
+}
+
+.dateInputContainer {
+  position: relative;
+  width: 100%;
+}
+
+.datePickerInput {
+  width: 100%;
+  height: 40px;
+  padding: 0.5rem 4rem 0.5rem 0.875rem;
+  border: 1.5px solid var(--border, #d1d5db);
+  border-radius: var(--radius, 0.5rem);
+  background: var(--menu-bg, #fff);
+  color: var(--header-color, #111827);
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: 14px;
+  outline: none;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: border-color var(--transition-fast, 150ms) ease,
+    box-shadow var(--transition-fast, 150ms) ease;
+}
+
+.datePickerInput:hover:not(:focus) {
+  border-color: var(--content-color, #9ca3af);
+}
+
+.datePickerInput:focus {
+  border-color: #37acea;
+  box-shadow: var(--focus-ring, 0 0 0 3px rgba(55, 172, 234, 0.25));
+}
+
+.datePickerInput::placeholder {
+  color: var(--content-color, #9ca3af);
+  opacity: 1;
+}
+
+.dateCalendarIcon {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--content-color, #6b7280);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  border-radius: 4px;
+  transition: color 0.15s ease;
+}
+
+.dateCalendarIcon:hover {
+  color: var(--accent, #37acea);
+}
+
+.dateClearBtn {
+  position: absolute;
+  right: 36px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--content-color, #6b7280);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 2px 6px;
+  line-height: 1;
+  border-radius: 4px;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.dateClearBtn:hover {
+  color: var(--danger, #ef4444);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.datePickerWrapper :global(.react-datepicker-popper) {
+  z-index: 20;
+}
+
+.datePickerWrapper :global(.react-datepicker) {
+  background: var(--card-bg);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 10px;
+  font-family: var(--font-primary, "Inter", sans-serif);
+  color: var(--header-color);
+  box-shadow: var(--shadow-lg, 0 8px 32px rgba(0, 0, 0, 0.15));
+}
+
+.datePickerWrapper :global(.react-datepicker__header) {
+  background: var(--panel-header-bg);
+  border-bottom: 1px solid var(--color-border-subtle);
+  border-radius: 10px 10px 0 0;
+  padding-top: 10px;
+}
+
+.datePickerWrapper :global(.react-datepicker__current-month),
+.datePickerWrapper :global(.react-datepicker-time__header) {
+  color: var(--header-color);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.datePickerWrapper :global(.react-datepicker__day-name) {
+  color: var(--text-tertiary, #6b7280);
+  font-size: 11px;
+  width: 2rem;
+}
+
+.datePickerWrapper :global(.react-datepicker__day) {
+  color: var(--header-color);
+  border-radius: 6px;
+  width: 2rem;
+  line-height: 2rem;
+  font-size: 12px;
+  transition: all 0.15s ease;
+}
+
+.datePickerWrapper :global(.react-datepicker__day:hover) {
+  background: rgba(55, 172, 234, 0.15);
+  color: var(--accent, #37acea);
+}
+
+.datePickerWrapper :global(.react-datepicker__day--selected),
+.datePickerWrapper :global(.react-datepicker__day--keyboard-selected) {
+  background: var(--accent, #37acea) !important;
+  color: #fff !important;
+  font-weight: 600;
+}
+
+.datePickerWrapper :global(.react-datepicker__day--today) {
+  font-weight: 700;
+  color: var(--accent, #37acea);
+}
+
+.datePickerWrapper :global(.react-datepicker__day--disabled) {
+  color: var(--text-tertiary, #3a3f4b) !important;
+  opacity: 0.4;
+}
+
+.datePickerWrapper :global(.react-datepicker__day--outside-month) {
+  color: var(--text-tertiary, #3a3f4b);
+  opacity: 0.35;
+}
+
+.datePickerWrapper :global(.react-datepicker__navigation) {
+  top: 10px;
+}
+
+.datePickerWrapper :global(.react-datepicker__navigation-icon::before) {
+  border-color: var(--content-color);
+  border-width: 2px 2px 0 0;
+  height: 8px;
+  width: 8px;
+}
+
+.datePickerWrapper :global(.react-datepicker__navigation:hover *::before) {
+  border-color: var(--accent, #37acea);
+}
+
+.datePickerWrapper :global(.react-datepicker__triangle) {
+  display: none;
+}
+
+/* Time panel */
+.datePickerWrapper :global(.react-datepicker__time-container) {
+  border-left: 1px solid var(--color-border-subtle);
+}
+
+.datePickerWrapper :global(.react-datepicker__time) {
+  background: var(--card-bg);
+  border-radius: 0 0 10px 0;
+}
+
+.datePickerWrapper :global(.react-datepicker__time-box) {
+  width: 90px !important;
+}
+
+.datePickerWrapper :global(.react-datepicker__time-list-item) {
+  color: var(--header-color) !important;
+  font-size: 12px;
+  transition: all 0.15s ease;
+}
+
+.datePickerWrapper :global(.react-datepicker__time-list-item:hover) {
+  background: rgba(55, 172, 234, 0.15) !important;
+  color: var(--accent, #37acea) !important;
+}
+
+.datePickerWrapper :global(.react-datepicker__time-list-item--selected) {
+  background: var(--accent, #37acea) !important;
+  color: #fff !important;
+  font-weight: 600;
+}
+
+.formInput,
+.formSelect,
+.formTextarea {
+  width: 100%;
+  padding: 9px 14px;
+  border: 1px solid var(--color-border-subtle, var(--border-primary));
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--header-color, var(--text-primary));
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: var(--font-size-xs, 12px);
+  outline: none;
+  transition:
+    border-color var(--transition-fast, 150ms) ease,
+    box-shadow var(--transition-fast, 150ms) ease;
+}
+
+.formInput:focus,
+.formSelect:focus,
+.formTextarea:focus {
+  border-color: var(--accent, #37acea);
+  box-shadow: 0 0 0 3px rgba(55, 172, 234, 0.12);
+}
+
+.formTextarea {
+  font-family: "Consolas", "Monaco", monospace;
+  resize: vertical;
+  min-height: 80px;
+}
+
+.formInput:disabled,
+.formSelect:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.formRow {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.formRow > * {
+  flex: 1;
+  min-width: 140px;
+}
+
+.sectionTitle {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: var(--font-size-xs, 12px);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--accent, #37acea);
+  margin-top: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-border-subtle, var(--border-primary));
+  grid-column: 1 / -1;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  grid-column: 1 / -1;
+}
+
+.checkboxLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--transition-fast, 150ms) ease;
+}
+
+.checkboxLabel:hover {
+  color: var(--text-primary);
+}
+
+/* ── Preview panel ───────────────────────────────────────── */
+.previewPanel {
+  grid-column: 1 / -1;
+  background: rgba(55, 172, 234, 0.05);
+  border: 1px solid rgba(55, 172, 234, 0.2);
+  border-radius: var(--radius, 16px);
+  padding: 14px 16px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.previewDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.previewValid {
+  color: #22c55e;
+  font-weight: 700;
+  font-size: 0.82rem;
+  display: flex;
+  align-items: center;
+}
+
+.previewInvalid {
+  color: #ef4444;
+  font-weight: 700;
+  font-size: 0.82rem;
+  display: flex;
+  align-items: center;
+}
+
+.previewHuman {
+  color: var(--accent-primary);
+  font-size: 0.82rem;
+  margin-top: 6px;
+  font-style: italic;
+}
+
+.previewRunList {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.previewRunHeader {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.previewRun {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  padding: 4px 0;
+  font-family: "Consolas", "Monaco", monospace;
+}
+
+.previewRunIndex {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(55, 172, 234, 0.1);
+  color: var(--accent-primary);
+  font-size: 0.66rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* ── History modal ───────────────────────────────────────── */
+.historyList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.historyItem {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-left: 3px solid var(--accent, #37acea);
+  border-radius: var(--radius, 16px);
+  cursor: pointer;
+  transition: all var(--transition-normal, 250ms) var(--transition-smooth, cubic-bezier(0.4, 0, 0.2, 1));
+}
+
+:root[data-theme="dark"] .historyItem {
+  background: rgba(20, 28, 43, 0.7);
+  border: 1px solid rgba(55, 172, 234, 0.15);
+  border-left: 3px solid var(--accent, #37acea);
+}
+
+.historyItem:hover {
+  transform: translateX(4px);
+  border-color: rgba(55, 172, 234, 0.4);
+  box-shadow:
+    0 4px 16px rgba(55, 172, 234, 0.1),
+    0 8px 32px rgba(0, 0, 0, 0.06);
+}
+
+:root[data-theme="dark"] .historyItem:hover {
+  box-shadow:
+    0 4px 16px rgba(55, 172, 234, 0.15),
+    0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.historyStatus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+  transition: transform var(--transition-fast, 150ms) ease;
+}
+
+.historyItem:hover .historyStatus {
+  transform: scale(1.1);
+}
+
+.statusSucceeded {
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.25);
+}
+
+.statusFailed {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.statusQueued,
+.statusDispatched {
+  background: rgba(59, 130, 246, 0.12);
+  color: #3b82f6;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+
+.historyMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.historyMetaPrimary {
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.historyMetaSecondary {
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.historyDuration {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-weight: 500;
+  font-family: "Consolas", "Monaco", monospace;
+}
+
+/* ── Execution detail ────────────────────────────────────── */
+.detailGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: var(--radius, 16px);
+}
+
+:root[data-theme="dark"] .detailGrid {
+  background: rgba(20, 28, 43, 0.6);
+  border: 1px solid rgba(55, 172, 234, 0.15);
+}
+
+.detailItem {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.detailLabel {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: 10px;
+  color: var(--content-color, var(--text-tertiary));
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  font-weight: var(--font-weight-semibold, 600);
+}
+
+.detailValue {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: var(--font-size-xs, 12px);
+  color: var(--header-color, var(--text-primary));
+  word-break: break-all;
+  font-weight: 500;
+}
+
+.responseBlock {
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: var(--radius, 16px);
+  padding: 16px;
+  max-height: 400px;
+  overflow: auto;
+  font-family: "Consolas", "Monaco", monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--header-color, var(--text-primary));
+  line-height: 1.6;
+}
+
+:root[data-theme="dark"] .responseBlock {
+  background: rgba(20, 28, 43, 0.6);
+  border: 1px solid rgba(55, 172, 234, 0.15);
+}
+
+.responseTitle {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: 12px;
+  font-weight: var(--font-weight-bold, 700);
+  color: var(--accent, #37acea);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ── Chat History ────────────────────────────────────────── */
+.chatSection {
+  margin-top: 16px;
+}
+
+.chatContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 500px;
+  overflow-y: auto;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: var(--radius, 16px);
+}
+
+:root[data-theme="dark"] .chatContainer {
+  background: rgba(20, 28, 43, 0.5);
+  border: 1px solid rgba(55, 172, 234, 0.1);
+}
+
+.chatMessage {
+  padding: 12px 16px;
+  border-radius: 12px;
+  max-width: 85%;
+  word-break: break-word;
+}
+
+.chatMessageUser {
+  background: rgba(55, 172, 234, 0.1);
+  border: 1px solid rgba(55, 172, 234, 0.2);
+  align-self: flex-start;
+}
+
+:root[data-theme="dark"] .chatMessageUser {
+  background: rgba(55, 172, 234, 0.12);
+  border: 1px solid rgba(55, 172, 234, 0.25);
+}
+
+.chatMessageAssistant {
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.15);
+  align-self: flex-end;
+}
+
+:root[data-theme="dark"] .chatMessageAssistant {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.chatRole {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: 10px;
+  font-weight: var(--font-weight-bold, 700);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 6px;
+}
+
+.chatMessageUser .chatRole {
+  color: var(--accent, #37acea);
+}
+
+.chatMessageAssistant .chatRole {
+  color: #10b981;
+}
+
+.chatContent {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: var(--font-size-xs, 12px);
+  line-height: 1.6;
+  color: var(--header-color, var(--text-primary));
+  white-space: pre-wrap;
+}
+
+/* ── Empty & loading ─────────────────────────────────────── */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 20px;
+  color: var(--content-color, var(--text-tertiary));
+  gap: 12px;
+}
+
+.emptyIcon {
+  font-size: 2.5rem;
+  opacity: 0.25;
+}
+
+.emptyText {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: 500;
+}
+
+/* ── Upcoming sidebar ────────────────────────────────────── */
+.upcomingList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.upcomingItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm, 8px);
+  font-size: 0.78rem;
+  transition: all var(--transition-fast, 150ms) ease;
+}
+
+.upcomingItem:hover {
+  border-color: var(--accent-primary);
+}
+
+.upcomingTime {
+  font-weight: 600;
+  color: var(--accent-primary);
+  white-space: nowrap;
+  font-family: "Consolas", "Monaco", monospace;
+}
+
+.upcomingName {
+  color: var(--text-primary);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.upcomingCron {
+  color: var(--text-tertiary);
+  font-family: "Consolas", "Monaco", monospace;
+  font-size: 0.72rem;
+}
+
+/* ── Modal footer ────────────────────────────────────────── */
+.modalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 12px;
+}
+
+/* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .scheduleGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .formGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .detailGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .scheduleCard {
+    padding: 12px;
+  }
+
+  .cardFooter {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* ── Edit schedule inline ────────────────────────────────── */
+.editOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.editPanel {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: var(--radius, 16px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  width: 90%;
+  max-width: 780px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 28px;
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.15),
+    0 8px 32px rgba(0, 0, 0, 0.08);
+}
+
+:root[data-theme="dark"] .editPanel {
+  background: rgba(20, 28, 43, 0.95);
+  border: 1px solid rgba(55, 172, 234, 0.2);
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.4),
+    0 8px 32px rgba(55, 172, 234, 0.08);
+}
+
+.editPanelTitle {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: 16px;
+  font-weight: var(--font-weight-bold, 700);
+  color: var(--header-color, var(--text-primary));
+  margin-bottom: 20px;
+}
+
+/* ── Advanced toggle ─────────────────────────────────────── */
+.advancedToggle {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--accent-primary);
+  padding: 8px 0;
+  user-select: none;
+  transition: color var(--transition-fast, 150ms) ease;
+}
+
+.advancedToggle:hover {
+  color: var(--text-primary);
+}
+
+/* ── Error text ──────────────────────────────────────────── */
+.errorText {
+  color: #ef4444;
+  font-size: 0.78rem;
+  margin-top: 2px;
+}
+
+

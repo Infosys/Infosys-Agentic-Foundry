@@ -1,6 +1,8 @@
 import React, { useEffect } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth, hasAuthArtifacts, getActiveUser } from "./context/AuthContext";
+import { isMsalLoginPending } from "./auth/msalSessionUtils";
+import MsalAuthLoader from "./components/commonComponents/MsalAuthLoader";
 
 const ProtectedRoute = ({ children, requiredRole }) => {
   const { isAuthenticated, role, loading, logout, user } = useAuth();
@@ -15,6 +17,9 @@ const ProtectedRoute = ({ children, requiredRole }) => {
 
   useEffect(() => {
     if (loading) return;
+    // MSAL redirect lands on / before auth artifacts exist — let MsalEventHandler finish
+    if (isMsalLoginPending()) return;
+
     const active = getActiveUser();
 
     // Only check core artifacts (userName + session), NOT the JWT cookie.
@@ -36,8 +41,8 @@ const ProtectedRoute = ({ children, requiredRole }) => {
     }
   }, [loading, logout, user]);
 
-  // Wait for auth to load
-  if (loading) return null;
+  // Wait for auth hydration, or show loader while MSAL redirect is being processed
+  if (loading || isMsalLoginPending()) return <MsalAuthLoader />;
 
   if (!isAuthenticated || !hasAuthArtifacts(false)) {
     return <Navigate to="/login" replace />;

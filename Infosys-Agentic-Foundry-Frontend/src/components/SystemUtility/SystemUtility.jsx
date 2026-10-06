@@ -371,9 +371,9 @@ export const SystemUtilityContent = () => {
                           </span>
                         </div>
                       </div>
-                      <button className={styles.downloadLink} onClick={() => handleDownloadReport(report.download_url)}>
-                        <SVGIcons icon="download" width={14} height={14} /> Download
-                      </button>
+                      <Button type="primary" icon={<SVGIcons icon="download" width={14} height={14} />} onClick={() => handleDownloadReport(report.download_url)}>
+                        Download
+                      </Button>
                     </div>
                   ))}
                 </div>

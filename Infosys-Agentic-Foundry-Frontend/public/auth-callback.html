@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Processing Authentication...</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: #1a1a1a;
+      color: #e0e0e0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    }
+    .container {
+      text-align: center;
+      max-width: 400px;
+      padding: 40px;
+    }
+    .spinner {
+      width: 50px;
+      height: 50px;
+      border: 4px solid rgba(255, 255, 255, 0.1);
+      border-top-color: #007bff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 24px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .message {
+      font-size: 16px;
+      color: #a0a0a0;
+      margin-top: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="spinner"></div>
+    <h2>Processing Authentication...</h2>
+    <p class="message">Please wait while we complete your login.</p>
+  </div>
+
+  <script>
+    // This script runs when backend POSTs form data to this page
+    (function() {
+
+      // Function to extract form data from the page
+      function extractFormData() {
+        const forms = document.forms;
+
+        if (forms.length > 0) {
+          const form = forms[0];
+          const formData = new FormData(form);
+          const data = {};
+
+          // Extract all form fields
+          for (const [key, value] of formData.entries()) {
+            data[key] = value;
+          }
+
+          return data;
+        }
+
+        return null;
+      }
+
+      // Function to redirect to React app with data
+      function redirectToReactApp(data) {
+        if (!data || Object.keys(data).length === 0) {
+          console.error('No data to redirect');
+          window.location.href = '/login';
+          return;
+        }
+
+        // Build URL with data in hash fragment (secure, not sent to server)
+        const params = new URLSearchParams();
+
+        Object.keys(data).forEach(key => {
+          if (data[key]) {
+            params.append(key, data[key]);
+          }
+        });
+
+        const hash = params.toString();
+        const redirectUrl = '/auth/callback#' + hash;
+        window.location.href = redirectUrl;
+      }
+
+      // Wait for all content to load
+      window.addEventListener('load', function() {
+
+        // Small delay to ensure form is rendered
+        setTimeout(function() {
+          const data = extractFormData();
+
+          if (data) {
+            redirectToReactApp(data);
+          } else {
+            console.error('No form data found, redirecting to login');
+            window.location.href = '/login';
+          }
+        }, 100);
+      });
+
+      // Fallback: If no form found after 3 seconds, redirect to login
+      setTimeout(function() {
+        console.warn('Timeout: No form data received, redirecting to login');
+        window.location.href = '/login';
+      }, 3000);
+    })();
+  </script>
+</body>
+</html>

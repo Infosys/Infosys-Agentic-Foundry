@@ -56,6 +56,11 @@
   background: #fff2f0;
 }
 
+.message-popup.warning {
+  color: #000000;
+  background: #fffbe6;
+}
+
 .icon-container {
   position: relative;
   top: -5px;
@@ -75,6 +80,11 @@
 
 .icon-container.success {
   background-color: var(--success, #16a34a);
+  padding: 4px;
+}
+
+.icon-container.warning {
+  background-color: var(--warning, #faad14);
   padding: 4px;
 }
 
@@ -101,6 +111,15 @@
 
 .message-popup.error .close-btn:hover {
   background-color: rgba(239, 68, 68, 0.15);
+}
+
+.message-popup.warning .close-btn svg {
+  color: var(--warning, #faad14);
+  fill: var(--warning, #faad14);
+}
+
+.message-popup.warning .close-btn:hover {
+  background-color: rgba(250, 173, 20, 0.15);
 }
 
 /* Success toast close button - keep white icon */

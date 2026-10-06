@@ -103,7 +103,7 @@ export const useMcpServerService = () => {
           patchedPayload.mcp_config.headers = patchedPayload.mcp_config.headers || {};
           patchedPayload.mcp_config.headers.Authorization = `VAULT::${patchedPayload.vaultValue}`;
         }
-        const apiUrl = `${APIs.MCP_UPDATE_SERVER}${toolId}`;
+        const apiUrl = `${APIs.MCP_UPDATE_SERVER}/${toolId}`;
         const response = await putData(apiUrl, patchedPayload);
         if (response) return response;
         return null;
@@ -118,7 +118,7 @@ export const useMcpServerService = () => {
   const updateRemoteMcpUrl = useCallback(
     async (toolId, body) => {
       try {
-        const apiUrl = `${APIs.MCP_UPDATE_REMOTE_URL}${toolId}`;
+        const apiUrl = `${APIs.MCP_UPDATE_REMOTE_URL}/${toolId}`;
         const response = await putData(apiUrl, body);
         if (response) return response;
         return null;
@@ -133,7 +133,7 @@ export const useMcpServerService = () => {
   const updateModuleConfig = useCallback(
     async (toolId, body) => {
       try {
-        const apiUrl = `${APIs.MCP_UPDATE_MODULE_CONFIG}${toolId}`;
+        const apiUrl = `${APIs.MCP_UPDATE_MODULE_CONFIG}/${toolId}`;
         const response = await putData(apiUrl, body);
         if (response) return response;
         return null;
@@ -147,7 +147,7 @@ export const useMcpServerService = () => {
   const getLiveToolDetails = useCallback(
     async (toolId) => {
       try {
-        const apiUrl = `${APIs.MCP_LIVE_TOOL_DETAIL}${toolId}`;
+        const apiUrl = `${APIs.MCP_LIVE_TOOL_DETAIL}/${toolId}`;
         const response = await fetchData(apiUrl);
         if (response && Array.isArray(response)) {
           return response;
@@ -170,7 +170,7 @@ export const useMcpServerService = () => {
   const checkServerHealth = useCallback(
     async (serverId, timeoutMs = 60000) => {
       try {
-        const apiUrl = `${APIs.MCP_LIVE_TOOL_DETAIL}${serverId}`;
+        const apiUrl = `${APIs.MCP_LIVE_TOOL_DETAIL}/${serverId}`;
 
         // Create a timeout promise (60 seconds default - MCP connections can be slow)
         const timeoutPromise = new Promise((_, reject) => {
@@ -183,11 +183,6 @@ export const useMcpServerService = () => {
           fetchData(apiUrl, { silent: true }),
           timeoutPromise,
         ]);
-
-        // Debug log in development
-        if (process.env.NODE_ENV === "development") {
-          console.log(`[HealthCheck] Server ${serverId}:`, { response, type: typeof response, isArray: Array.isArray(response) });
-        }
 
         // Handle different response formats
         // Response could be: array of tools, { details: [...] }, { tools: [...] }, or error object
@@ -256,7 +251,7 @@ export const useMcpServerService = () => {
   const getServerById = useCallback(
     async (serverId) => {
       try {
-        const apiUrl = `${APIs.MCP_GET_SERVER_BY_ID}${serverId}`;
+        const apiUrl = `${APIs.MCP_GET_SERVER_BY_ID}/${serverId}`;
         const response = await fetchData(apiUrl);
         if (response) {
           return response;

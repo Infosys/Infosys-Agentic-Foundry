@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { APIs, APP_VERSION } from '../constant';
 import useFetch from '../Hooks/useAxios';
+import { useAuth } from './AuthContext';
 
 const VersionContext = createContext(null);
 
@@ -17,12 +18,14 @@ export const VersionProvider = ({ children }) => {
   const [combinedVersion, setCombinedVersion] = useState(APP_VERSION);
   const [loading, setLoading] = useState(true);
   const fetchedRef = useRef(false);
-  const {fetchData}= useFetch();
+  const { fetchData } = useFetch();
+  const { isAuthenticated } = useAuth();
 
   useEffect(() => {
-    // Only fetch if we haven't already done so
-    if (fetchedRef.current) return;
-    
+    // Wait until the user is authenticated before fetching — prevents
+    // the version call going out without a token during SSO login.
+    if (!isAuthenticated || fetchedRef.current) return;
+
     const fetchBackendVersion = async () => {
       try {
         fetchedRef.current = true;
@@ -40,12 +43,24 @@ export const VersionProvider = ({ children }) => {
     };
 
     fetchBackendVersion();
-  }, []);
+  }, [isAuthenticated]);
 
-  const value = { 
-    backendVersion, 
-    combinedVersion, 
-    loading 
+  const refreshVersion = async () => {
+    try {
+      const response = await fetchData(APIs.GET_VERSION);
+      const version = response.version || response || '';
+      setBackendVersion(version);
+      setCombinedVersion(`${APP_VERSION} ~ ${version}`);
+    } catch (error) {
+      console.error('Failed to fetch backend version:', error);
+    }
+  };
+
+  const value = {
+    backendVersion,
+    combinedVersion,
+    loading,
+    refreshVersion,
   };
 
   return (

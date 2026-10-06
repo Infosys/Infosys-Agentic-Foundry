@@ -24,7 +24,9 @@ const getTypeAbbreviation = (type, mode = "title", customMappings = {}) => {
     meta_agent: { title: "MA", description: "Meta Agent" },
     planner_meta_agent: { title: "MP", description: "Meta Planner" },
     hybrid_agent: { title: "HA", description: "Hybrid Agent" },
-    // Add more mappings as needed
+    skill_agent: { title: "SA", description: "Skill Agent" },
+    workflow: { title: "WF", description: "Workflow" },
+    custom_template: { title: "CT", description: "Custom Template" },
     ...customMappings,
   };
 

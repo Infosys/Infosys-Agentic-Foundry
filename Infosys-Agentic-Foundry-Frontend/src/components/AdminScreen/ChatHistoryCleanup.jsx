@@ -6,6 +6,11 @@ import Loader from "../commonComponents/Loader";
 import EmptyState from "../commonComponents/EmptyState";
 import ZoomPopup from "../commonComponents/ZoomPopup";
 import SVGIcons from "../../Icons/SVGIcons";
+import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
+import TextField from "../../iafComponents/GlobalComponents/TextField/TextField";
+import { FullModal } from "../../iafComponents/GlobalComponents/FullModal";
+import SummaryLine from "../../iafComponents/GlobalComponents/SummaryLine.jsx";
+import assignmentStyles from "./AgentAssignment.module.css";
 import styles from "./ChatHistoryCleanup.module.css";
 
 /**
@@ -16,7 +21,7 @@ import styles from "./ChatHistoryCleanup.module.css";
  * 2. Shows a "Run Cleanup" button that opens a modal with days_threshold
  *    and recycle_retention_days fields, then POSTs to /utility/conversation-cleanup
  */
-const ChatHistoryCleanup = () => {
+const ChatHistoryCleanup = ({ onRunClickRef }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -62,6 +67,16 @@ const ChatHistoryCleanup = () => {
   useEffect(() => {
     loadStatus();
   }, [loadStatus]);
+
+  const openRunModal = useCallback(() => {
+    setShowModal(true);
+  }, []);
+
+  useEffect(() => {
+    if (onRunClickRef) {
+      onRunClickRef.current = openRunModal;
+    }
+  }, [onRunClickRef, openRunModal]);
 
   /**
    * Run conversation cleanup — POST with query params
@@ -303,23 +318,14 @@ const ChatHistoryCleanup = () => {
     <div className={styles.container}>
       {loading && <Loader />}
 
-      {/* Action Bar: Last Run (left) + Run Cleanup (right) */}
-      {!loading && (
-        <div className={styles.actionBar}>
-          <div className={styles.lastRun}>
-            {lastRunDisplay && (
-              <>
-                <span className={styles.lastRunLabel}>Last Run:</span>
-                <span className={styles.lastRunValue}>{lastRunDisplay}</span>
-              </>
-            )}
-          </div>
-          <button
-            className={styles.runButton}
-            onClick={() => setShowModal(true)}
-          >
-            Run Cleanup
-          </button>
+      {!loading && sortedRows.length > 0 && (
+        <div className={styles.summaryRow}>
+          <SummaryLine visibleCount={sortedRows.length} totalCount={sortedRows.length} itemLabel="records" />
+          {lastRunDisplay && (
+            <span className={styles.lastRunMeta}>
+              Last run: <strong>{lastRunDisplay}</strong>
+            </span>
+          )}
         </div>
       )}
 
@@ -416,67 +422,54 @@ const ChatHistoryCleanup = () => {
       />
 
       {/* Run Cleanup Modal */}
-      {showModal && (
-        <div className={styles.modalOverlay} onClick={() => !executing && setShowModal(false)}>
-          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <div className={styles.modalHeader}>
-              <h4>Run Conversation Cleanup</h4>
-              <button
-                className={styles.closeBtn}
-                onClick={() => !executing && setShowModal(false)}
-                aria-label="Close"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className={styles.formGroup}>
-              <label htmlFor="daysThreshold">Days Threshold</label>
-              <span className={styles.fieldHint}>Delete conversations older than this many days</span>
-              <input
-                id="daysThreshold"
-                type="number"
-                min="1"
-                className={styles.formInput}
-                value={daysThreshold}
-                onChange={(e) => setDaysThreshold(Number(e.target.value))}
-                disabled={executing}
-              />
-            </div>
-
-            <div className={styles.formGroup}>
-              <label htmlFor="recycleRetentionDays">Recycle Retention Days</label>
-              <span className={styles.fieldHint}>Days to retain data in recycle bin before permanent deletion</span>
-              <input
-                id="recycleRetentionDays"
-                type="number"
-                min="1"
-                className={styles.formInput}
-                value={recycleRetentionDays}
-                onChange={(e) => setRecycleRetentionDays(Number(e.target.value))}
-                disabled={executing}
-              />
-            </div>
-
-            <div className={styles.modalFooter}>
-              <button
-                className={styles.cancelBtn}
-                onClick={() => setShowModal(false)}
-                disabled={executing}
-              >
-                Cancel
-              </button>
-              <button
-                className={styles.executeBtn}
-                onClick={handleRunCleanup}
-                disabled={executing || daysThreshold < 1 || recycleRetentionDays < 1}
-              >
-                {executing ? "Executing..." : "Execute"}
-              </button>
-            </div>
+      <FullModal
+        isOpen={showModal}
+        onClose={() => !executing && setShowModal(false)}
+        title="Run Conversation Cleanup"
+        loading={executing}
+        footer={
+          <div className={assignmentStyles.modalFooterButtons}>
+            <IAFButton type="secondary" onClick={() => setShowModal(false)} disabled={executing}>
+              Cancel
+            </IAFButton>
+            <IAFButton
+              type="primary"
+              onClick={handleRunCleanup}
+              disabled={executing || daysThreshold < 1 || recycleRetentionDays < 1}
+              loading={executing}
+            >
+              Execute
+            </IAFButton>
+          </div>
+        }
+      >
+        <div className={assignmentStyles.modernFormContainer}>
+          <div className={assignmentStyles.formFieldGroup}>
+            <TextField
+              label="Days Threshold"
+              type="number"
+              min={1}
+              value={daysThreshold}
+              onChange={(e) => setDaysThreshold(Number(e.target.value))}
+              disabled={executing}
+            />
+            <p className={assignmentStyles.fieldHint}>Delete conversations older than this many days</p>
+          </div>
+          <div className={assignmentStyles.formFieldGroup}>
+            <TextField
+              label="Recycle Retention Days"
+              type="number"
+              min={1}
+              value={recycleRetentionDays}
+              onChange={(e) => setRecycleRetentionDays(Number(e.target.value))}
+              disabled={executing}
+            />
+            <p className={assignmentStyles.fieldHint}>
+              Days to retain data in recycle bin before permanent deletion
+            </p>
           </div>
         </div>
-      )}
+      </FullModal>
     </div>
   );
 };

@@ -293,6 +293,29 @@
   border-color: #d1d5db;
 }
 
+/* Reject Button - subtle red accent */
+.toolcallRejectBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 20px;
+  background: var(--card-bg);
+  color: #e74c3c;
+  border: 1px solid rgba(231, 76, 60, 0.35);
+  border-radius: var(--radius-lg);
+  font-family: var(--font-primary);
+  font-size: 13px;
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.toolcallRejectBtn:hover {
+  background: rgba(231, 76, 60, 0.08);
+  border-color: #e74c3c;
+}
+
 .toolcallBtnLabel {
   display: inline-block;
 }

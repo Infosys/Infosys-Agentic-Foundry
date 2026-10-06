@@ -53,6 +53,28 @@ const EvaluationPageNew = () => {
   // Search state for SubHeader - moved here to comply with hooks rules
   const [searchValue, setSearchValue] = useState("");
 
+  // Consistency tab multi-select state (for SubHeader delete / select-all controls)
+  const consistencySelectionRef = useRef({ onSelectAll: null, onDeleteSelected: null });
+  const [consistencySelection, setConsistencySelection] = useState({
+    selectedCount: 0,
+    isAllSelected: false,
+    isPartiallySelected: false,
+    showSelectAll: false,
+    canDelete: false,
+  });
+
+  const handleConsistencySelectionMetaChange = useCallback((meta) => {
+    consistencySelectionRef.current.onSelectAll = meta.onSelectAll;
+    consistencySelectionRef.current.onDeleteSelected = meta.onDeleteSelected;
+    setConsistencySelection({
+      selectedCount: meta.selectedCount,
+      isAllSelected: meta.isAllSelected,
+      isPartiallySelected: meta.isPartiallySelected,
+      showSelectAll: meta.showSelectAll,
+      canDelete: meta.canDelete,
+    });
+  }, []);
+
   const { fetchData } = useFetch();
   const hasLoadedAgentsOnce = useRef(false);
 
@@ -65,6 +87,19 @@ const EvaluationPageNew = () => {
   const metricsTabs = ["evaluationRecords", "toolsEfficiency", "agentsEfficiency"];
   const isMetricsSection = metricsTabs.includes(activeTab);
   const isConsistencyTab = activeTab === "consistency";
+
+  useEffect(() => {
+    if (!isConsistencyTab) {
+      consistencySelectionRef.current = { onSelectAll: null, onDeleteSelected: null };
+      setConsistencySelection({
+        selectedCount: 0,
+        isAllSelected: false,
+        isPartiallySelected: false,
+        showSelectAll: false,
+        canDelete: false,
+      });
+    }
+  }, [isConsistencyTab]);
 
   // Fetch available agents for the filter dropdown
   const fetchAvailableAgents = useCallback(async () => {
@@ -341,10 +376,20 @@ const EvaluationPageNew = () => {
         showCreatedByDropdown={false}
         // Hide breadcrumb - navigation is in header dropdowns
         breadcrumbItems={null}
-        // Disable inline type filter for Metrics section - show Type as standalone section
-        showInlineTypeFilter={false}
+        // Enable inline type filter for Metrics section - agents filtered by selected type
+        showInlineTypeFilter={isMetricsSection}
         // Pass agent type metadata for showing type badges
         agentTypeMetadata={agentTypeMetadata}
+        showSelectAll={isConsistencyTab && consistencySelection.showSelectAll}
+        isAllSelected={consistencySelection.isAllSelected}
+        isPartiallySelected={consistencySelection.isPartiallySelected}
+        onSelectAll={(checked) => consistencySelectionRef.current.onSelectAll?.(checked)}
+        selectedCount={isConsistencyTab ? consistencySelection.selectedCount : 0}
+        onDeleteSelected={
+          isConsistencyTab && consistencySelection.canDelete
+            ? () => consistencySelectionRef.current.onDeleteSelected?.()
+            : null
+        }
       />
 
       {/* Main content area */}
@@ -357,7 +402,13 @@ const EvaluationPageNew = () => {
             filterTrigger={filterTrigger}
           />
         ) : isConsistencyTab ? (
-          <ConsistencyTab plusClickTrigger={consistencyPlusTrigger} searchValue={searchValue} onClearSearch={clearSearch} selectedAgentTypes={selectedAgentTypes} />
+          <ConsistencyTab
+            plusClickTrigger={consistencyPlusTrigger}
+            searchValue={searchValue}
+            onClearSearch={clearSearch}
+            selectedAgentTypes={selectedAgentTypes}
+            onSelectionMetaChange={handleConsistencySelectionMetaChange}
+          />
         ) : (
           ActiveComponent && <ActiveComponent />
         )}

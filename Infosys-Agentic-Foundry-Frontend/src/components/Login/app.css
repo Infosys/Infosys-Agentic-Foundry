@@ -5,12 +5,19 @@
   background-size: cover;
   background-repeat: no-repeat;
 }
+.app-container-light {
+  background-image: none;
+  background-color: var(--dashboard-bg, #fcfbfd);
+}
 .version_number {
   font-size: 10px;
-  color:rgba(255, 255, 255, 0.7);;
+  color: rgba(255, 255, 255, 0.7);
   position: absolute;
   top: 1px;
   right: 7px;
+}
+.app-container-light .version_number {
+  color: var(--muted, #6b7280);
 }
 .page-title {
   /* font-family: 'Segoe UI';

@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
-import Cookies from "js-cookie";
-import { APIs, BASE_URL } from "../constant";
-import axios from "axios";
+import { APIs } from "../constant";
+import { axiosInstance } from "../Hooks/useAxios";
 import { getDepartmentFromToken, getRoleFromToken } from "../utils/jwtUtils";
 
 /**
@@ -106,15 +105,11 @@ export const PermissionsProvider = ({ children }) => {
       const department = getDepartmentFromToken();
 
       // Use POST request with request body as per API spec
-      const url = `${BASE_URL}${APIs.GET_ROLE_PERMISSIONS}`;
+      const url = `${APIs.GET_ROLE_PERMISSIONS}`;
 
-      const response = await axios.post(url, {
+      const response = await axiosInstance.post(url, {
         role_name: role,
         department_name: department
-      }, {
-        headers: {
-          Authorization: `Bearer ${Cookies.get("jwt-token")}`
-        }
       });
       const data = response.data;
 
@@ -152,11 +147,14 @@ export const PermissionsProvider = ({ children }) => {
 
     // Listen for permission updates (triggered after login)
     const handlePermissionsUpdated = () => {
-      const currentRole = getRoleFromToken();
-      if (currentRole) {
-        fetchedRoleRef.current = null; // Reset to force refresh
-        fetchPermissions(true);
-      }
+      // Defer until login() has persisted role/department to storage
+      window.setTimeout(() => {
+        const currentRole = getRoleFromToken();
+        if (currentRole) {
+          fetchedRoleRef.current = null; // Reset to force refresh
+          fetchPermissions(true);
+        }
+      }, 100);
     };
 
     window.addEventListener("permissions:updated", handlePermissionsUpdated);

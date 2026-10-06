@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Cookies from "js-cookie";
+import authStorage from "../../utils/authStorage";
 import { getRoleFromToken, getEmailFromToken } from "../../utils/jwtUtils";
 import {
   BOT,
@@ -20,10 +21,17 @@ import {
   PLANNER_EXECUTOR_AGENT,
   HYBRID_AGENT,
   WORKFLOW_AGENT,
+  SKILL_AGENT,
   chat_screen_config,
 } from "../../constant";
 
 import { useChatServices } from "../../services/chatService";
+import { withAsyncFlag, isAsyncModeEnabled, submitAndPollAsync } from "../../utils/asyncTaskPoller";
+import {
+  hasStructuredToolCallDetails,
+  hasToolCallDetailsInMessage,
+  resolveToolCallAdditionalDetails,
+} from "../../utils/toolCallDetailsUtils";
 import useFetch from "../../Hooks/useAxios";
 import { useGlobalComponent } from "../../Hooks/GlobalComponentContext.js";
 import SVGIcons from "../../Icons/SVGIcons";
@@ -38,10 +46,14 @@ import SuggestionPopover from "./SuggestionPopover";
 import Canvas from "../Canvas/Canvas";
 import TemperatureSliderPopup from "./TemperatureSliderPopup.jsx";
 import ConfirmationModal from "../commonComponents/ToastMessages/ConfirmationPopup";
+import FileConflictModal from "../commonComponents/FileConflictModal/FileConflictModal";
 import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
 import DocViewerModal from "../DocViewerModal/DocViewerModal.jsx";
 import WelcomeModal from "./WelcomeModal.jsx";
 import dropdownStyles from "../../css_modules/NewCommonDropdown.module.css";
+import { getUnconfiguredCostModels } from "../../utils/modelUtils";
+import UnconfiguredModelCostWarning from "../commonComponents/UnconfiguredModelCostWarning";
+import { safeStringifyMessage, buildDebugExecutor, resolveBotMessageText, resolveResponseParts, normalizeInferenceResult } from "../../utils/messageUtils";
 
 // Styles
 import stylesNew from "./AskAssistant.module.css";
@@ -69,6 +81,7 @@ const getAgentTypeFilterOptions = (framework) => {
     react_agent: { label: "React Agent", short: "RA" },
     react_critic_agent: { label: "React Critic", short: "RC" },
     workflow: { label: "Workflow", short: "WF" },
+    skill_agent: { label: "Skill Agent", short: "SA" },
   };
 
   // Build options array starting with "All Types"
@@ -98,7 +111,7 @@ const FRAMEWORK_OPTIONS = [
 const AskAssistant = () => {
   const userRole = getRoleFromToken().toLowerCase();
   const loggedInUserEmail = getEmailFromToken();
-  const user_session = Cookies.get("user_session");
+  const user_session = authStorage.getSession() || Cookies.get("user_session");
   const [messageData, setMessageData] = useState([]); // Holds the chat messages
   const [lastResponse, setLastResponse] = useState({}); // Stores the last response from the bot
   const [userChat, setUserChat] = useState(""); // User input for chat
@@ -130,7 +143,9 @@ const AskAssistant = () => {
   const [session, setSessionId] = useState(user_session);
   const [selectedModels, setSelectedModels] = useState([]);
   const [modelsLoading, setModelsLoading] = useState(false);
+  const [unconfiguredCostModels, setUnconfiguredCostModels] = useState([]);
   const [toolInterrupt, setToolInterrupt] = useState(false);
+  const [skillVerifier, setSkillVerifier] = useState(false);
   const [isEditable, setIsEditable] = useState(false);
   // Tool interrupt submenu state
   const [mappedTools, setMappedTools] = useState([]);
@@ -143,6 +158,7 @@ const AskAssistant = () => {
   // File upload states
   const [uploadedChatFiles, setUploadedChatFiles] = useState([]);
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
+  const [chatUploadOverwrite, setChatUploadOverwrite] = useState(null);
   const [showFileViewer, setShowFileViewer] = useState(false);
   const [viewingFile, setViewingFile] = useState({ url: "", name: "" });
   const fileInputRef = useRef(null);
@@ -158,6 +174,7 @@ const AskAssistant = () => {
   // Using hasPermission(key, true) - show features by default unless explicitly denied
   const canExecutionSteps = typeof hasPermission === "function" ? hasPermission("execution_steps_access", true) : !(permissions && permissions.execution_steps_access === false);
   const canToolVerifier = typeof hasPermission === "function" ? hasPermission("tool_verifier_flag_access", true) : !(permissions && permissions.tool_verifier_flag_access === false);
+  const canSkillVerifier = typeof hasPermission === "function" ? hasPermission("skill_verifier_flag_access", true) : !(permissions && permissions.skill_verifier_flag_access === false);
   const canPlanVerifier = typeof hasPermission === "function" ? hasPermission("plan_verifier_flag_access", true) : !(permissions && permissions.plan_verifier_flag_access === false);
   const canEvaluation = typeof hasPermission === "function" ? hasPermission("online_evaluation_flag_access", true) : !(permissions && permissions.online_evaluation_flag_access === false);
   // New chat permissions
@@ -351,10 +368,7 @@ const AskAssistant = () => {
     if (!lastBotMessage) return false;
 
     // Check if we have tool call details in the message
-    const hasToolCallDetails =
-      Array.isArray(lastBotMessage?.toolcallData?.additional_details) &&
-      lastBotMessage.toolcallData.additional_details.length > 0 &&
-      Object.keys(lastBotMessage.toolcallData.additional_details[0]?.additional_kwargs || {}).length > 0;
+    const hasToolCallDetails = hasToolCallDetailsInMessage(lastBotMessage);
 
     const isEmptyMessage = !lastBotMessage?.message || lastBotMessage.message.trim() === "";
 
@@ -364,17 +378,37 @@ const AskAssistant = () => {
       return false;
     }
 
-    // Check if there are parts with content (another indicator of completed response)
+    // Check if there are parts with content (another indicator of completed response).
+    // EXCEPTION: do NOT treat parts as "completed" when tool call details are also present
+    // (interrupt-pending state). Hybrid agents populate parts during the tool interrupt
+    // phase before the user approves/rejects, so parts alone must not prevent the
+    // isAwaitingVerifierAction from returning true in that state.
     const hasParts = Array.isArray(lastBotMessage?.parts) && lastBotMessage.parts.length > 0 && lastBotMessage.parts.some((p) => p?.data?.content || p?.text || p?.content);
-    if (hasParts) {
+    if (hasParts && !hasToolCallDetails) {
       return false;
     }
 
     // Tool Verifier checks - only when message is empty (awaiting approval)
     // For tool interrupt: if message is empty AND we have tool call details, we're awaiting verification
     // This handles both first-time and subsequent tool interrupts (e.g., after user updates values)
-    const toolVerifierAwaitingWithDetails = toolInterrupt && hasToolCallDetails && isEmptyMessage;
-    const toolVerifierAwaitingStreaming = toolInterrupt && lastBotMessage?.tool_verifier && isEmptyMessage;
+    // Also detect backend-driven HITL interrupts (approval_rules → is_tool_interrupted)
+    // Also detect interrupt_metadata.interrupt_type from hook system / approval_rules
+    const hasToolInterruptMeta = lastBotMessage?.interrupt_metadata?.interrupt_type === "tool_interrupt";
+    const effectiveToolInterrupt = toolInterrupt || lastBotMessage?.is_tool_interrupted || hasToolInterruptMeta;
+
+    // Hook approval via interrupt_metadata — always awaiting when present with empty message
+    const hookApprovalAwaiting = lastBotMessage?.interrupt_metadata?.interrupt_type === "hook_approval" && isEmptyMessage;
+    if (hookApprovalAwaiting) return true;
+
+    // Skill interrupt via interrupt_metadata — awaiting when present with empty message
+    const skillInterruptAwaiting = lastBotMessage?.interrupt_metadata?.interrupt_type === "skill_interrupt" && isEmptyMessage;
+    if (skillInterruptAwaiting) return true;
+
+    // Tool interrupt via interrupt_metadata — awaiting when present with empty message and tool details
+    if (hasToolInterruptMeta && hasToolCallDetails && isEmptyMessage) return true;
+
+    const toolVerifierAwaitingWithDetails = effectiveToolInterrupt && hasToolCallDetails && isEmptyMessage;
+    const toolVerifierAwaitingStreaming = effectiveToolInterrupt && lastBotMessage?.tool_verifier && isEmptyMessage;
 
     // Plan Verifier checks - only when message is empty (awaiting approval)
     // Similar logic: if plan verifier is on and we have plan_verifier flag or prompt, we're awaiting approval
@@ -384,12 +418,12 @@ const AskAssistant = () => {
     const planVerifierAwaitingPlan = isHuman && Array.isArray(lastBotMessage?.plan) && lastBotMessage.plan.length > 0 && isEmptyMessage;
 
     // When BOTH verifiers are enabled, check if either verifier is awaiting action
-    if (toolInterrupt && isHuman) {
+    if (effectiveToolInterrupt && isHuman) {
       return toolVerifierAwaitingWithDetails || toolVerifierAwaitingStreaming || planVerifierAwaitingFlag || planVerifierAwaitingPrompt || planVerifierAwaitingPlan;
     }
 
-    // When only Tool Verifier is enabled
-    if (toolInterrupt) {
+    // When only Tool Verifier is enabled (UI toggle or backend HITL)
+    if (effectiveToolInterrupt) {
       return toolVerifierAwaitingWithDetails || toolVerifierAwaitingStreaming;
     }
 
@@ -398,14 +432,13 @@ const AskAssistant = () => {
       return planVerifierAwaitingFlag || planVerifierAwaitingPrompt || planVerifierAwaitingPlan;
     }
 
-    // If tool verifier is on and we have an empty message with tool call details awaiting approval
-    // This is the main case - tool verifier editor is shown and waiting for user action
-    if (toolInterrupt && hasToolCallDetails && (!lastBotMessage?.message || lastBotMessage.message.trim() === "")) {
+    // If tool verifier is on (UI or backend HITL) and we have an empty message with tool call details awaiting approval
+    if (effectiveToolInterrupt && hasToolCallDetails && (!lastBotMessage?.message || lastBotMessage.message.trim() === "")) {
       return true;
     }
 
     // If tool verifier is on and we have a tool_verifier message (streaming state)
-    if (toolInterrupt && lastBotMessage?.tool_verifier) {
+    if (effectiveToolInterrupt && lastBotMessage?.tool_verifier) {
       return true;
     }
 
@@ -429,11 +462,7 @@ const AskAssistant = () => {
         if (typeof msg.message !== "string") continue;
         if (msg.message.trim() !== "") continue; // not empty -> ok
 
-        const hasToolDetails =
-          Array.isArray(msg?.toolcallData?.additional_details) &&
-          msg.toolcallData.additional_details.length > 0 &&
-          Object.keys(msg.toolcallData.additional_details[0]?.additional_kwargs || {}).length > 0;
-        if (hasToolDetails) continue; // editor placeholder -> do not disable
+        if (hasToolCallDetailsInMessage(msg)) continue; // editor placeholder -> do not disable
 
         if (msg?.plan_verifier || msg?.tool_verifier) continue; // verifier -> do not disable
 
@@ -661,7 +690,8 @@ const AskAssistant = () => {
       effectiveAgentType === "react_agent" ||
       effectiveAgentType === HYBRID_AGENT ||
       effectiveAgentType === META_AGENT ||
-      effectiveAgentType === PLANNER_META_AGENT
+      effectiveAgentType === PLANNER_META_AGENT ||
+      effectiveAgentType === SKILL_AGENT
     );
   };
 
@@ -707,6 +737,10 @@ const AskAssistant = () => {
 
   const handleContextToggle = (checked) => {
     setIsContextEnabled(checked);
+    // When context (Conversation Memory) is turned off, disable file-based memory
+    if (!checked) {
+      setIsFileContextEnabled(false);
+    }
   };
 
   const handleToolInterrupt = async (isEnabled) => {
@@ -832,6 +866,7 @@ const AskAssistant = () => {
     }
     // Reset tool verifier states when agent type changes
     setToolInterrupt(false);
+    setSkillVerifier(false);
     setIsTool(false);
     setSelectedInterruptTools([]);
     setMappedTools([]);
@@ -923,7 +958,7 @@ const AskAssistant = () => {
     setMentionedAgent("");
     setMentionAgentTypeFilter("all");
     setMentionSearchTerm("");
-    const cookieSessionId = Cookies.get("user_session");
+    const cookieSessionId = authStorage.getSession() || Cookies.get("user_session");
     if (cookieSessionId) {
       setSessionId(cookieSessionId);
     }
@@ -1138,35 +1173,10 @@ const AskAssistant = () => {
 
   /**
    * Safely converts a value to a trimmed string.
-   * Handles arrays, objects, null, undefined, and primitive types.
-   * @param {*} value - The value to convert
-   * @returns {string} - A trimmed string representation
+   * Delegates to the shared safeStringifyMessage utility (src/utils/messageUtils.js)
+   * which handles all agent response shapes including hybrid-agent wrapper objects.
    */
-  const safeStringify = (value) => {
-    if (value === null || value === undefined) {
-      return "";
-    }
-    if (typeof value === "string") {
-      return value.trim();
-    }
-    if (Array.isArray(value)) {
-      // Join array elements, filtering out non-string/empty values
-      return value
-        .map((item) => (typeof item === "string" ? item : JSON.stringify(item)))
-        .filter(Boolean)
-        .join("\n")
-        .trim();
-    }
-    if (typeof value === "object") {
-      try {
-        return JSON.stringify(value, null, 2);
-      } catch {
-        return "";
-      }
-    }
-    // For numbers, booleans, etc.
-    return String(value).trim();
-  };
+  const safeStringify = (value) => safeStringifyMessage(value);
 
   const converToChatFormat = (chatHistory) => {
     const chats = [];
@@ -1175,6 +1185,9 @@ const AskAssistant = () => {
       setFeedback("no");
       setShowInput(true);
     }
+
+    if (!chatHistory) return chats;
+    chatHistory = normalizeInferenceResult(chatHistory);
 
     // If this is an error response (e.g. LLM connection error), extract the error message
     // and present it cleanly instead of processing executor_messages normally
@@ -1195,6 +1208,8 @@ const AskAssistant = () => {
       });
       return chats;
     }
+
+    const executorCount = chatHistory?.executor_messages?.length || 0;
 
     chatHistory?.executor_messages?.forEach((item, index) => {
       // USER bubble
@@ -1217,56 +1232,71 @@ const AskAssistant = () => {
         end_timestamp: item?.end_timestamp || null,
       });
 
-      // Determine bot message (prefer canonical fields) - using safeStringify for robustness
-      let botMessage = safeStringify(item?.final_response) || safeStringify(item?.response) || safeStringify(item?.message) || safeStringify(item?.content) || "";
+      // Determine bot message — prefer canonical fields and strip parse-fallback wrappers.
+      let botMessage = resolveBotMessageText(item, chatHistory);
 
-      // If server returned tools_used (alternate shape), synthesize a canonical additional_details
-      // so downstream UI (ToolCallFinalResponse) can always find tool call arguments.
-      let synthesizedAdditionalDetails = null;
-      if (item?.tools_used && (!Array.isArray(item?.additional_details) || item.additional_details.length === 0)) {
-        try {
-          const toolCalls = Object.entries(item.tools_used).map(([callId, tu]) => {
-            const argsObj = tu?.arguments ?? tu?.args ?? {};
-            const serializedArgs = typeof argsObj === "string" ? argsObj : JSON.stringify(argsObj || {});
-            return {
-              id: callId,
-              function: {
-                name: tu?.name || tu?.tool_name || callId,
-                arguments: serializedArgs,
-              },
-              output: tu?.output ?? tu?.tool_output ?? null,
-            };
-          });
-          synthesizedAdditionalDetails = [
-            {
-              additional_kwargs: {
-                tool_calls: toolCalls,
-              },
-            },
-          ];
-        } catch (e) {
-          synthesizedAdditionalDetails = null;
-        }
-      }
-
-      // If we synthesized additional_details, attach it to a copy of the item so downstream code sees it
+      const resolvedAdditionalDetails = resolveToolCallAdditionalDetails(item, chatHistory);
       const toolcallData = {
         ...item,
-        ...(synthesizedAdditionalDetails ? { additional_details: synthesizedAdditionalDetails } : {}),
+        ...(resolvedAdditionalDetails ? { additional_details: resolvedAdditionalDetails } : {}),
       };
 
-      // If tool-verifier is enabled globally and we have tool-call metadata, blank the bot message
-      // so the UI will show the ToolCallFinalResponse editor (MsgBox expects empty message for the editor gate).
-      if (toolInterrupt && Array.isArray(toolcallData.additional_details) && toolcallData.additional_details.length > 0) {
+      // If tool-verifier is enabled globally OR backend signals a HITL interrupt,
+      // OR backend sends interrupt_metadata with tool_interrupt type,
+      // blank the bot message so the UI shows the ToolCallFinalResponse editor with approve/reject buttons.
+      const backendInterrupted = Boolean(chatHistory?.is_tool_interrupted);
+      const hasInterruptMetadata = Boolean(chatHistory?.interrupt_metadata);
+      const isToolInterruptMeta = chatHistory?.interrupt_metadata?.interrupt_type === "tool_interrupt";
+      // Backend explicitly signals an interrupt (not just the UI toggle).
+      // When the backend signals interrupt we ALWAYS suppress botMessage and block
+      // the parts fallback — regardless of what safeStringify unwrapped from
+      // final_response — because hybrid agents may send a non-empty wrapper object
+      // like { "response": "text" } as an intermediate value during the pending phase.
+      const backendSignalsInterrupt = backendInterrupted || isToolInterruptMeta;
+
+      const initialBotMessage = botMessage;
+      let interruptCleared = false;
+
+      // If the executor message has a real plain-string final_response the interrupt was
+      // resolved by the user and the backend is returning the actual answer. Do NOT blank
+      // the message — even when is_tool_interrupted is still true (GoogleADK / LangGraph
+      // validator flows leave the flag set on the final response after approval).
+      // Hybrid agents that send an intermediate object-wrapper { "response": "..." } are
+      // still correctly blanked because typeof object !== "string".
+      const hasFinalResponseString = typeof item?.final_response === "string" && item.final_response.trim() !== "";
+      const isActiveInterrupt = !hasFinalResponseString && (toolInterrupt || backendSignalsInterrupt);
+
+      if (isActiveInterrupt && hasStructuredToolCallDetails(toolcallData.additional_details)) {
         botMessage = "";
+        // When backend explicitly signals interrupt → always block fallbacks.
+        // When only the UI toggle is on → only block fallbacks if canonical fields
+        // were already empty (genuine interrupt-pending); if they had content the
+        // response after approval should still be shown via the parts fallback.
+        if (!initialBotMessage || backendSignalsInterrupt) interruptCleared = true;
+      }
+      // Also blank message for hook_approval interrupt — HookApprovalCard will render instead
+      if (hasInterruptMetadata && chatHistory.interrupt_metadata.interrupt_type === "hook_approval") {
+        botMessage = "";
+        interruptCleared = true;
+      }
+      // Also blank message for skill_interrupt — SkillInterruptCard will render instead
+      if (hasInterruptMetadata && chatHistory.interrupt_metadata.interrupt_type === "skill_interrupt") {
+        botMessage = "";
+        interruptCleared = true;
+      }
+      // Also blank message for plan_verification / plan_feedback — PlanVerifier will render instead
+      if (hasInterruptMetadata && (chatHistory.interrupt_metadata.interrupt_type === "plan_verification" || chatHistory.interrupt_metadata.interrupt_type === "plan_feedback")) {
+        botMessage = "";
+        interruptCleared = true;
       }
 
-      // Additional fallbacks for META_AGENT / PLANNER_META_AGENT when no message found yet
-      // Try extracting from parts array
-      if (!botMessage && Array.isArray(item?.parts) && item.parts.length > 0) {
-        const partsText = item.parts.map((p) => safeStringify(p?.data?.content) || safeStringify(p?.text) || safeStringify(p?.content)).filter((t) => t.length > 0);
-        if (partsText.length > 0) {
-          botMessage = partsText.join("\n\n");
+      // Additional fallbacks — only when NOT cleared by an interrupt.
+      // Skipping these during a genuine tool-interrupt phase prevents hybrid-agent
+      // streaming parts from masking the empty message that triggers approve/reject UI.
+      if (!interruptCleared) {
+        // Try extracting from agent_response field (some meta agent responses use this)
+        if (!botMessage && item?.agent_response) {
+          botMessage = safeStringify(item.agent_response);
         }
       }
 
@@ -1279,10 +1309,10 @@ const AskAssistant = () => {
       //   }
       // }
 
-      // Try extracting from agent_response field (some meta agent responses use this)
-      if (!botMessage && item?.agent_response) {
-        botMessage = safeStringify(item.agent_response);
-      }
+      // Extract plan from interrupt_metadata or top-level chatHistory.plan
+      const planArr = (Array.isArray(chatHistory?.interrupt_metadata?.plan) && chatHistory.interrupt_metadata.plan.length > 0)
+        ? chatHistory.interrupt_metadata.plan
+        : (Array.isArray(chatHistory?.plan) && chatHistory.plan.length > 0 ? chatHistory.plan : null);
 
       chats.push({
         type: BOT,
@@ -1290,15 +1320,17 @@ const AskAssistant = () => {
         toolcallData: toolcallData,
         userText: item?.user_query || chatHistory?.query || "",
         steps: JSON.stringify(item?.agent_steps, null, "\t"),
-        debugExecutor: item?.additional_details,
-        // ...(index === chatHistory?.executor_messages?.length - 1 &&
-        //   !botMessage &&
-        //   !(toolInterrupt && Array.isArray(toolcallData?.additional_details) && toolcallData.additional_details.length > 0) && { plan: chatHistory?.plan }),
-        parts: item?.parts || [],
+        debugExecutor: buildDebugExecutor(item, chatHistory),
+        ...(Array.isArray(planArr) && planArr.length > 0 ? { plan: planArr } : {}),
+        parts: resolveResponseParts(item, chatHistory, index === executorCount - 1),
         show_canvas: item?.show_canvas || false,
         response_time: item?.response_time || chatHistory?.response_time || null,
         start_timestamp: item?.start_timestamp || null,
         end_timestamp: item?.end_timestamp || null,
+        // Propagate backend-driven HITL interrupt flag so downstream UI can show approve/reject
+        is_tool_interrupted: Boolean(chatHistory?.is_tool_interrupted),
+        // Propagate interrupt_metadata for hook_approval / tool_interrupt routing
+        ...(chatHistory?.interrupt_metadata ? { interrupt_metadata: chatHistory.interrupt_metadata } : {}),
       });
     });
 
@@ -1411,6 +1443,7 @@ const AskAssistant = () => {
       is_plan_approved: isApprove !== "" ? isApprove : null,
       plan_feedback: feedBack !== "" ? feedBack : null,
       tool_verifier_flag: canToolVerifier ? Boolean(toolInterrupt) : false,
+      skill_verifier_flag: canSkillVerifier ? Boolean(skillVerifier) : false,
       plan_verifier_flag: canPlanVerifier ? Boolean(isHuman) : false,
       response_formatting_flag: Boolean(isCanvasEnabled),
       context_flag: Boolean(isContextEnabled),
@@ -1418,7 +1451,8 @@ const AskAssistant = () => {
       evaluation_flag: Boolean(onlineEvaluatorFlag),
       mentioned_agentic_application_id: mentionedAgent && mentionedAgent.agentic_application_id ? mentionedAgent.agentic_application_id : null,
       validator_flag: useValidator,
-      enable_streaming_flag: true,
+      // When async mode is on, disable streaming and let the backend handle it asynchronously
+      enable_streaming_flag: !isAsyncModeEnabled(),
       message_queue: Boolean(isMessageQueueEnabled),
       ...(toolInterrupt && { interrupt_items: selectedInterruptTools }),
     };
@@ -1519,7 +1553,16 @@ const AskAssistant = () => {
         // }
         await new Promise((r) => setTimeout(r, 450));
       };
-      const responseObjects = await postDataStream(APIs.CHAT_INFERENCE, payload, { signal: abortControllerRef.current.signal }, onStreamChunk);
+      // Always include async_response_mode query param with value from .env
+      // If async mode is enabled, use polling instead of SSE streaming
+      let responseObjects;
+      if (isAsyncModeEnabled()) {
+        responseObjects = await submitAndPollAsync(postData, APIs.CHAT_INFERENCE, payload, {
+          signal: abortControllerRef.current.signal,
+        });
+      } else {
+        responseObjects = await postDataStream(withAsyncFlag(APIs.CHAT_INFERENCE), payload, { signal: abortControllerRef.current.signal }, onStreamChunk);
+      }
       // Find response with executor_messages (skip error responses), or fallback to response with plan
       const chatObj = Array.isArray(responseObjects)
         ? responseObjects.find((obj) => obj && obj.executor_messages && !obj.error_type && !obj.error)
@@ -1657,6 +1700,7 @@ const AskAssistant = () => {
       temperature: temperature,
       reset_conversation: false,
       tool_verifier_flag: canToolVerifier ? Boolean(toolInterrupt) : false,
+      skill_verifier_flag: canSkillVerifier ? Boolean(skillVerifier) : false,
       plan_verifier_flag: canPlanVerifier ? Boolean(isHuman) : false,
       response_formatting_flag: typeof overrideText === "object" ? Boolean(responseFormattingFlag) : Boolean(isCanvasEnabled),
       context_flag: typeof overrideText === "object" ? Boolean(contextFlag) : Boolean(isContextEnabled),
@@ -1664,7 +1708,8 @@ const AskAssistant = () => {
       evaluation_flag: canEvaluation ? Boolean(onlineEvaluatorFlag) : false,
       mentioned_agentic_application_id: mentionedAgent && mentionedAgent.agentic_application_id ? mentionedAgent.agentic_application_id : null,
       validator_flag: useValidator,
-      enable_streaming_flag: true,
+      // When async mode is on, disable streaming and let the backend handle it asynchronously
+      enable_streaming_flag: !isAsyncModeEnabled(),
       message_queue: Boolean(isMessageQueueEnabled),
       ...(toolInterrupt && { interrupt_items: selectedInterruptTools }),
       ...(uploadedChatFiles.length > 0 && { uploaded_files: uploadedChatFiles.map((f) => f.path) }),
@@ -1788,7 +1833,16 @@ const AskAssistant = () => {
         };
 
         // Call postDataStream with the callback and abort signal
-        const responseObjects = await postDataStream(APIs.CHAT_INFERENCE, payload, { signal: abortControllerRef.current.signal }, onStreamChunk);
+        // Always include async_response_mode query param with value from .env
+        // If async mode is enabled, use polling instead of SSE streaming
+        let responseObjects;
+        if (isAsyncModeEnabled()) {
+          responseObjects = await submitAndPollAsync(postData, APIs.CHAT_INFERENCE, payload, {
+            signal: abortControllerRef.current.signal,
+          });
+        } else {
+          responseObjects = await postDataStream(withAsyncFlag(APIs.CHAT_INFERENCE), payload, { signal: abortControllerRef.current.signal }, onStreamChunk);
+        }
 
         // Parse content from mixed response array
         if (Array.isArray(responseObjects)) {
@@ -1974,13 +2028,14 @@ const AskAssistant = () => {
     setOldSessionId("");
     setIsHuman(false);
     setToolInterrupt(false);
+    setSkillVerifier(false);
     setIsTool(false);
     setUseValidator(false);
     setIsCanvasEnabled(true);
     setIsContextEnabled(false);
     setOnlineEvaluatorFlag(false);
     // Ensure we use cookie session ID when changing framework
-    const cookieSessionId = Cookies.get("user_session");
+    const cookieSessionId = authStorage.getSession() || Cookies.get("user_session");
     if (cookieSessionId) {
       setSessionId(cookieSessionId);
     }
@@ -1995,7 +2050,7 @@ const AskAssistant = () => {
     // Reset temperature to default value of 0.0
     setTemperature(0.0);
     // Ensure we use cookie session ID when changing agent type
-    const cookieSessionId = Cookies.get("user_session");
+    const cookieSessionId = authStorage.getSession() || Cookies.get("user_session");
     if (cookieSessionId) {
       setSessionId(cookieSessionId);
     }
@@ -2024,12 +2079,16 @@ const AskAssistant = () => {
     try {
       const response = await resetChat(data);
       if (response?.status === "success") {
+        addMessage(response.message || "Chat deleted successfully", "success");
         setMessageData([]);
         fetchOldChatsData();
         setOldSessionId("");
+      } else {
+        addMessage(response?.message || "Failed to delete chat", "error");
       }
     } catch (error) {
       console.error("Error deleting chat:", error);
+      addMessage("Failed to delete chat", "error");
     } finally {
       setShowDeleteConfirmation(false);
     }
@@ -2051,6 +2110,7 @@ const AskAssistant = () => {
     setModelsLoading(true);
     try {
       const data = await fetchData(APIs.GET_MODELS);
+      setUnconfiguredCostModels(getUnconfiguredCostModels(data));
       if (data?.models && Array.isArray(data.models)) {
         const formattedModels = data.models.map((model) => ({
           label: model,
@@ -2384,31 +2444,31 @@ const AskAssistant = () => {
     }
   };
 
+  const emailToFolderName = (email) => (email || "").replace(/@/g, "_at_").replace(/\./g, "_");
+
   // Handle file selection and upload
-  const handleFileUpload = async (files) => {
+  const handleFileUpload = async (files, overwrite = false, subdirectory = null) => {
     if (!files || files.length === 0) return;
 
     const currentSessionId = oldSessionId !== "" ? oldSessionId : session;
     setIsUploadingFiles(true);
 
-    // Store original file names before upload
     const originalFileNames = files.map((file) => file.name);
 
     try {
-      const response = await uploadChatFiles(files, currentSessionId);
-      if (response && response.uploaded_files) {
-        // Match uploaded files with original names
-        // The API returns paths in the same order as uploaded files
-        const newFiles = response.uploaded_files.map((filePath, index) => ({
-          // Use original file name for display, fall back to extracting from path
-          name: originalFileNames[index] || filePath.split("/").pop() || filePath,
-          path: filePath,
+      const response = await uploadChatFiles(files, currentSessionId, overwrite, subdirectory);
+      if (!overwrite && response?.warnings?.files?.length > 0) {
+        addMessage(response.message, response.success ? "success" : "error");
+        setChatUploadOverwrite({ warnings: response.warnings, pendingFiles: files });
+      } else if (response?.uploaded_files?.length > 0) {
+        const newFiles = response.uploaded_files.map((file, index) => ({
+          name: file.original_name || originalFileNames[index] || file.saved_path?.split("/").pop() || file.saved_path,
+          path: file.saved_path,
         }));
         setUploadedChatFiles((prev) => [...prev, ...newFiles]);
-        // Use the message from API response for toast
         addMessage(response.message || "Files uploaded successfully", "success");
-      } else if (response && response.message) {
-        addMessage(response.message, "success");
+      } else if (response?.message) {
+        addMessage(response.message, response.success === false ? "error" : "success");
       }
     } catch (error) {
       console.error("Error uploading files:", error);
@@ -2435,7 +2495,6 @@ const AskAssistant = () => {
   // Handle file view - fetches blob for proper preview (same as FilesPage)
   const handleFileView = async (file) => {
     // For chat-uploaded files, the path may contain directory prefix
-    // e.g., "user_uploads/Groundtruth_template (4)_admin12345@infosys.com_c3e6a720_7d7b_4f19_b229_fc88cee941b5.xlsx"
     const fullPath = file.path || file.name;
     const displayName = file.name || fullPath.split("/").pop();
 
@@ -2775,7 +2834,7 @@ const AskAssistant = () => {
             }
             setFeedback("");
             setOldSessionId("");
-            const cookieSessionId = Cookies.get("user_session");
+            const cookieSessionId = authStorage.getSession() || Cookies.get("user_session");
             if (cookieSessionId) {
               setSessionId(cookieSessionId);
             }
@@ -2830,6 +2889,7 @@ const AskAssistant = () => {
                   selectedOption={agentType}
                   toolInterrupt={canToolVerifier ? toolInterrupt : false}
                   handleToolInterrupt={handleToolInterrupt}
+                  skillVerifier={canSkillVerifier ? skillVerifier : false}
                   handleCanvasToggle={handleCanvasToggle}
                   handleHumanInLoop={handleHumanInLoop}
                   handleContextToggle={handleContextToggle}
@@ -3082,7 +3142,6 @@ const AskAssistant = () => {
                             disabled={generating || isMissingRequiredOptions || fetching || feedBack === dislike || isEditable || messageDisable}
                             className={chatInputModule.textInput}
                             style={{ height: "24px" }}
-                            maxLength={2000}
                             autoComplete="off"
                             aria-autocomplete="list"
                             aria-controls="suggestion-popover"
@@ -3198,9 +3257,10 @@ const AskAssistant = () => {
                               meta_agent: "MA",
                               planner_meta_agent: "MP",
                               planner_executor_agent: "PE",
-                              multi_agent: "PEC",
+                              multi_agent: "PC",
                               workflow: "WF",
-                              custom_template: "CT"
+                              custom_template: "CT",
+                              skill_agent: "SA"
                             };
                             return abbrs[type] || type?.substring(0, 2).toUpperCase() || "";
                           };
@@ -3352,11 +3412,18 @@ const AskAssistant = () => {
                         if (selectedAgent?.agentic_application_id === agent.agentic_application_id) {
                           return;
                         }
+                        // Auto-switch framework based on agent type:
+                        // Hybrid agents require pure_python; all other agents use langgraph.
+                        if (agent.agentic_application_type === HYBRID_AGENT) {
+                          setFramework("pure_python");
+                        } else if (framework === "pure_python" && agent.agentic_application_type !== HYBRID_AGENT) {
+                          setFramework("langgraph");
+                        }
                         selectAgent(agent);
                         setAgentSelectValue(agent.agentic_application_id);
                         setFeedback("");
                         setOldSessionId("");
-                        const cookieSessionId = Cookies.get("user_session");
+                        const cookieSessionId = authStorage.getSession() || Cookies.get("user_session");
                         if (cookieSessionId) {
                           setSessionId(cookieSessionId);
                         }
@@ -3386,11 +3453,14 @@ const AskAssistant = () => {
                       const typeAbbreviations = {
                         meta_agent: "MA",
                         react_agent: "RA",
-                        planner_meta_agent: "PM",
+                        planner_meta_agent: "MP",
                         planner_executor_agent: "PE",
                         multi_agent: "PC",
                         react_critic_agent: "RC",
                         hybrid_agent: "HA",
+                        skill_agent: "SA",
+                        workflow: "WF",
+                        custom_template: "CT",
                       };
                       const metadata = Object.fromEntries(
                         filteredAgents.map((agent) => [
@@ -3451,6 +3521,10 @@ const AskAssistant = () => {
                       dropdownWidth="180px"
                       fixedHeight={true}
                     />
+                    <UnconfiguredModelCostWarning
+                      selectedModel={model}
+                      unconfiguredCostModels={unconfiguredCostModels}
+                    />
                   </div>
 
                   {/* Temperature Button with Popup */}
@@ -3493,13 +3567,15 @@ const AskAssistant = () => {
                 {/* Verifier Settings - hidden when no toggles are allowed by permissions */}
                 {(() => {
                   const config = chat_screen_config[framework]?.[effectiveAgentType] || {};
+                  const isSkillAgent = effectiveAgentType === SKILL_AGENT;
                   const toggles = [
                     { key: "plan-verifier", show: config.planVerifier && canPlanVerifier, label: "Plan Verifier", checked: isHuman, onChange: handleHumanInLoop },
                     { key: "tool-verifier", show: config.toolVerifier && canToolVerifier, label: effectiveAgentType === META_AGENT || effectiveAgentType === PLANNER_META_AGENT ? "Agent Verifier" : "Tool Verifier", checked: toolInterrupt, onChange: handleToolInterrupt, showToolsList: true },
+                    { key: "skill-verifier", show: config.skillVerifier && canSkillVerifier, label: "Skill Verifier", checked: skillVerifier, onChange: setSkillVerifier },
                     { key: "validator", show: config.validator && canValidator, label: "Validator", checked: useValidator, onChange: setUseValidator },
-                    { key: "file-context", show: config.fileContext && canFileContext, label: "File Context", checked: isFileContextEnabled, onChange: setIsFileContextEnabled },
-                    { key: "canvas", show: config.canvasView && canCanvasView, label: "Canvas View", checked: isCanvasEnabled, onChange: handleCanvasToggle },
-                    { key: "context", show: config.context && canContext, label: "Context", checked: isContextEnabled, onChange: handleContextToggle },
+                    { key: "context", show: config.context && canContext, label: isSkillAgent ? "Conversation Memory" : "Context", checked: isContextEnabled, onChange: handleContextToggle, description: isSkillAgent ? "Remember previous messages in this session" : undefined },
+                    { key: "file-context", show: config.fileContext && canFileContext, label: isSkillAgent ? "File-Based Memory" : "File Context", checked: isFileContextEnabled, onChange: setIsFileContextEnabled, disabled: isSkillAgent && !isContextEnabled, description: isSkillAgent ? "Use file workspace instead of DB memory" : undefined },
+                    { key: "canvas", show: config.canvasView && canCanvasView, label: isSkillAgent ? "Format Response" : "Canvas View", checked: isCanvasEnabled, onChange: handleCanvasToggle, description: isSkillAgent ? "Clean up agent output for readability" : undefined },
                     { key: "online-evaluator", show: config.onlineEvaluator && canEvaluation, label: "Online Evaluator", checked: onlineEvaluatorFlag, onChange: handleOnlineEvaluatorToggle },
                   ];
                   const visibleToggles = toggles.filter((t) => t.show);
@@ -3513,8 +3589,11 @@ const AskAssistant = () => {
                       <div className={stylesNew.settingsToggles}>
                         {visibleToggles.map((t) => (
                           <div key={t.key} className={stylesNew.toggleWithList}>
-                            <div className={`${stylesNew.sidebarToggle} ${t.showToolsList && t.checked ? stylesNew.toggleWithExpandable : ""}`}>
-                              <span className={stylesNew.toggleLabelText}>{t.label}</span>
+                            <div className={`${stylesNew.sidebarToggle} ${t.showToolsList && t.checked ? stylesNew.toggleWithExpandable : ""} ${t.disabled ? stylesNew.toggleDisabled : ""}`}>
+                              <div className={stylesNew.toggleLabelGroup}>
+                                <span className={stylesNew.toggleLabelText}>{t.label}</span>
+                                {t.description && <span className={stylesNew.toggleDescription}>{t.description}</span>}
+                              </div>
                               <div className={stylesNew.toggleRightSection}>
                                 {/* Expand/Collapse button for tools list */}
                                 {t.showToolsList && t.checked && mappedTools && mappedTools.length > 0 && (
@@ -3535,7 +3614,7 @@ const AskAssistant = () => {
                                       t.onChange(e.target.checked);
                                       if (t.showToolsList && e.target.checked) setShowToolsListExpanded(true);
                                     }}
-                                    disabled={messageDisable || generating || fetching || isEditable}
+                                    disabled={messageDisable || generating || fetching || isEditable || t.disabled}
                                     className={stylesNew.toggleCheckbox}
                                   />
                                   <span className={stylesNew.toggleSwitch}></span>
@@ -3636,6 +3715,28 @@ const AskAssistant = () => {
           message="Are you sure you want to delete this chat? This action cannot be undone."
           onConfirm={handleResetChat}
           setShowConfirmation={setShowDeleteConfirmation}
+        />
+      )}
+      {chatUploadOverwrite && (
+        <FileConflictModal
+          warnings={chatUploadOverwrite.warnings}
+          loading={isUploadingFiles}
+          onOverwrite={() => {
+            const pending = chatUploadOverwrite.pendingFiles;
+            setChatUploadOverwrite(null);
+            if (pending) handleFileUpload(pending, true);
+          }}
+          onDefaultFolder={() => {
+            const pending = chatUploadOverwrite.pendingFiles;
+            setChatUploadOverwrite(null);
+            if (pending) handleFileUpload(pending, false, emailToFolderName(loggedInUserEmail));
+          }}
+          onCustomFolder={(folder) => {
+            const pending = chatUploadOverwrite.pendingFiles;
+            setChatUploadOverwrite(null);
+            if (pending) handleFileUpload(pending, false, folder);
+          }}
+          onClose={() => setChatUploadOverwrite(null)}
         />
       )}
       {/* File Viewer Modal */}

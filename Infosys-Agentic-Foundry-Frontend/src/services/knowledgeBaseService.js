@@ -1,6 +1,68 @@
 import useFetch from "../Hooks/useAxios";
 import { APIs } from "../constant";
 
+/** File extensions accepted for Knowledge Base uploads (includes OCR-capable images). */
+export const KB_SUPPORTED_EXTENSIONS = [
+  ".pdf", ".txt", ".md", ".docx",
+  ".csv", ".pptx", ".xlsx", ".xls",
+  ".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".gif",
+];
+
+export const KB_ACCEPT_TYPES = KB_SUPPORTED_EXTENSIONS.join(",");
+
+export const KB_SUPPORTED_TEXT =
+  "Supported: PDF, TXT, MD, DOCX, CSV, PPTX, XLSX, XLS, PNG, JPG, JPEG, TIFF, BMP, GIF";
+
+/**
+ * Collect unique upload warnings from a KB document upload response (e.g. XLSX row limits).
+ */
+export const getKbUploadToast = (response, baseMessage) => {
+  const warnings = (response?.upload_results || [])
+    .filter((result) => result?.status === "success" && result?.result?.warning)
+    .map((result) => result.result.warning);
+  const uniqueWarnings = [...new Set(warnings)];
+
+  if (uniqueWarnings.length === 0) {
+    return { message: baseMessage, type: "success" };
+  }
+
+  return {
+    message: `${baseMessage} ${uniqueWarnings.join(" ")}`,
+    type: "warning",
+  };
+};
+
+/**
+ * Derive toast message and type from a KB delete API response.
+ * Uses results[].is_delete: true → success, false → error.
+ * Message comes from status_message, then results[].message.
+ */
+export const getKbDeleteToast = (response, fallbackMessage = "Knowledge Base deleted successfully") => {
+  if (!response || typeof response === "string") {
+    return { message: null, type: "success" };
+  }
+
+  const results = Array.isArray(response.results) ? response.results : [];
+  const message =
+    response.status_message ||
+    response.message ||
+    results.map((result) => result.message).filter(Boolean).join(" ") ||
+    fallbackMessage;
+
+  if (results.length > 0) {
+    const hasFailure = results.some((result) => result.is_delete === false);
+    return {
+      message,
+      type: hasFailure ? "error" : "success",
+    };
+  }
+
+  return {
+    message,
+    type: response.success === false ? "error" : "success",
+  };
+};
+
 /**
  * Knowledge Base Service Hook
  * Provides methods for fetching and managing knowledge bases
@@ -58,14 +120,6 @@ export const useKnowledgeBaseService = () => {
   };
 
   /**
-   * Get a single knowledge base by ID
-   */
-  const getKnowledgeBaseById = async (kbId) => {
-    const response = await fetchData(`${APIs.KB_GET_BY_ID}${encodeURIComponent(kbId)}`);
-    return response;
-  };
-
-  /**
    * Get multiple knowledge bases by IDs using bulk API
    * @param {string[]} kbIds - Array of knowledge base IDs to fetch
    * @returns {Promise<Array>} Array of mapped knowledge bases
@@ -106,7 +160,6 @@ export const useKnowledgeBaseService = () => {
 
   return {
     getKnowledgeBasesSearchByPageLimit,
-    getKnowledgeBaseById,
     getKnowledgeBasesByIds,
     getKnowledgeBasesForAgent,
     deleteKnowledgeBases,

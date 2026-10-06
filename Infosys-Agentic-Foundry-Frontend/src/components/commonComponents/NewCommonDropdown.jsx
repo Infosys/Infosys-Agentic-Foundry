@@ -31,6 +31,7 @@ const NewCommonDropdown = ({
   showClearIcon = false,
   optionMetadata = {},
   optionTooltips = {},
+  optionSearchText = {},
   onDropdownOpen = null,
   showTypeFilter = false,
   typeFilterOptions = [],
@@ -47,6 +48,7 @@ const NewCommonDropdown = ({
   forceDirection = null, // "up" | "down" | null - Force dropdown direction (overrides auto-detection)
   fixedHeight = false, // When true, dropdown maintains fixed 280px height (for agent/@mention dropdowns)
   defaultOpen = false, // When true, dropdown opens automatically on mount
+  listZIndex = null, // Optional z-index override for portaled dropdown list
 }) => {
   const newdropId = useId();
   const dropdownId = `dropdown-${newdropId}`;
@@ -69,7 +71,13 @@ const NewCommonDropdown = ({
   const typeFilterRef = useRef(null);
 
   // ...existing code (all the existing logic stays the same)...
-  const filteredOptions = options.filter((opt) => !search || opt.toLowerCase().includes(search.toLowerCase()));
+  const filteredOptions = options.filter((opt) => {
+    if (!search) return true;
+    const query = search.toLowerCase();
+    if (opt.toLowerCase().includes(query)) return true;
+    const extra = optionSearchText[opt];
+    return extra && extra.toLowerCase().includes(query);
+  });
 
   const selectedOption = showSelectedOnTop && selected ? selected : null;
   const displayOptions = showSelectedOnTop && selected ? filteredOptions.filter((opt) => opt !== selected) : filteredOptions;
@@ -315,9 +323,23 @@ const NewCommonDropdown = ({
   useEffect(() => {
     if (open && !prevOpenRef.current) {
       setStagedItems(selectedItems);
+      if (multiSelect) {
+        setHighlighted(filteredOptions.length > 0 ? 0 : -1);
+        setIsKeyboardNavigation(true);
+      }
     }
     prevOpenRef.current = open;
-  }, [open, selectedItems]);
+  }, [open, selectedItems, multiSelect, filteredOptions.length]);
+
+  useEffect(() => {
+    if (!open || !multiSelect || !hideFooter) return;
+    setStagedItems((prev) => prev.filter((item) => filteredOptions.includes(item)));
+    setHighlighted((prev) => {
+      if (filteredOptions.length === 0) return -1;
+      if (prev < 0) return 0;
+      return Math.min(prev, filteredOptions.length - 1);
+    });
+  }, [filteredOptions, open, multiSelect, hideFooter]);
 
   const handleMultiSelectToggle = (option) => {
     const newItems = stagedItems.includes(option) ? stagedItems.filter((item) => item !== option) : [...stagedItems, option];
@@ -427,6 +449,7 @@ const NewCommonDropdown = ({
   const classNameStr = className || "";
   const isDarkTheme = theme === "dark" || classNameStr.includes("darkTheme");
   const isChatMentionDropdown = classNameStr.includes("chatMentionDropdown");
+  const scrollablePanel = fixedHeight || (multiSelect && !hideFooter);
 
   return (
     <div className={`${styles.dropdownWrapper} ${wrapperClass} ${classNameStr} ${isDarkTheme ? styles.darkTheme : ""}`}>
@@ -480,7 +503,7 @@ const NewCommonDropdown = ({
                 {prefixIcon && <span className={styles.prefixIcon}>{prefixIcon}</span>}
                 <span
                   className={`${styles.dropdownLabelMarginTop} ${!selected ? styles.dropdownPlaceholder : styles.selectedValueTruncate}`}
-                  title={selected || ""}>
+                  title={optionTooltips[selected] || selected || ""}>
                   {selected || placeholder}
                 </span>
               </>
@@ -493,15 +516,19 @@ const NewCommonDropdown = ({
             <div
               tabIndex={-1}
               role="listbox"
+              data-common-dropdown-portal="true"
               ref={listRef}
               className={`${styles.dropdownList} ${isDarkTheme ? styles.darkTheme : ''}`}
               style={{
                 ...dropdownStyle,
+                ...(listZIndex != null ? { zIndex: listZIndex } : {}),
                 // Use calculated width from dropdownStyle, fallback to dropdownWidth prop or trigger width
                 width: dropdownStyle.width || dropdownWidth || inputRef.current?.offsetWidth || width,
                 // minWidth: dropdownStyle.width || inputRef.current?.offsetWidth || width,
                 maxWidth: dropdownStyle.maxWidth || maxWidth || dropdownStyle.width,
-                ...(fixedHeight ? { minHeight: 280, maxHeight: 280, overflowY: 'hidden' } : { maxHeight: 280, overflowY: 'auto' }),
+                ...(scrollablePanel
+                  ? { minHeight: 280, maxHeight: 320, overflow: "hidden" }
+                  : { maxHeight: 280, overflowY: "auto" }),
               }}
               onMouseDown={(e) => {
                 // Prevent blur on dropdown trigger so dropdown stays open,
@@ -509,7 +536,8 @@ const NewCommonDropdown = ({
                 if (e.target.tagName !== "INPUT") {
                   e.preventDefault();
                 }
-              }}>
+              }}
+              onKeyDown={handleKeyDown}>
               {/* ...existing dropdown content... */}
               {(showSearch || (showTypeFilter && typeFilterOptions.length > 0)) && (
                 <div className={styles.dropdownSearchWrapper}>
@@ -608,10 +636,14 @@ const NewCommonDropdown = ({
                 className={styles.dropdownOptionsContainer}
                 ref={optionsContainerRef}
                 style={{
-                  ...(fixedHeight ? { flex: 1 } : {}),
-                  maxHeight: (showSearch || showTypeFilter) ? 180 : 220,
-                  overflowY: 'auto',
-                  overflowX: 'hidden'
+                  ...(scrollablePanel ? { flex: 1, minHeight: 0 } : {}),
+                  ...(!scrollablePanel
+                    ? {
+                      maxHeight: showSearch || showTypeFilter ? 180 : 220,
+                    }
+                    : {}),
+                  overflowY: "auto",
+                  overflowX: "hidden",
                 }}>
                 {displayOptions.length === 0 && !selectedOption && <div className={styles.dropdownNoOption}>No options found</div>}
                 {displayOptions.length === 0 && selectedOption && <div className={styles.dropdownNoOption}>No other agents available</div>}
@@ -666,7 +698,7 @@ const NewCommonDropdown = ({
                           tabIndex={0}
                         />
                       )}
-                      <span className={styles.optionLabel} title={opt}>{opt}</span>
+                      <span className={styles.optionLabel} title={optionTooltips[opt] || opt}>{opt}</span>
                       <div className={styles.optionRightSection}>
                         {optionMetadata[opt] && <span className={styles.optionMetadata} title={optionTooltips[opt] || ""}>{optionMetadata[opt]}</span>}
                         {onOptionDelete && (

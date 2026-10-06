@@ -11,6 +11,11 @@ import DebugStepsCss from "../../../css_modules/DebugSteps.module.css";
 import SVGIcons from "../../../Icons/SVGIcons";
 import { META_AGENT, PLANNER_META_AGENT } from "../../../constant";
 import { isAuthenticatedDownloadLink, handleAuthenticatedDownload } from "../../../utils/downloadUtils";
+import {
+  hasStructuredParseError,
+  unwrapStructuredParseFallback,
+  countExecutionSteps,
+} from "../../../utils/messageUtils";
 
 const AccordionPlanSteps = (props) => {
   const userRole = getRoleFromToken().toLowerCase();
@@ -51,9 +56,27 @@ const AccordionPlanSteps = (props) => {
     setIsOpen(!isOpen);
   };
 
-  const toggleReasoning = () => {
-    setReasoningOpen(!reasoningOpen);
+  const markdownComponents = {
+    a: AuthenticatedLink,
+    code({ inline, className, children, ...props }) {
+      const match = /language-(\w+)/.exec(className || "");
+      return !inline && match ? (
+        <SyntaxHighlighter style={syntaxTheme} language={match[1]} PreTag="div" {...props}>
+          {String(children).replace(/\n$/, "")}
+        </SyntaxHighlighter>
+      ) : (
+        <code className={className} {...props}>
+          {children}
+        </code>
+      );
+    },
   };
+
+  const renderMarkdown = (content) => (
+    <ReactMarkdown rehypePlugins={[remarkGfm]} components={markdownComponents}>
+      {content}
+    </ReactMarkdown>
+  );
 
   const handleCanvasOpen = (e) => {
     const targetElement = e.currentTarget;
@@ -92,13 +115,22 @@ const AccordionPlanSteps = (props) => {
     .map((part) => part.data.content)
     .join("\n\n");
 
-  // Use parts content if available, otherwise fall back to response prop (for tool/plan verifier final response)
+  const unwrappedPartsContent = unwrapStructuredParseFallback(partsTextContent || "");
+  const unwrappedResponse = unwrapStructuredParseFallback(
+    props.response && typeof props.response === "string" ? props.response : "",
+  );
+  const partsHaveParseError = hasStructuredParseError(props.parts);
+  const partsUsedFallbackWrapper =
+    partsHaveParseError ||
+    (partsTextContent && partsTextContent !== unwrappedPartsContent);
+
+  // Prefer canonical response when parts carry structured-parse fallback noise.
   const textContent =
-    partsTextContent && partsTextContent.trim() !== ""
-      ? partsTextContent
-      : props.response && typeof props.response === "string" && props.response.trim() !== ""
-        ? props.response
-        : "";
+    unwrappedResponse && unwrappedResponse.trim() !== "" && (partsUsedFallbackWrapper || !unwrappedPartsContent.trim())
+      ? unwrappedResponse
+      : unwrappedPartsContent && unwrappedPartsContent.trim() !== ""
+        ? unwrappedPartsContent
+        : unwrappedResponse;
 
   const canvasParts = props.parts?.filter((part) => part.type !== "text") || [];
 
@@ -218,12 +250,7 @@ const AccordionPlanSteps = (props) => {
         <div className={styles.accordionButton} onClick={toggleAccordion}>
           <div className={styles.accordionButtonLeft}>
             <SVGIcons icon="execution-steps" width={20} height={20} color="currentColor" stroke="currentColor" />
-            <span>Execution Steps ({
-              // Count only the steps that will actually be rendered (exclude tool response items)
-              Array.isArray(props?.debugExecutor)
-                ? props.debugExecutor.filter(item => item.role || item.tool_calls?.length > 0 || (item.content && item.type !== "tool")).length
-                : 0
-            })</span>
+            <span>Execution Steps ({countExecutionSteps(props?.debugExecutor)})</span>
           </div>
           <SVGIcons
             icon="chevron-down-sm"
@@ -256,14 +283,18 @@ const AccordionPlanSteps = (props) => {
 
                             // User Query Stage
                             if (item.role) {
-                              // Format the role for display: capitalize, replace underscores with spaces
-                              const formattedRole = item.role.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+                              const formattedRole = item.role
+                                .replace(/-/g, " ")
+                                .replace(/_/g, " ")
+                                .replace(/\b\w/g, (c) => c.toUpperCase());
                               stepElement = (
                                 <div key={idx} className={DebugStepsCss.eachSteps + " " + DebugStepsCss.userQueryStage}>
                                   <div className={DebugStepsCss.stepHeader}>
                                     <span className={DebugStepsCss.stepCount}>{stepCounter}</span> {formattedRole}
                                   </div>
-                                  <div className={DebugStepsCss.stepsContent}>{item.content}</div>
+                                  <div className={DebugStepsCss.stepsContent}>
+                                    {item.content ? renderMarkdown(item.content) : <span style={{ color: "#b6beca" }}>[No content]</span>}
+                                  </div>
                                 </div>
                               );
                             }
@@ -288,7 +319,7 @@ const AccordionPlanSteps = (props) => {
                                             <span className={DebugStepsCss.toolTitle}>Args: </span>
                                             <span>
                                               {Object.entries(call.args)
-                                                .map(([k, v]) => `${k}: ${v}`)
+                                                .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`)
                                                 .join(", ")}
                                             </span>
                                           </div>
@@ -313,25 +344,7 @@ const AccordionPlanSteps = (props) => {
                                     <span className={DebugStepsCss.stepCount}>{stepCounter}</span> {item.content.includes("Past Conversation Summary") ? "Context" : "Response"}
                                   </div>
                                   <div className={DebugStepsCss.stepsContent}>
-                                    <ReactMarkdown
-                                      rehypePlugins={[remarkGfm]}
-                                      components={{
-                                        a: AuthenticatedLink,
-                                        code({ node, inline, className, children, ...props }) {
-                                          const match = /language-(\w+)/.exec(className || "");
-                                          return !inline && match ? (
-                                            <SyntaxHighlighter style={syntaxTheme} language={match[1]} PreTag="div" {...props}>
-                                              {String(children).replace(/\n$/, "")}
-                                            </SyntaxHighlighter>
-                                          ) : (
-                                            <code className={className} {...props}>
-                                              {children}
-                                            </code>
-                                          );
-                                        },
-                                      }}>
-                                      {item.content}
-                                    </ReactMarkdown>
+                                    {renderMarkdown(item.content)}
                                   </div>
                                 </div>
                               );

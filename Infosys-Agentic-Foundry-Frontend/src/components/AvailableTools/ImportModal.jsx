@@ -7,6 +7,8 @@ import UploadBox from "../commonComponents/UploadBox";
 import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
 import useFetch from "../../Hooks/useAxios";
 import { APIs } from "../../constant";
+import { getUnconfiguredCostModels } from "../../utils/modelUtils";
+import UnconfiguredModelCostWarning from "../commonComponents/UnconfiguredModelCostWarning";
 
 /**
  * ImportModal - Unified modal for importing tools or servers from a zip file
@@ -22,6 +24,7 @@ const ImportModal = ({ onClose, onImport, loading = false, type = "tools" }) => 
   const [modelName, setModelName] = useState("");
   const [models, setModels] = useState([]);
   const [modelsLoading, setModelsLoading] = useState(false);
+  const [unconfiguredCostModels, setUnconfiguredCostModels] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
   const { fetchData } = useFetch();
@@ -33,6 +36,7 @@ const ImportModal = ({ onClose, onImport, loading = false, type = "tools" }) => 
       setModelsLoading(true);
       try {
         const data = await fetchData(APIs.GET_MODELS);
+        setUnconfiguredCostModels(getUnconfiguredCostModels(data));
         if (data?.models && Array.isArray(data.models)) {
           setModels(data.models);
           const defaultModel = data.default_model_name || (data.models.length > 0 ? data.models[0] : "");
@@ -157,6 +161,10 @@ const ImportModal = ({ onClose, onImport, loading = false, type = "tools" }) => 
                 disabled={loading || modelsLoading}
                 selectFirstByDefault={true}
                 width="100%"
+              />
+              <UnconfiguredModelCostWarning
+                selectedModel={modelName}
+                unconfiguredCostModels={unconfiguredCostModels}
               />
               <span className={styles.formHint}>
                 LLM model used to generate tool descriptions during import

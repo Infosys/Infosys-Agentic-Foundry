@@ -19,6 +19,8 @@ import ResourceAllocationManagement from "./ResourceAllocationManagement.jsx";
 import NotificationPanel from "./NotificationPanel";
 import notifStyles from "./NotificationPanel.module.css";
 import { SystemUtilityContent } from "../SystemUtility/SystemUtility";
+import TokenUsageTracking from "./TokenUsageTracking";
+import ModelCosts from "./ModelCosts";
 
 const AdminScreenNew = () => {
   const [activeTab, setActiveTab] = useState("userManagement");
@@ -63,6 +65,7 @@ const AdminScreenNew = () => {
 
   // Search state for SubHeader
   const [searchValue, setSearchValue] = useState("");
+  const [resourceCreatedBy, setResourceCreatedBy] = useState("All");
 
   // COMMENTED OUT: State for "New Module" modal (Missing Modules tab)
   // const [showNewModuleModal, setShowNewModuleModal] = useState(false);
@@ -83,6 +86,11 @@ const AdminScreenNew = () => {
   const resourcePlusClickRef = useRef(null);
   const resourceClearSearchRef = useRef(null);
 
+  // Ref for Model Costs component handler
+  const modelCostsPlusClickRef = useRef(null);
+  const tokenDownloadClickRef = useRef(null);
+  const [tokenReportDownloading, setTokenReportDownloading] = useState(false);
+
   // Resource Management navigation state (for hiding SubHeader in detail view)
   const [resourceNavState, setResourceNavState] = useState({
     isDetailView: false,
@@ -99,6 +107,8 @@ const AdminScreenNew = () => {
   const isRoleTab = activeTab === "controlRole";
   const isServersTab = activeTab === "recycleBinServers" || activeTab === "unusedServers";
   const isResourceTab = activeTab === "resourceManagement";
+  const isModelCostsTab = activeTab === "modelCosts";
+  const isTokenUsageTab = activeTab === "tokenUsageTracking";
   const isSystemUtilityTab = activeTab === "systemUtility";
 
   // Hide FloatingChatBot when System Utility tab is active
@@ -176,9 +186,19 @@ const AdminScreenNew = () => {
     }
   }, []);
 
+  // Handle plus click for Model Costs tab
+  const handleModelCostsPlusClick = useCallback(() => {
+    if (modelCostsPlusClickRef.current) {
+      modelCostsPlusClickRef.current();
+    }
+  }, []);
+
   // Clear search handler for Group/Role/Resource tabs
   const clearSearchForControlTabs = useCallback(() => {
     setSearchValue("");
+    if (isResourceTab) {
+      setResourceCreatedBy("All");
+    }
     if (isGroupTab && groupClearSearchRef.current) {
       groupClearSearchRef.current();
     }
@@ -196,6 +216,7 @@ const AdminScreenNew = () => {
     if (isGroupTab) return handleGroupPlusClick;
     if (isRoleTab) return handleRolePlusClick;
     if (isResourceTab) return handleResourcePlusClick;
+    if (isModelCostsTab) return handleModelCostsPlusClick;
     return null;
   };
 
@@ -205,6 +226,7 @@ const AdminScreenNew = () => {
     if (isGroupTab) return "New Group";
     if (isRoleTab) return "New Role";
     if (isResourceTab) return "New Access Key";
+    if (isModelCostsTab) return "Add Model Cost";
     return "";
   };
 
@@ -279,6 +301,15 @@ const AdminScreenNew = () => {
       key: "configurations",
       label: "Config",
       children: [{ key: "inference", label: "Inference" }],
+    },
+    {
+      type: "section",
+      key: "reports",
+      label: "Reports",
+      children: [
+        { key: "tokenUsageTracking", label: "Token Usage" },
+        { key: "modelCosts", label: "Model Costs" },
+      ],
     },
     {
       type: "section",
@@ -459,9 +490,13 @@ const AdminScreenNew = () => {
           onSearch={handleSearch}
           clearSearch={isGroupTab || isRoleTab || isResourceTab ? clearSearchForControlTabs : clearSearch}
           showRefreshButton={false}
-          showPlusButton={isGroupTab || isRoleTab}
+          showPlusButton={isGroupTab || isRoleTab || isModelCostsTab}
           onPlusClick={getPlusClickHandler()}
           plusButtonLabel={getPlusButtonLabel()}
+          quaternaryButtonLabel={isTokenUsageTab ? "Download Report" : ""}
+          onQuaternaryButtonClick={isTokenUsageTab ? () => tokenDownloadClickRef.current?.() : undefined}
+          quaternaryButtonDisabled={isTokenUsageTab && tokenReportDownloading}
+          quaternaryButtonIcon="download"
           // Secondary button for Missing Modules Install (commented out - isMissingModulesTab not defined)
           // secondaryButtonLabel={isMissingModulesTab ? "Install" : ""}
           // onSecondaryButtonClick={isMissingModulesTab ? handleInstallClick : null}
@@ -477,8 +512,9 @@ const AdminScreenNew = () => {
           // For Tools tabs, SubHeader auto-detects tool types via activeTab="tools"
           // No need for showTagsDropdown - we don't want Industry section
           showTagsDropdown={false}
-          // Hide Created By dropdown
-          showCreatedByDropdown={false}
+          showCreatedByDropdown={isResourceTab}
+          createdBy={resourceCreatedBy}
+          onCreatedByChange={setResourceCreatedBy}
           // Hide breadcrumb for admin screen - navigation is in header dropdowns
           breadcrumbItems={null}
         />
@@ -527,12 +563,21 @@ const AdminScreenNew = () => {
         {activeTab === "resourceManagement" && (
           <ResourceAllocationManagement
             externalSearchTerm={searchValue}
+            externalCreatedBy={resourceCreatedBy}
             onPlusClickRef={resourcePlusClickRef}
             onClearSearchRef={resourceClearSearchRef}
+            onClearFilters={clearSearchForControlTabs}
             onNavigationChange={setResourceNavState}
           />
         )}
         {activeTab === "inference" && <InferenceConfig />}
+        {activeTab === "tokenUsageTracking" && (
+          <TokenUsageTracking
+            onDownloadClickRef={tokenDownloadClickRef}
+            onDownloadingChange={setTokenReportDownloading}
+          />
+        )}
+        {activeTab === "modelCosts" && <ModelCosts onPlusClickRef={modelCostsPlusClickRef} />}
         {activeTab === "systemUtility" && <SystemUtilityContent />}
       </PageLayout>
 

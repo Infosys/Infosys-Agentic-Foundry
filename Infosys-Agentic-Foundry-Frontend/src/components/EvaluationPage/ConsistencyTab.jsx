@@ -18,13 +18,13 @@ import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
 import EmptyState from "../commonComponents/EmptyState";
 import useMultiSelect from "../../Hooks/useMultiSelect";
 import ConfirmationModal from "../commonComponents/ToastMessages/ConfirmationPopup";
-import CheckBox from "../../iafComponents/GlobalComponents/CheckBox/CheckBox";
-import subHeaderStyles from "../commonComponents/SubHeader.module.css";
 import { FullModal } from "../../iafComponents/GlobalComponents/FullModal";
 import SummaryLine from "../../iafComponents/GlobalComponents/SummaryLine.jsx";
 import { usePermissions } from "../../context/PermissionsContext.jsx";
+import { getUnconfiguredCostModels } from "../../utils/modelUtils";
+import UnconfiguredModelCostWarning from "../commonComponents/UnconfiguredModelCostWarning";
 
-const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch, selectedAgentTypes = [] }) => {
+const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch, selectedAgentTypes = [], onSelectionMetaChange }) => {
   const { hasPermission } = usePermissions();
   const canDeleteConsistency = typeof hasPermission === "function" ? hasPermission("delete_access.agents") : false;
   const role = getRoleFromToken();
@@ -39,6 +39,7 @@ const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch,
   const [initialLoading, setInitialLoading] = useState(true);
   const [models, setModels] = useState([]);
   const [modelsLoading, setModelsLoading] = useState(false);
+  const [unconfiguredCostModels, setUnconfiguredCostModels] = useState([]);
   const [agentsListData, setAgentsListData] = useState([]);
   const [agentType, setAgentType] = useState(agentTypesDropdown[0].value);
   const [agentListDropdown, setAgentListDropdown] = useState([]);
@@ -320,8 +321,8 @@ const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch,
     try {
       // Make both API calls in parallel
       const [consistencyResponse, robustnessResponse] = await Promise.all([
-        fetchData(`${APIs.SCORE_AND_DOWNLOAD_BASE}${agentId}/recent_consistency_scores`),
-        fetchData(`${APIs.SCORE_AND_DOWNLOAD_BASE}${agentId}/recent_robustness_scores`),
+        fetchData(`${APIs.SCORE_AND_DOWNLOAD_BASE}/${agentId}/recent_consistency_scores`),
+        fetchData(`${APIs.SCORE_AND_DOWNLOAD_BASE}/${agentId}/recent_robustness_scores`),
       ]);
 
       setConsistencyScoreData(consistencyResponse);
@@ -378,7 +379,7 @@ const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch,
     }
 
     try {
-      const response = await fetchData(`${APIs.SCORE_AND_DOWNLOAD_BASE}${currentScoreAgentId}/download_consistency_record`);
+      const response = await fetchData(`${APIs.SCORE_AND_DOWNLOAD_BASE}/${currentScoreAgentId}/download_consistency_record`);
 
       // Convert response to CSV format with proper delimiters
       let csvContent = "";
@@ -439,7 +440,7 @@ const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch,
     }
 
     try {
-      const response = await fetchData(`${APIs.SCORE_AND_DOWNLOAD_BASE}${currentScoreAgentId}/download_robustness_record`);
+      const response = await fetchData(`${APIs.SCORE_AND_DOWNLOAD_BASE}/${currentScoreAgentId}/download_robustness_record`);
 
       // Convert response to CSV format with proper delimiters
       let csvContent = "";
@@ -534,7 +535,7 @@ const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch,
         return;
       }
 
-      const endpoint = `${APIs.CONSISTENCY_GENERATE_UPDATE_PREVIEW}${canonicalId}`;
+      const endpoint = `${APIs.CONSISTENCY_GENERATE_UPDATE_PREVIEW}/${canonicalId}`;
       let response;
 
       if (editModeFile) {
@@ -714,7 +715,7 @@ const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch,
         setRobustnessActive(true);
         setRobustnessLoading(true);
 
-        const robustnessEndpoint = `${APIs.ROBUSTNESS_PREVIEW_QUERIES}${applicationId}`;
+        const robustnessEndpoint = `${APIs.ROBUSTNESS_PREVIEW_QUERIES}/${applicationId}`;
         try {
           const robustnessResponse = await postData(robustnessEndpoint, { agentic_application_id: String(applicationId) }, { headers: { "Content-Type": "application/json" } });
           if (robustnessResponse && Array.isArray(robustnessResponse.generated_queries)) {
@@ -851,6 +852,44 @@ const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch,
     await fetchAvailableAgents();
   };
 
+  useEffect(() => {
+    if (!onSelectionMetaChange) return;
+
+    const isListView = !isEditMode && !isScoreView;
+    if (!isListView) {
+      onSelectionMetaChange({
+        selectedCount: 0,
+        isAllSelected: false,
+        isPartiallySelected: false,
+        showSelectAll: false,
+        canDelete: false,
+        onSelectAll: null,
+        onDeleteSelected: null,
+      });
+      return;
+    }
+
+    onSelectionMetaChange({
+      selectedCount: multiSelectCount,
+      isAllSelected,
+      isPartiallySelected,
+      showSelectAll: filteredAvailableAgents.length > 1 && canDeleteConsistency,
+      canDelete: canDeleteConsistency,
+      onSelectAll: handleSelectAll,
+      onDeleteSelected: () => setShowBulkDeleteModal(true),
+    });
+  }, [
+    onSelectionMetaChange,
+    isEditMode,
+    isScoreView,
+    multiSelectCount,
+    isAllSelected,
+    isPartiallySelected,
+    filteredAvailableAgents.length,
+    canDeleteConsistency,
+    handleSelectAll,
+  ]);
+
   // --- Fix: Always hit /evaluation/available_agents/ on mount ---
   const fetchAvailableAgents = async () => {
     startApiCall();
@@ -884,6 +923,7 @@ const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch,
       startApiCall();
       try {
         const data = await fetchData(APIs.GET_MODELS);
+        setUnconfiguredCostModels(getUnconfiguredCostModels(data));
         if (data?.models && Array.isArray(data.models)) {
           const formattedModels = data.models.map((model) => ({
             label: model,
@@ -1484,7 +1524,7 @@ const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch,
     setRobustnessLoading(true);
     startApiCall();
     try {
-      const endpoint = `${APIs.ROBUSTNESS_PREVIEW_QUERIES}${agenticId}`;
+      const endpoint = `${APIs.ROBUSTNESS_PREVIEW_QUERIES}/${agenticId}`;
       const response = await postData(endpoint, { agentic_application_id: String(agenticId) }, { headers: { "Content-Type": "application/json" } });
       if (response && Array.isArray(response.generated_queries)) {
         setRobustnessResults({
@@ -1521,7 +1561,7 @@ const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch,
     startApiCall();
     try {
       // POST to /evaluation/robustness/approve-evaluation/{agenticId} with agentic_application_id in body
-      const endpoint = `${APIs.ROBUSTNESS_APPROVE_EVALUATION}${agenticId}`;
+      const endpoint = `${APIs.ROBUSTNESS_APPROVE_EVALUATION}/${agenticId}`;
       const response = await postData(endpoint, { agentic_application_id: agenticId }, { headers: { "Content-Type": "application/json" } });
       if (response) {
         addMessage(response.message || "Robustness approval executed successfully.", "success");
@@ -1940,31 +1980,7 @@ const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch,
         {/* Always show the agents list */}
         {!isEditMode && !isScoreView && (
           <>
-            {/* Summary + Delete button row */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 4px" }}>
-              <SummaryLine visibleCount={filteredAvailableAgents.length} totalCount={availableAgents.length} itemLabel="agents" />
-              {multiSelectCount > 0 && canDeleteConsistency && (
-                <IAFButton
-                  type="primary"
-                  className={subHeaderStyles.deleteSelectedBtn}
-                  onClick={() => setShowBulkDeleteModal(true)}
-                  icon={<SVGIcons icon="trash" width={14} height={14} color="#fff" />}
-                >
-                  Delete ({multiSelectCount})
-                </IAFButton>
-              )}
-            </div>
-            {/* Select All row - above cards */}
-            {filteredAvailableAgents.length > 1 && canDeleteConsistency && <div className={subHeaderStyles.selectAllRow}>
-              <label className={subHeaderStyles.selectAllWrapper}>
-                <CheckBox
-                  checked={isAllSelected}
-                  indeterminate={isPartiallySelected}
-                  onChange={handleSelectAll}
-                />
-                <span className={subHeaderStyles.selectAllLabel}>Select All</span>
-              </label>
-            </div>}
+            <SummaryLine visibleCount={filteredAvailableAgents.length} totalCount={availableAgents.length} itemLabel="agents" />
             <div className={`listWrapper ${consistencyStyles.listWrapper}`}>
               {initialLoading ? (
                 <div className={consistencyStyles.loaderWrapper}>
@@ -2059,6 +2075,10 @@ const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch,
                           placeholder={modelsLoading ? "Loading models..." : "Select Model"}
                           disabled={loading || modelsLoading}
                           showSearch={true}
+                        />
+                        <UnconfiguredModelCostWarning
+                          selectedModel={formData.model_name}
+                          unconfiguredCostModels={unconfiguredCostModels}
                         />
                       </div>
 
@@ -2342,6 +2362,10 @@ const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch,
                             placeholder={modelsLoading ? "Loading models..." : "Select model"}
                             showSearch={true}
                             disabled={modelsLoading}
+                          />
+                          <UnconfiguredModelCostWarning
+                            selectedModel={formData.model_name}
+                            unconfiguredCostModels={unconfiguredCostModels}
                           />
                         </div>
                         <div className="formGroup">

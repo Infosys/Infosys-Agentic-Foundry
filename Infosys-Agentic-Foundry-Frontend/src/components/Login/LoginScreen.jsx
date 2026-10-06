@@ -1,22 +1,35 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useMsal } from "@azure/msal-react";
+import { InteractionStatus } from "@azure/msal-browser";
 import SVGIcons from "../../Icons/SVGIcons";
-import useFetch from "../../Hooks/useAxios";
+import useFetch, { axiosInstance } from "../../Hooks/useAxios";
 import Cookies from "js-cookie";
 import { useAuth, getActiveUser } from "../../context/AuthContext";
-import { APIs, BASE_URL } from "../../constant";
+import { APIs, BASE_URL, DIRECT_SSO_LOGIN } from "../../constant";
+import { loginRequest } from "../../auth/msalConfig";
+import { clearMsalAutoLoginSuppression, clearMsalAuthInProgress, isMsalAutoLoginSuppressed, isMsalLoginPending, markMsalAuthInProgress, suppressMsalAutoLogin } from "../../auth/msalSessionUtils";
 import { setSessionStart } from "../../Hooks/useAutoLogout";
 import useErrorHandler from "../../Hooks/useErrorHandler";
 import axios from "axios";
 import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
 import { encodePassword } from "../../utils/encodeUtils";
+import MsalAuthLoader from "../commonComponents/MsalAuthLoader";
+// [MANUAL_TOKEN_MODE] — remove these two imports when removing the feature
+import { MANUAL_TOKEN_MODE, requestTokenFromUser } from "../../utils/manualTokenBridge";
+import { checkUserStatus, formatMsalLoginErrorMessage } from "../../auth/authApi";
+import { useMessage } from "../../Hooks/MessageContext";
+import { useVersion } from "../../context/VersionContext";
 import "./login.css";
 
 function LoginScreen() {
   const { login, forceReplaceLogin, syncFromCookies, isAuthenticated, user } = useAuth();
   const { postData, fetchData, setJwtToken, setRefreshToken } = useFetch();
-  const { handleApiError } = useErrorHandler(); // centralized handlers
+  const { handleApiError } = useErrorHandler();
+  const { addMessage } = useMessage();
+  const { instance: msalInstance, inProgress } = useMsal();
+  const { refreshVersion } = useVersion();
 
   // numeric constants to avoid magic-number lint errors
   const PASSWORD_MIN = 6;
@@ -27,11 +40,11 @@ function LoginScreen() {
   const [errEmail, setErrEmail] = useState("");
   // Use a ref instead to avoid storing in state
   const passwordRef = useRef("");
-  // Add this state variable with your other state declarations
   const [hasPasswordInput, setHasPasswordInput] = useState(false);
 
   // navigation
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // departments state
   const [departments, setDepartments] = useState([]);
@@ -44,6 +57,13 @@ function LoginScreen() {
   const [errPass, setErrPass] = useState("");
   const [msgSubmit, setMsgSubmit] = useState("");
   const [, setErrSubmit] = useState(false);
+
+  // SSO login state — full-page loader until Microsoft auth completes
+  const [ssoLoading, setSsoLoading] = useState(() => isMsalLoginPending() && !searchParams.get("msalError"));
+  // Ensures auto-SSO fires at most once per LoginScreen mount, regardless of
+  // how many times inProgress cycles through None during MSAL v5 initialization.
+  const autoLoginFiredRef = useRef(false);
+  const msalErrorHandledRef = useRef(false);
 
   // conflict / pending credentials
   const [pendingCredentials, setPendingCredentials] = useState(null);
@@ -62,19 +82,16 @@ function LoginScreen() {
   const tempAuthTokenRef = useRef(null);
 
   // Function to check for autofilled values (stable via useCallback)
-  // Validates DOM-read values against strict allowlist to mitigate XSS risk
   const checkForAutofill = useCallback(() => {
     const emailInput = document.querySelector('input[name="Email"]');
     if (!emailInput || !emailInput.value || emailInput.value === email) return;
 
-    // Strict allowlist: only permit valid email characters (alphanumeric, @, ., _, +, -)
     const emailAllowlist = /^[a-zA-Z0-9._%+@-]+$/;
     const rawValue = String(emailInput.value).substring(0, 254).trim();
     if (!rawValue || !emailAllowlist.test(rawValue)) return;
 
     setEmail(rawValue);
 
-    // Validate the autofilled email format
     const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
     if (!emailRegex.test(rawValue)) {
       setErrEmail("Please enter a valid email address");
@@ -82,7 +99,6 @@ function LoginScreen() {
       setErrEmail("");
     }
 
-    // Clear validation error if email is filled
     if (validationError && rawValue) {
       setValidationError("");
     }
@@ -93,7 +109,7 @@ function LoginScreen() {
     let mounted = true;
     const checkSuperadmin = async () => {
       try {
-        const response = await axios.get(`${BASE_URL}${APIs.SUPERADMIN_EXISTS}`);
+        const response = await axiosInstance.get(APIs.SUPERADMIN_EXISTS);
         if (mounted && response.data?.superadmin_exists === false) {
           navigate("/infy-agent/service-register", { replace: true });
         }
@@ -105,16 +121,51 @@ function LoginScreen() {
     return () => { mounted = false; };
   }, [navigate]);
 
-  // Fetch departments (domains) for the dropdown using direct axios to avoid auth interceptor issues
+  // Auto-trigger SSO when REACT_APP_DIRECT_SSO_LOGIN="true" — same code path
+  // as the manual SSO button, but fired automatically once MSAL is idle.
+  // Waits for inProgress === None to avoid the interaction_in_progress error
+  // that msal-browser v5 throws when loginRedirect is called during
+  // initialization or while a previous redirect lock is still held.
+  useEffect(() => {
+    if (
+      DIRECT_SSO_LOGIN !== "true" ||
+      isAuthenticated ||
+      autoLoginFiredRef.current ||
+      isMsalAutoLoginSuppressed() ||
+      inProgress !== InteractionStatus.None ||
+      isMsalLoginPending() ||
+      searchParams.get("msalError")
+    ) return;
+
+    autoLoginFiredRef.current = true;
+    handleSsoLogin();
+  }, [inProgress]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Show MSAL /auth/me errors returned after Microsoft sign-in (e.g. gateway timeout)
+  useEffect(() => {
+    const msalError = searchParams.get("msalError");
+    if (!msalError || msalErrorHandledRef.current) return;
+
+    msalErrorHandledRef.current = true;
+    const friendlyMessage = formatMsalLoginErrorMessage(msalError);
+
+    // Suppress auto-login to prevent redirect loop after SSO failure
+    suppressMsalAutoLogin();
+    clearMsalAuthInProgress();
+    setSsoLoading(false);
+    setValidationError(friendlyMessage);
+    addMessage(friendlyMessage, "error");
+    setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams, addMessage]);
+
+  // Fetch departments (domains) for the dropdown
   useEffect(() => {
     let mounted = true;
     const loadDepartments = async () => {
       setDeptLoading(true);
       try {
-        // Use direct axios call to avoid auth interceptor issues on login page
-        const response = await axios.get(`${BASE_URL}${APIs.GET_DEPARTMENTS}`);
+        const response = await axiosInstance.get(APIs.GET_DEPARTMENTS);
         const resp = response.data;
-        // backend may return { success: true, departments: [...] } or { domains: [...] } or an array directly
         let items = [];
         if (resp) {
           if (Array.isArray(resp)) {
@@ -129,36 +180,27 @@ function LoginScreen() {
             items = resp.data;
           }
         }
-        // map to simple names if objects provided
         const mapped = items.map((d) => (typeof d === "string" ? d : d.department_name || d.domain_name || d.name || String(d)));
-        // Do NOT fallback to static roleOptions. If API returns empty array, keep departments empty and show 'No departments found'
         if (mounted) setDepartments(Array.isArray(mapped) ? mapped : []);
       } catch (err) {
-        // API failed - departments will show 'No departments found'
         if (mounted) setDepartments([]);
       } finally {
         if (mounted) setDeptLoading(false);
       }
     };
     loadDepartments();
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, []);
 
   // Check for autofilled values periodically
-  // (effect depends on stable checkForAutofill via useCallback)
   useEffect(() => {
-    // Check for autofill after component mounts using rAF (avoids setTimeout sink)
     let rafId = requestAnimationFrame(() => {
       rafId = requestAnimationFrame(checkForAutofill);
     });
     let focusTimerId = null;
 
-    // Add event listeners for when autofill might occur
     const handlePageLoad = () => checkForAutofill();
     const handleFocus = () => {
-      // Clear any pending focus rAF before scheduling a new one
       if (focusTimerId) cancelAnimationFrame(focusTimerId);
       focusTimerId = requestAnimationFrame(checkForAutofill);
     };
@@ -178,14 +220,9 @@ function LoginScreen() {
     setShowPassword((prev) => !prev);
   };
 
-  // Handle department selection
   const handleDepartmentSelect = (option) => {
-    // Check for autofilled values first
     checkForAutofill();
-
-    // Clear any previous validation errors
     setValidationError("");
-
     setSelectedDepartment(option);
   };
 
@@ -193,7 +230,6 @@ function LoginScreen() {
     const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
     setEmail(value);
 
-    // Clear validation error when user starts typing
     if (validationError && value) {
       setValidationError("");
     }
@@ -210,14 +246,9 @@ function LoginScreen() {
   };
 
   const passwordChange = (value) => {
-    const passwordRegex = /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[!@#$%^&*()_+~`|}{[\]:;?><,./])/;
-    // Store the password in the ref instead of state to overcome vulnerability
     passwordRef.current = value;
-
-    // Update state to track if password field has content
     setHasPasswordInput(value.length > 0);
 
-    // Clear validation error when user starts typing password
     if (validationError && value) {
       setValidationError("");
     }
@@ -243,14 +274,11 @@ function LoginScreen() {
 
   const onSubmit = async () => {
     try {
-      // Clear any validation errors when submitting
       setValidationError("");
 
-      // Get the actual email value from DOM to handle autofill
       const emailInput = document.querySelector('input[name="Email"]');
       const actualEmailValue = emailInput ? emailInput.value : email;
 
-      // Update email state if autofill was used
       if (actualEmailValue && actualEmailValue !== email) {
         setEmail(actualEmailValue);
       }
@@ -264,27 +292,30 @@ function LoginScreen() {
         setMsgSubmit("Please enter proper value in input field");
         clearError();
       } else {
-        // Send selected department to backend using correct payload
         const users = await postData(APIs.LOGIN, {
           email_id: actualEmailValue,
           password: encodePassword(passwordRef.current),
           department_name: selectedDepartment,
         });
 
-        // Check if user must change password (set by admin via reset-password)
         if (users.must_change_password === true) {
-          // Store token temporarily for the change-password API call only
           const tempToken = users?.token || users?.jwt_token || users?.access_token;
-          tempAuthTokenRef.current = tempToken || null;
-          // Show password change modal instead of logging in
-          // Do NOT set JWT/refresh tokens in cookies - user must login again after changing password
+          if (!tempToken || tempToken === "undefined" || tempToken === "null") {
+            setValidationError(
+              "Your account requires a password change, but the login response did not include a session token. Please try again or contact your administrator."
+            );
+            setErrSubmit(true);
+            setMsgSubmit("");
+            tempAuthTokenRef.current = null;
+            return;
+          }
+          tempAuthTokenRef.current = tempToken;
           setChangePasswordEmail(actualEmailValue);
           setShowChangePasswordModal(true);
           setMsgSubmit("");
-          return; // Don't proceed with login
+          return;
         }
 
-        // Setting JWT & refresh tokens - handle multiple possible key names from backend
         const jwtTokenValue = users?.token || users?.jwt_token || users?.access_token;
         const refreshTokenValue = users?.refresh_token || users?.refreshToken || users?.refresh;
 
@@ -292,7 +323,6 @@ function LoginScreen() {
         if (refreshTokenValue) setRefreshToken(refreshTokenValue);
 
         if (users.approval) {
-          // update context + cookies centrally
           const apiUrl = `${APIs.GET_NEW_SESSION_ID}`;
           const sessionIdResponse = (await fetchData(apiUrl)) || null;
 
@@ -301,14 +331,16 @@ function LoginScreen() {
             user_session: sessionIdResponse,
             role: users.role || selectedDepartment,
             refresh_token: refreshTokenValue,
+            department_name: users.department_name || selectedDepartment,
           });
           Cookies.set("email", users.email);
-          Cookies.set("department", selectedDepartment);
+          Cookies.set("department_name", selectedDepartment);
           setSessionStart();
-          // Trigger permissions refresh after login
+          // Local login — no SSO session to terminate at logout
+          localStorage.setItem("auth_type", "local");
+          sessionStorage.removeItem("id_token");
           window.dispatchEvent(new Event("permissions:updated"));
 
-          // Navigate to home - all screens are accessible regardless of permissions
           navigate("/");
           setMsgSubmit("Success");
           clearError();
@@ -318,25 +350,32 @@ function LoginScreen() {
           setMsgSubmit(users.message);
           clearError();
         }
-
-        // Clear the password from memory after use
-        // passwordRef.current = "";
       }
     } catch (error) {
-      // Let global handler decide final toast (connection refused / no response / backend detail)
       handleApiError(error, { context: "LoginScreen.onSubmit" });
       setErrSubmit(true);
-      // Do NOT overwrite with generic text; leave msgSubmit blank so only toast shows
       setMsgSubmit("");
       clearError();
     }
   };
 
-  // Password change handler (when must_change_password is true)
+  // Login with Microsoft SSO via MSAL redirect
+  const handleSsoLogin = () => {
+    setMsgSubmit("");
+    clearMsalAutoLoginSuppression();
+    markMsalAuthInProgress();
+    setSsoLoading(true);
+    msalInstance.loginRedirect(loginRequest).catch((err) => {
+      clearMsalAuthInProgress();
+      handleApiError(err, { context: "LoginScreen.msalLoginRedirect" });
+      setMsgSubmit("SSO authentication failed. Please try again.");
+      setSsoLoading(false);
+    });
+  };
+
   const handleChangePassword = async (e) => {
     e.preventDefault();
 
-    // Validate passwords
     const passwordRegex = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+[\]{};':"\\|,.<>/?]).{8,}$/;
 
     if (!currentPwdInput || !newPwdInput || !confirmPwdInput) {
@@ -359,26 +398,37 @@ function LoginScreen() {
     setChangePasswordSuccess("");
 
     try {
-      // Use direct axios call to bypass axiosInstance interceptors (no session/refresh on login page)
       const token = tempAuthTokenRef.current;
-      const headers = { "Content-Type": "application/json", accept: "application/json" };
-      if (token) headers.Authorization = `Bearer ${token}`;
-      const res = await axios.post(`${BASE_URL}${APIs.CHANGE_PASSWORD}`, { current_password: encodePassword(currentPwdInput), new_password: encodePassword(newPwdInput) }, { headers });
+      if (!token || token === "undefined" || token === "null") {
+        setChangePasswordError("Session expired. Please log in again.");
+        setShowChangePasswordModal(false);
+        tempAuthTokenRef.current = null;
+        setChangePasswordLoading(false);
+        return;
+      }
+
+      const headers = {
+        "Content-Type": "application/json",
+        accept: "application/json",
+        Authorization: `Bearer ${token}`,
+      };
+      const res = await axios.post(
+        `${BASE_URL}${APIs.CHANGE_PASSWORD}`,
+        { current_password: encodePassword(currentPwdInput), new_password: encodePassword(newPwdInput) },
+        { headers }
+      );
       const response = res?.data;
 
       setChangePasswordSuccess(response?.message || response?.detail || "Password changed successfully! Please login with your new password.");
 
-      // Reset form and close modal after delay
       setTimeout(() => {
         setShowChangePasswordModal(false);
         setCurrentPwdInput("");
         setNewPwdInput("");
         setConfirmPwdInput("");
         setChangePasswordSuccess("");
-        // Clear the password field so user can enter new password
         passwordRef.current = "";
         setHasPasswordInput(false);
-        // Clear temporary auth token
         tempAuthTokenRef.current = null;
       }, 1000);
     } catch (err) {
@@ -392,75 +442,24 @@ function LoginScreen() {
     }
   };
 
-  // Guest login handler preserved for future use (commented out to avoid unused warnings)
-  /*
-  const _handleGuestLogin = async (e) => {
-    e.preventDefault();
-    // Clear any validation errors when using guest login
-    setValidationError("");
-    try {
-      const users = await fetchData(APIs.GUEST_LOGIN);
-
-      if (users.approval) {
-        const apiUrl = `${APIs.GET_NEW_SESSION_ID}`;
-        const sessionIdResponse = (await fetchData(apiUrl)) || null;
-        login({
-          userName: users.user_name || users.username,
-          user_session: sessionIdResponse,
-          role: users.role || "Guest",
-          refresh_token: users.refresh_token,
-        });
-        Cookies.set("email", users.email);
-        setSessionStart();
-
-        // Setting JWT & refresh tokens
-        if (users?.token) setJwtToken(users.token);
-        if (users?.refresh_token) setRefreshToken(users.refresh_token);
-
-        navigate("/");
-        setMsgSubmit(users.message || "Guest login successful");
-        clearError();
-        setErrSubmit(false);
-      } else {
-        setErrSubmit(true);
-        setMsgSubmit(users.message || "Guest Login Failed");
-        clearError();
-      }
-    } catch (error) {
-      handleApiError(error, { context: "LoginScreen.guestLogin" });
-      setErrSubmit(true);
-      setMsgSubmit("");
-      clearError();
-    }
-  };
-  */
-
-  // Pre-login guard: if already authenticated, navigate away (optional UX improvement)
+  // Pre-login guard: if already authenticated, navigate away
   useEffect(() => {
     if (isAuthenticated && user?.name) {
-      // Already logged in; stay or redirect - we leave as-is to allow forced replacement if user clears something.
+      // Already logged in; stay or redirect
     }
   }, [isAuthenticated, user]);
 
-  // Cross-tab logout / replace-session listener via storage fallback (BroadcastChannel handled in context)
-  // NOTE: Removed aggressive focus-based cookie check — AuthContext.validate() already
-  // handles this with proper debouncing. The raw document.cookie check was unreliable
-  // and could trigger false logouts during token refresh or tab switching.
-
   const attemptLoginWithConflictCheck = () => {
-    // Acquire credentials from current form state
     const emailInput = document.querySelector('input[name="Email"]');
     const actualEmailValue = emailInput ? emailInput.value : email;
-    const attemptedUserName = actualEmailValue; // assuming email is used as userName OR backend returns user_name later
+    const attemptedUserName = actualEmailValue;
     const attemptedRole = selectedDepartment;
     const active = getActiveUser();
-    // If there is an active user different from attempted OR role differs while active session exists
     if (active && active !== attemptedUserName) {
       setPendingCredentials({ email: attemptedUserName, password: passwordRef.current, role: attemptedRole, department_name: selectedDepartment });
       setShowConflictModal(true);
       return;
     }
-    // proceed normally
     onSubmit();
   };
 
@@ -468,8 +467,6 @@ function LoginScreen() {
     if (!pendingCredentials) return;
     const creds = pendingCredentials;
     setShowConflictModal(false);
-    // Use existing onSubmit workflow but with forceReplace pre step
-    // We'll call the same API manually to respect existing backend flow
     (async () => {
       try {
         const users = await postData(APIs.LOGIN, {
@@ -478,7 +475,6 @@ function LoginScreen() {
           department_name: creds.department_name || selectedDepartment,
         });
         if (users?.approval) {
-          // Handle multiple possible key names for tokens
           const jwtTokenValue = users?.token || users?.jwt_token || users?.access_token;
           const refreshTokenValue = users?.refresh_token || users?.refreshToken || users?.refresh;
 
@@ -489,16 +485,18 @@ function LoginScreen() {
             user_session: sessionIdResponse,
             role: users.role || creds.role || selectedDepartment,
             refresh_token: refreshTokenValue,
+            department_name: users.department_name || creds.department_name || selectedDepartment,
           });
           Cookies.set("email", users.email);
-          Cookies.set("department", creds.department_name || selectedDepartment);
+          Cookies.set("department_name", creds.department_name || selectedDepartment);
           setSessionStart();
-          // Trigger permissions refresh after login
+          // Local login — no SSO session to terminate at logout
+          localStorage.setItem("auth_type", "local");
+          sessionStorage.removeItem("id_token");
           window.dispatchEvent(new Event("permissions:updated"));
           if (jwtTokenValue) setJwtToken(jwtTokenValue);
           if (refreshTokenValue) setRefreshToken(refreshTokenValue);
 
-          // Navigate to home - all screens are accessible regardless of permissions
           navigate("/");
         } else {
           setErrSubmit(true);
@@ -516,11 +514,42 @@ function LoginScreen() {
 
   const handleRefreshExisting = () => {
     setShowConflictModal(false);
-    // Rehydrate from cookies and reload state (no new login)
     syncFromCookies();
-    // Optionally force a soft reload to ensure app-level contexts catch up
     navigate("/", { replace: true });
   };
+
+  // [MANUAL_TOKEN_MODE] — remove this handler when removing the feature
+  const handleManualTokenLogin = async () => {
+    try {
+      const token = await requestTokenFromUser();
+      // Same pattern as MSAL SSO: store token, then ask backend for user details
+      setJwtToken(token);
+      const me = await checkUserStatus(token);
+      const apiUrl = `${APIs.GET_NEW_SESSION_ID}`;
+      const sessionIdResponse = (await fetchData(apiUrl)) || null;
+      login({
+        userName: me.username,
+        user_session: sessionIdResponse,
+        role: me.role,
+        email: me.email,
+        department_name: me.department_name,
+      });
+      Cookies.set("email", me.email || "");
+      Cookies.set("department_name", me.department_name || "");
+      setSessionStart();
+      localStorage.setItem("auth_type", "manual_token");
+      sessionStorage.removeItem("id_token");
+      window.dispatchEvent(new Event("permissions:updated"));
+      refreshVersion();
+      navigate("/");
+    } catch (_) {
+      // user cancelled, token invalid, or /auth/me failed — do nothing
+    }
+  };
+
+  if ((ssoLoading || isMsalLoginPending()) && !searchParams.get("msalError") && !msalErrorHandledRef.current) {
+    return <MsalAuthLoader />;
+  }
 
   return (
     <form
@@ -528,29 +557,23 @@ function LoginScreen() {
       onSubmit={(e) => {
         e.preventDefault();
 
-        // Get the actual email value from DOM to handle autofill
         const emailInput = document.querySelector('input[name="Email"]');
         const actualEmailValue = emailInput ? emailInput.value : email;
 
-        // Update email state if autofill was used
         if (actualEmailValue && actualEmailValue !== email) {
           setEmail(actualEmailValue);
         }
 
-        // Check if validation error exists or fields are empty
         if (validationError || !actualEmailValue || !passwordRef.current || !selectedDepartment) {
-          // Show validation error if needed
           if (!actualEmailValue && !passwordRef.current) {
             setValidationError("Please fill all required details");
           } else {
-            // Normal submit validation
             setErrSubmit(true);
             setMsgSubmit("Please fill up all the fields");
             clearError();
           }
           return;
         }
-        // If all is good, submit the form
         attemptLoginWithConflictCheck();
       }}>
 
@@ -595,7 +618,6 @@ function LoginScreen() {
         )}
       </div>
 
-      {/* Password Input */}
       <div className="inputGroup">
         <div className="inputWrapper">
           <span className="inputIcon">
@@ -632,13 +654,13 @@ function LoginScreen() {
       {/* Department Dropdown */}
       <div className="inputGroup">
         <NewCommonDropdown
-          options={departments}
+          options={deptLoading ? ["Loading departments..."] : departments}
           selected={selectedDepartment}
-          onSelect={handleDepartmentSelect}
+          onSelect={deptLoading ? () => { } : handleDepartmentSelect}
           placeholder={deptLoading ? "Loading departments..." : "Select Department"}
           showSearch={true}
           width="100%"
-          disabled={deptLoading}
+          disabled={false}
           prefixIcon={<SVGIcons icon="fa-user" width={16} height={16} fill="#9ca3af" />}
           forceDirection="down"
         />
@@ -657,23 +679,59 @@ function LoginScreen() {
         </span>
       )}
 
-      {/* Footer: Register button + Contact button + Submit Button */}
+      {/* Footer: Sign In + SSO buttons side by side */}
       <div className="formFooter">
-        <div className="footerButtons">
-          <button
-            type="button"
-            className="secondaryBtn"
-            onClick={() => navigate("/infy-agent/service-register")}
-            tabIndex={4}
-          >
-            Register
-          </button>
-        </div>
-        <button type="submit" className="submitBtn" tabIndex={6}>
+        <button
+          type="button"
+          className="ssoBtn"
+          onClick={handleSsoLogin}
+          disabled={ssoLoading}
+          tabIndex={5}
+        >
+          {ssoLoading ? (
+            <>
+              <div className="ssoBtnSpinner" />
+              Redirecting...
+            </>
+          ) : (
+            <>
+              Use single sign on
+              <SVGIcons icon="arrow-right" width={16} height={16} stroke="currentColor" />
+            </>
+          )}
+        </button>
+        <button type="submit" className="submitBtn" tabIndex={4}>
           Sign In
           <SVGIcons icon="arrow-right" width={12} height={10} stroke="currentColor" />
         </button>
       </div>
+
+      {/* Register link */}
+      <div className="registerPrompt">
+        Don&apos;t have an account?{" "}
+        <span
+          className="registerLink"
+          onClick={() => navigate("/infy-agent/service-register")}
+          tabIndex={6}
+          role="link"
+        >
+          Register
+        </span>
+      </div>
+
+      {/* [MANUAL_TOKEN_MODE] — remove this button when removing the feature */}
+      {MANUAL_TOKEN_MODE && (
+        <div className="manualTokenPrompt">
+          <button
+            type="button"
+            className="manualTokenBtn"
+            onClick={handleManualTokenLogin}
+            tabIndex={7}
+          >
+            Enter access token manually
+          </button>
+        </div>
+      )}
 
       {/* Conflict Modal */}
       {showConflictModal && (
@@ -708,14 +766,12 @@ function LoginScreen() {
         </div>
       )}
 
-      {/* Change Password Modal (when must_change_password is true) - rendered via portal */}
       {showChangePasswordModal && createPortal(
         <div className="changePasswordOverlay" role="dialog" aria-modal="true">
           <div className="changePasswordModal">
             <h2 className="changePasswordTitle">Reset Your Password</h2>
 
             <form onSubmit={handleChangePassword} className="changePasswordForm">
-              {/* Current Password */}
               <div className="changePasswordInputGroup">
                 <div className="changePasswordInputWrapper">
                   <input
@@ -736,7 +792,6 @@ function LoginScreen() {
                 </div>
               </div>
 
-              {/* New Password */}
               <div className="changePasswordInputGroup">
                 <div className="changePasswordInputWrapper">
                   <input
@@ -760,7 +815,6 @@ function LoginScreen() {
                 )}
               </div>
 
-              {/* Confirm Password */}
               <div className="changePasswordInputGroup">
                 <div className="changePasswordInputWrapper">
                   <input

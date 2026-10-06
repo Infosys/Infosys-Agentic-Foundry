@@ -24,7 +24,7 @@ const getFileIcon = (fileName) => {
   const ext = fileName.split(".").pop()?.toLowerCase();
   if (["pdf"].includes(ext)) return "file-pdf";
   if (["csv", "xlsx", "xls"].includes(ext)) return "file-csv";
-  if (["jpg", "jpeg", "png", "gif", "bmp", "svg", "webp", "img"].includes(ext)) return "file-image";
+  if (["jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "svg", "webp", "img"].includes(ext)) return "file-image";
   return "file-default";
 };
 

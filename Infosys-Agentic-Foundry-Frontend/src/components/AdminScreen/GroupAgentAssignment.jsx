@@ -388,7 +388,7 @@ const GroupAgentAssignment = ({ externalSearchTerm = "", onPlusClickRef, onClear
 
     try {
       const payload = { group_names: multiSelectIds };
-      const response = await deleteData(APIs.DELETE_GROUP.replace(/\/$/, ""), payload);
+      const response = await deleteData(APIs.DELETE_GROUP, payload);
 
       if (response && typeof response !== "string") {
         const statusMsg = response.status_message || response.message;
@@ -418,7 +418,7 @@ const GroupAgentAssignment = ({ externalSearchTerm = "", onPlusClickRef, onClear
       setLoading(true);
       try {
         const payload = { group_names: [groupName] };
-        const result = await deleteData(APIs.DELETE_GROUP.replace(/\/$/, ""), payload);
+        const result = await deleteData(APIs.DELETE_GROUP, payload);
 
         const statusMsg = result?.status_message || result?.message;
         const hasAnyFailure = Array.isArray(result?.results) && result.results.some((r) => r.is_delete === false);
@@ -480,7 +480,6 @@ const GroupAgentAssignment = ({ externalSearchTerm = "", onPlusClickRef, onClear
             <DisplayCard1
               data={visibleData}
               onCardClick={(_cardName, item) => {
-                console.log("Editing group:", item);
                 setEditGroup(item);
                 setShowForm(true);
                 setIsAddGroup(false);
@@ -515,7 +514,7 @@ const GroupAgentAssignment = ({ externalSearchTerm = "", onPlusClickRef, onClear
                 handleRefresh();
               }}
               onCreateClick={canManageGroups ? handlePlusIconClick : undefined}
-              createButtonLabel="Create Group"
+              createButtonLabel="New Group"
               showCreateButton={canManageGroups}
             />
           )}
@@ -525,7 +524,7 @@ const GroupAgentAssignment = ({ externalSearchTerm = "", onPlusClickRef, onClear
               message="No groups found"
               subMessage={canManageGroups ? "Get started by creating your first group" : "No groups available"}
               onCreateClick={canManageGroups ? handlePlusIconClick : undefined}
-              createButtonLabel={canManageGroups ? "Create Group" : undefined}
+              createButtonLabel={canManageGroups ? "New Group" : undefined}
               showClearFilter={false}
               showCreateButton={canManageGroups}
             />
