@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Request Tracking Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .breadcrumb {
+            background: #f8f9fa;
+            padding: 15px 30px;
+            border-bottom: 2px solid #e9ecef;
+            font-size: 0.95em;
+            color: #6c757d;
+        }
+
+        .breadcrumb a {
+            color: #667eea;
+            text-decoration: none;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+
+        .breadcrumb a:hover {
+            color: #764ba2;
+            text-decoration: underline;
+        }
+
+        .breadcrumb span {
+            margin: 0 8px;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .stat-card h3 {
+            font-size: 2em;
+            margin-bottom: 5px;
+        }
+
+        .stat-card p {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+
+        .stat-card.success {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+
+        .stat-card.failed {
+            background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+        }
+
+        .filter-section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .filter-section input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #dee2e6;
+            border-radius: 6px;
+            font-size: 1em;
+            transition: border-color 0.2s;
+        }
+
+        .filter-section input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .data-table thead {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .data-table th {
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.85em;
+            letter-spacing: 0.5px;
+        }
+
+        .data-table td {
+            padding: 15px;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .data-table tbody tr {
+            transition: background-color 0.2s;
+            cursor: pointer;
+        }
+
+        .data-table tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+
+        .data-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .badge.success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .badge.failed {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+
+        .loading::after {
+            content: '...';
+            animation: dots 1.5s steps(4, end) infinite;
+        }
+
+        @keyframes dots {
+            0%, 20% { content: '.'; }
+            40% { content: '..'; }
+            60%, 100% { content: '...'; }
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #f5c6cb;
+            margin-bottom: 20px;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+            font-size: 1.1em;
+        }
+
+        .detail-view {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .detail-row {
+            display: grid;
+            grid-template-columns: 200px 1fr;
+            gap: 10px;
+            margin-bottom: 10px;
+            padding: 10px;
+            background: white;
+            border-radius: 6px;
+        }
+
+        .detail-label {
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .detail-value {
+            color: #212529;
+            word-break: break-all;
+        }
+
+        .detail-value pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            margin: 0;
+            font-size: 0.9em;
+        }
+
+        .back-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1em;
+            margin-bottom: 20px;
+            transition: transform 0.2s;
+        }
+
+        .back-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .timestamp {
+            font-size: 0.9em;
+            color: #6c757d;
+        }
+
+        .llm-call-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 8px 8px 0 0;
+            margin-top: 20px;
+        }
+
+        .llm-call-body {
+            background: white;
+            border: 2px solid #e9ecef;
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .token-info {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .token-box {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .token-box h4 {
+            color: #667eea;
+            font-size: 1.5em;
+            margin-bottom: 5px;
+        }
+
+        .token-box p {
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8em;
+            }
+            
+            .stats-row {
+                grid-template-columns: 1fr;
+            }
+            
+            .detail-row {
+                grid-template-columns: 1fr;
+            }
+            
+            .token-info {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 LLM Request Tracking Dashboard</h1>
+            <p>Monitor and analyze all LLM requests across users, sessions, and operations</p>
+        </div>
+
+        <div class="breadcrumb" id="breadcrumb">
+            <a onclick="loadUsers()">🏠 All Users</a>
+        </div>
+
+        <div class="content" id="content">
+            <div class="loading">Loading data</div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/llm-tracking';
+        let currentView = 'users';
+        let currentData = {};
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', () => {
+            loadUsers();
+        });
+
+        // Load all users
+        async function loadUsers() {
+            currentView = 'users';
+            showLoading();
+            updateBreadcrumb([{ text: '🏠 All Users', action: 'loadUsers()' }]);
+
+            try {
+                const response = await fetch(`${API_BASE}/users`);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const users = await response.json();
+                currentData.users = users;
+                displayUsers(users);
+            } catch (error) {
+                showError(`Failed to load users: ${error.message}`);
+            }
+        }
+
+        // Display users table
+        function displayUsers(users) {
+            if (!users || users.length === 0) {
+                showNoData('No users found');
+                return;
+            }
+
+            const totalRequests = users.reduce((sum, u) => sum + u.total_requests, 0);
+            const totalSuccess = users.reduce((sum, u) => sum + u.successful_requests, 0);
+            const totalFailed = users.reduce((sum, u) => sum + u.failed_requests, 0);
+
+            const html = `
+                <div class="stats-row">
+                    <div class="stat-card"><h3>${users.length}</h3><p>Total Users</p></div>
+                    <div class="stat-card"><h3>${totalRequests.toLocaleString()}</h3><p>Total Requests</p></div>
+                    <div class="stat-card success"><h3>${totalSuccess.toLocaleString()}</h3><p>Successful Requests</p></div>
+                    <div class="stat-card failed"><h3>${totalFailed.toLocaleString()}</h3><p>Failed Requests</p></div>
+                </div>
+                <div class="filter-section">
+                    <input type="text" id="userFilter" placeholder="🔍 Filter users by ID..." onkeyup="filterTable('usersTable', 0)">
+                </div>
+                <table class="data-table" id="usersTable">
+                    <thead>
+                        <tr>
+                            <th>User ID</th>
+                            <th>Total Requests</th>
+                            <th>Successful</th>
+                            <th>Failed</th>
+                            <th>First Request</th>
+                            <th>Last Request</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${users.map(user => `
+                            <tr onclick="loadSessions('${escapeJs(user.user_id)}')">
+                                <td><strong>${escapeHtml(user.user_id)}</strong></td>
+                                <td>${user.total_requests}</td>
+                                <td><span class="badge success">${user.successful_requests}</span></td>
+                                <td><span class="badge failed">${user.failed_requests}</span></td>
+                                <td class="timestamp">${formatTimestamp(user.first_request)}</td>
+                                <td class="timestamp">${formatTimestamp(user.last_request)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            document.getElementById('content').innerHTML = html;
+        }
+
+        // Load sessions for a user
+        async function loadSessions(userId) {
+            currentView = 'sessions';
+            currentData.selectedUser = userId;
+            showLoading();
+            updateBreadcrumb([
+                { text: '🏠 All Users', action: 'loadUsers()' },
+                { text: `👤 ${userId}`, action: `loadSessions('${escapeJs(userId)}')` }
+            ]);
+
+            try {
+                const response = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/sessions`);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const sessions = await response.json();
+                currentData.sessions = sessions;
+                displaySessions(sessions, userId);
+            } catch (error) {
+                showError(`Failed to load sessions: ${error.message}`);
+            }
+        }
+
+        // Display sessions table
+        function displaySessions(sessions, userId) {
+            if (!sessions || sessions.length === 0) {
+                showNoData(`No sessions found for user: ${userId}`);
+                return;
+            }
+
+            const totalRequests = sessions.reduce((sum, s) => sum + s.total_requests, 0);
+            const totalSuccess = sessions.reduce((sum, s) => sum + s.successful_requests, 0);
+            const totalFailed = sessions.reduce((sum, s) => sum + s.failed_requests, 0);
+
+            const html = `
+                <div class="stats-row">
+                    <div class="stat-card"><h3>${sessions.length}</h3><p>Total Sessions</p></div>
+                    <div class="stat-card"><h3>${totalRequests.toLocaleString()}</h3><p>Total Requests</p></div>
+                    <div class="stat-card success"><h3>${totalSuccess.toLocaleString()}</h3><p>Successful Requests</p></div>
+                    <div class="stat-card failed"><h3>${totalFailed.toLocaleString()}</h3><p>Failed Requests</p></div>
+                </div>
+                <div class="filter-section">
+                    <input type="text" id="sessionFilter" placeholder="🔍 Filter sessions by ID..." onkeyup="filterTable('sessionsTable', 0)">
+                </div>
+                <table class="data-table" id="sessionsTable">
+                    <thead>
+                        <tr>
+                            <th>Session ID</th>
+                            <th>Total Requests</th>
+                            <th>Successful</th>
+                            <th>Failed</th>
+                            <th>First Request</th>
+                            <th>Last Request</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${sessions.map(session => `
+                            <tr onclick="loadRequests('${escapeJs(session.session_id)}')">
+                                <td><strong>${escapeHtml(session.session_id)}</strong></td>
+                                <td>${session.total_requests}</td>
+                                <td><span class="badge success">${session.successful_requests}</span></td>
+                                <td><span class="badge failed">${session.failed_requests}</span></td>
+                                <td class="timestamp">${formatTimestamp(session.first_request)}</td>
+                                <td class="timestamp">${formatTimestamp(session.last_request)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            document.getElementById('content').innerHTML = html;
+        }
+
+        // Load requests for a session
+        async function loadRequests(sessionId) {
+            currentView = 'requests';
+            currentData.selectedSession = sessionId;
+            showLoading();
+            updateBreadcrumb([
+                { text: '🏠 All Users', action: 'loadUsers()' },
+                { text: `👤 ${currentData.selectedUser}`, action: `loadSessions('${escapeJs(currentData.selectedUser)}')` },
+                { text: `📋 ${sessionId}`, action: `loadRequests('${escapeJs(sessionId)}')` }
+            ]);
+
+            try {
+                const response = await fetch(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}/requests`);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const requests = await response.json();
+                currentData.requests = requests;
+                displayRequests(requests, sessionId);
+            } catch (error) {
+                showError(`Failed to load requests: ${error.message}`);
+            }
+        }
+
+        // Display requests table
+        function displayRequests(requests, sessionId) {
+            if (!requests || requests.length === 0) {
+                showNoData(`No requests found for session: ${sessionId}`);
+                return;
+            }
+
+            const totalCalls = requests.reduce((sum, r) => sum + r.total_llm_calls, 0);
+            const totalSuccess = requests.reduce((sum, r) => sum + r.successful_calls, 0);
+            const totalFailed = requests.reduce((sum, r) => sum + r.failed_calls, 0);
+
+            const html = `
+                <div class="stats-row">
+                    <div class="stat-card"><h3>${requests.length}</h3><p>Unique Requests</p></div>
+                    <div class="stat-card"><h3>${totalCalls.toLocaleString()}</h3><p>Total LLM Calls</p></div>
+                    <div class="stat-card success"><h3>${totalSuccess.toLocaleString()}</h3><p>Successful Calls</p></div>
+                    <div class="stat-card failed"><h3>${totalFailed.toLocaleString()}</h3><p>Failed Calls</p></div>
+                </div>
+                <div class="filter-section">
+                    <input type="text" id="requestFilter" placeholder="🔍 Filter requests by ID..." onkeyup="filterTable('requestsTable', 0)">
+                </div>
+                <table class="data-table" id="requestsTable">
+                    <thead>
+                        <tr>
+                            <th>Request ID</th>
+                            <th>LLM Calls</th>
+                            <th>Successful</th>
+                            <th>Failed</th>
+                            <th>Sources</th>
+                            <th>First Call</th>
+                            <th>Last Call</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${requests.map(request => `
+                            <tr onclick="loadLLMCalls('${escapeJs(request.request_id)}')">
+                                <td><strong>${escapeHtml(request.request_id)}</strong></td>
+                                <td>${request.total_llm_calls}</td>
+                                <td><span class="badge success">${request.successful_calls}</span></td>
+                                <td><span class="badge failed">${request.failed_calls}</span></td>
+                                <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(request.request_sources || 'N/A')}">${escapeHtml(request.request_sources || 'N/A')}</td>
+                                <td class="timestamp">${formatTimestamp(request.first_call)}</td>
+                                <td class="timestamp">${formatTimestamp(request.last_call)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            document.getElementById('content').innerHTML = html;
+        }
+
+        // Load LLM calls for a request
+        async function loadLLMCalls(requestId) {
+            currentView = 'llm-calls';
+            currentData.selectedRequest = requestId;
+            showLoading();
+            updateBreadcrumb([
+                { text: '🏠 All Users', action: 'loadUsers()' },
+                { text: `👤 ${currentData.selectedUser}`, action: `loadSessions('${escapeJs(currentData.selectedUser)}')` },
+                { text: `📋 ${currentData.selectedSession}`, action: `loadRequests('${escapeJs(currentData.selectedSession)}')` },
+                { text: `🎯 ${requestId}`, action: `loadLLMCalls('${escapeJs(requestId)}')` }
+            ]);
+
+            try {
+                const response = await fetch(`${API_BASE}/requests/${encodeURIComponent(requestId)}/llm-calls`);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const llmCalls = await response.json();
+                currentData.llmCalls = llmCalls;
+                displayLLMCalls(llmCalls, requestId);
+            } catch (error) {
+                showError(`Failed to load LLM calls: ${error.message}`);
+            }
+        }
+
+        // Display LLM calls details
+        function displayLLMCalls(llmCalls, requestId) {
+            if (!llmCalls || llmCalls.length === 0) {
+                showNoData(`No LLM calls found for request: ${requestId}`);
+                return;
+            }
+
+            const successCount = llmCalls.filter(c => c.status === 'success').length;
+            const failedCount = llmCalls.filter(c => c.status === 'failed').length;
+            const totalTokens = llmCalls.reduce((sum, c) => sum + (c.total_tokens || 0), 0);
+
+            const html = `
+                <div class="stats-row">
+                    <div class="stat-card">
+                        <h3>${llmCalls.length}</h3>
+                        <p>Total LLM Calls</p>
+                    </div>
+                    <div class="stat-card success">
+                        <h3>${successCount}</h3>
+                        <p>Successful</p>
+                    </div>
+                    <div class="stat-card failed">
+                        <h3>${failedCount}</h3>
+                        <p>Failed</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>${totalTokens.toLocaleString()}</h3>
+                        <p>Total Tokens</p>
+                    </div>
+                </div>
+
+                ${llmCalls.map((call, index) => `
+                    <div class="llm-call-header">
+                        <strong>LLM Call #${index + 1}</strong> - ${escapeHtml(call.llm_call_id)}
+                        <span class="badge ${call.status}" style="float: right; margin-left: 10px;">${call.status}</span>
+                        <span style="float: right; opacity: 0.9;">${formatTimestamp(call.request_timestamp)}</span>
+                    </div>
+                    <div class="llm-call-body">
+                        <div class="detail-row">
+                            <div class="detail-label">Request ID:</div>
+                            <div class="detail-value"><code>${escapeHtml(call.request_id)}</code></div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">LLM Call ID:</div>
+                            <div class="detail-value"><code>${escapeHtml(call.llm_call_id)}</code></div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">User ID:</div>
+                            <div class="detail-value">${escapeHtml(call.user_id || 'N/A')}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Session ID:</div>
+                            <div class="detail-value">${escapeHtml(call.session_id || 'N/A')}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Model Name:</div>
+                            <div class="detail-value"><strong>${escapeHtml(call.model_name || 'N/A')}</strong></div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Request Source:</div>
+                            <div class="detail-value">${escapeHtml(call.request_source || 'N/A')}</div>
+                        </div>
+                        ${call.agent_id ? `
+                        <div class="detail-row">
+                            <div class="detail-label">Agent ID:</div>
+                            <div class="detail-value">${escapeHtml(call.agent_id)}</div>
+                        </div>
+                        ` : ''}
+                        ${call.agent_name ? `
+                        <div class="detail-row">
+                            <div class="detail-label">Agent Name:</div>
+                            <div class="detail-value">${escapeHtml(call.agent_name)}</div>
+                        </div>
+                        ` : ''}
+                        
+                        <div class="token-info">
+                            <div class="token-box">
+                                <h4>${call.input_tokens || 0}</h4>
+                                <p>Input Tokens</p>
+                            </div>
+                            <div class="token-box">
+                                <h4>${call.output_tokens || 0}</h4>
+                                <p>Output Tokens</p>
+                            </div>
+                            <div class="token-box">
+                                <h4>${call.total_tokens || 0}</h4>
+                                <p>Total Tokens</p>
+                            </div>
+                        </div>
+
+                        <div class="detail-row">
+                            <div class="detail-label">Duration:</div>
+                            <div class="detail-value">${call.duration_ms ? `${call.duration_ms}ms` : 'N/A'}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Request Timestamp:</div>
+                            <div class="detail-value">${formatTimestamp(call.request_timestamp)}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Response Timestamp:</div>
+                            <div class="detail-value">${formatTimestamp(call.response_timestamp)}</div>
+                        </div>
+                        ${call.request_context ? `
+                        <div class="detail-row">
+                            <div class="detail-label">Request Context:</div>
+                            <div class="detail-value"><pre>${escapeHtml(call.request_context)}</pre></div>
+                        </div>
+                        ` : ''}
+                        ${call.error_message ? `
+                        <div class="detail-row">
+                            <div class="detail-label">Error Message:</div>
+                            <div class="detail-value" style="color: #721c24;"><strong>${escapeHtml(call.error_message)}</strong></div>
+                        </div>
+                        ` : ''}
+                        ${call.error_type ? `
+                        <div class="detail-row">
+                            <div class="detail-label">Error Type:</div>
+                            <div class="detail-value">${escapeHtml(call.error_type)}</div>
+                        </div>
+                        ` : ''}
+                        ${call.stack_trace ? `
+                        <div class="detail-row">
+                            <div class="detail-label">Stack Trace:</div>
+                            <div class="detail-value"><pre style="max-height: 200px; overflow-y: auto;">${escapeHtml(call.stack_trace)}</pre></div>
+                        </div>
+                        ` : ''}
+                        ${call.retry_count > 0 ? `
+                        <div class="detail-row">
+                            <div class="detail-label">Retry Count:</div>
+                            <div class="detail-value">${call.retry_count}</div>
+                        </div>
+                        ` : ''}
+                    </div>
+                `).join('')}
+            `;
+
+            document.getElementById('content').innerHTML = html;
+        }
+
+        // Update breadcrumb navigation
+        function updateBreadcrumb(items) {
+            const html = items.map((item, index) => 
+                index < items.length - 1 
+                    ? `<a onclick="${item.action}">${item.text}</a><span>›</span>`
+                    : `<span style="color: #212529;">${item.text}</span>`
+            ).join('');
+            document.getElementById('breadcrumb').innerHTML = html;
+        }
+
+        // Generic table filter — colIdx is the column index to match against
+        function filterTable(tableId, colIdx) {
+            const input = document.querySelector(`#${tableId}`).closest('.content').querySelector('input[type="text"]');
+            const filter = input ? input.value.toLowerCase() : '';
+            const rows = document.getElementById(tableId).getElementsByTagName('tr');
+            for (let i = 1; i < rows.length; i++) {
+                const cell = rows[i].getElementsByTagName('td')[colIdx];
+                rows[i].style.display = cell && cell.textContent.toLowerCase().includes(filter) ? '' : 'none';
+            }
+        }
+
+        // Utility functions
+        function showLoading() {
+            document.getElementById('content').innerHTML = '<div class="loading">Loading data</div>';
+        }
+
+        function showError(message) {
+            document.getElementById('content').innerHTML = `<div class="error">❌ ${escapeHtml(message)}</div>`;
+        }
+
+        function showNoData(message) {
+            document.getElementById('content').innerHTML = `<div class="no-data">📭 ${escapeHtml(message)}</div>`;
+        }
+
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return 'N/A';
+            const date = new Date(timestamp);
+            return date.toLocaleString('en-US', {
+                year: 'numeric', month: 'short', day: 'numeric',
+                hour: '2-digit', minute: '2-digit', second: '2-digit'
+            });
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+            return text.toString().replace(/[&<>"']/g, m => map[m]);
+        }
+
+        // Safe escape for JS string literals inside onclick="..." attributes
+        function escapeJs(text) {
+            if (!text) return '';
+            return text.toString().replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        }
+    </script>
+</body>
+</html>

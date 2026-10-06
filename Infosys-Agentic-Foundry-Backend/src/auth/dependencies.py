@@ -20,23 +20,32 @@ def get_authorization_service(request: Request) -> AuthorizationService:
 
 
 async def get_current_user(request: Request) -> User:
-    """Dependency to get current authenticated user using JWT"""
-    log.info("Getting auth service inference user from request")
+    """
+    Resolve the caller's identity from the Authorization header.
+
+    Accepts three token types (tried in order inside validate_jwt):
+      1. Internal HS256 JWT  — issued by this service's /auth/login
+      2. Keycloak RS256 JWT  — when KEYCLOAK_ENABLED=true
+      3. Azure AD RS256 JWT  — when AZURE_AD_ENABLED=true (MSAL pass-through)
+
+    For Azure AD tokens the token is validated via JWKS but never exchanged;
+    the UI keeps its original MSAL token and passes it on every request.
+    """
     auth_svc = get_auth_service(request=request)
-    log.info("Getting current user from request")
-    # Get JWT token from Authorization header
     auth_header = request.headers.get("Authorization")
     if not auth_header or not auth_header.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required"
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Bearer"},
         )
     token = auth_header.split(" ", 1)[1]
     user = await auth_svc.validate_jwt(token)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token"
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
         )
     return user
 

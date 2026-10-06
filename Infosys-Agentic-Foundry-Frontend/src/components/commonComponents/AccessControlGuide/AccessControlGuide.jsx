@@ -91,7 +91,7 @@ def get_employee_salary(emp_id: str):
               <div className={styles.howItWorks}>
                 <strong>How it works:</strong>
                 <ul>
-                  <li>If user "john@company.com" has access list: <code>{`{"employees": ["EMP001", "EMP002"]}`}</code></li>
+                  <li>If user "john@example.com" has access list: <code>{`{"employees": ["EMP001", "EMP002"]}`}</code></li>
                   <li>Calling <code>get_employee_salary("EMP001")</code> → ✅ <strong>Allowed</strong></li>
                   <li>Calling <code>get_employee_salary("EMP003")</code> → ❌ <strong>Denied</strong> (403 error)</li>
                 </ul>

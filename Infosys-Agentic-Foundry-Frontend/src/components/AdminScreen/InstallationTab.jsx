@@ -107,11 +107,6 @@ const InstallationTab = ({
         } else if (arr.length === 0 && Array.isArray(res)) {
           arr = res;
         }
-        // Debug log
-        if (type === "missing" || type === "pending") {
-          // eslint-disable-next-line no-console
-          console.log(`[DEBUG] ${type} modules API response:`, res, "parsed:", arr);
-        }
         if (!didCancel) setInstalled(arr);
         // if (type === "missing") {
         //   setSelected([]);

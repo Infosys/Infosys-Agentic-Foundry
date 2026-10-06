@@ -162,6 +162,7 @@ export const ICON_NAMES = [
   "fa-user-outline",
   "bell",
   "share",
+  "calendar",
 ];
 
 const SVGIcons = (props) => {
@@ -797,7 +798,7 @@ const SVGIcons = (props) => {
       );
     case "plug":
       return (
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" {...svgStyle}>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" className="fa-icon" style={{ width, height, fill: fill || color || "currentColor" }}>
           <path d="M96 0C78.3 0 64 14.3 64 32v96h64V32c0-17.7-14.3-32-32-32zM288 0c-17.7 0-32 14.3-32 32v96h64V32c0-17.7-14.3-32-32-32zM32 160c-17.7 0-32 14.3-32 32s14.3 32 32 32v32c0 77.4 55 142 128 156.8V480c0 17.7 14.3 32 32 32s32-14.3 32-32V412.8C297 398 352 333.4 352 256V224c17.7 0 32-14.3 32-32s-14.3-32-32-32H32z" />
         </svg>
       );
@@ -1802,6 +1803,22 @@ const SVGIcons = (props) => {
           <path d="M12 7v5l4 2"></path>
         </svg>
       );
+    case "clock":
+      return (
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width={width || 24}
+          height={height || 24}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke={stroke || color || "currentColor"}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+      );
     case "filter-funnel":
       return (
         <svg
@@ -2152,6 +2169,15 @@ const SVGIcons = (props) => {
           <path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z" />
           <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65" />
           <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65" />
+        </svg>
+      );
+    case "calendar":
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" width={width || 18} height={height || 18} viewBox="0 0 24 24" fill="none" stroke={stroke || color || "currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+          <line x1="16" y1="2" x2="16" y2="6" />
+          <line x1="8" y1="2" x2="8" y2="6" />
+          <line x1="3" y1="10" x2="21" y2="10" />
         </svg>
       );
     default:

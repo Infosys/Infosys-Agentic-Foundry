@@ -6,6 +6,7 @@ from typing import Optional, Any
 from pydantic import BaseModel
 from typing import Optional,Annotated
 from telemetry_wrapper import logger as log, update_session_context
+from src.utils.guardrail_helpers import is_guardrail_exception
 from src.prompts.tool_validation_prompts import docstring_length,error_handling,safe_validation,validate_inputs,hardcoded_values,name_descriptiveness
 
 
@@ -353,6 +354,10 @@ async def test_Case8_is_valid_function_name(function_code:str):
 
 
 async def node_case1(state: ToolValidationState):
+    # ✅ Ensure context propagates through validation workflow
+    from telemetry_wrapper import set_context
+    set_context(tool_name="tool_validation", call_category="tool_operation")
+    
     code = state.code
     raw = await test_Case1_is_code_compilable(code)
     updated_state = state.model_copy(update={
@@ -374,9 +379,16 @@ async def node_case2(state: ToolValidationState):
         })
         return updated_state
     except Exception as e:
+        if is_guardrail_exception(e):
+            log.warning(f"Guardrail triggered during docstring length validation: {e}")
+            return state.model_copy(update={"validation_case2": False, "feedback_case2": "Content policy violation detected in tool code. Please review the tool code for policy-violating content."})
         log.error(f"Error while validating docstring length limit: {str(e)}")
 
 async def node_case3(state:ToolValidationState):
+    # ✅ Ensure context propagates through validation workflow
+    from telemetry_wrapper import set_context
+    set_context(tool_name="tool_validation", call_category="tool_operation")
+    
     try:
         code = state.code
         model = state.model
@@ -398,6 +410,9 @@ async def node_case3(state:ToolValidationState):
         })
         return updated_state
     except Exception as e:
+        if is_guardrail_exception(e):
+            log.warning(f"Guardrail triggered during function name validation: {e}")
+            return state.model_copy(update={"validation_case3": False, "feedback_case3": "Content policy violation detected in tool code. Please review the tool code for policy-violating content."})
         log.error(f"Error while validating function name descriptiveness: {str(e)}")
 
 async def node_case4(state:ToolValidationState):
@@ -421,9 +436,16 @@ async def node_case4(state:ToolValidationState):
         })
         return updated_state
     except Exception as e:
+        if is_guardrail_exception(e):
+            log.warning(f"Guardrail triggered during function inputs validation: {e}")
+            return state.model_copy(update={"validation_case4": False, "feedback_case4": "Content policy violation detected in tool code. Please review the tool code for policy-violating content."})
         log.error(f"Error while validating function inputs: {str(e)}")
 
 async def node_case5(state:ToolValidationState):
+    # ✅ Ensure context propagates through validation workflow
+    from telemetry_wrapper import set_context
+    set_context(tool_name="tool_validation", call_category="tool_operation")
+    
     try:
         code = state.code
         model = state.model
@@ -451,9 +473,16 @@ async def node_case5(state:ToolValidationState):
         })
         return updated_state
     except Exception as e:
+        if is_guardrail_exception(e):
+            log.warning(f"Guardrail triggered during error handling validation: {e}")
+            return state.model_copy(update={"validation_case5": False, "feedback_case5": "Content policy violation detected in tool code. Please review the tool code for policy-violating content."})
         log.error(f"Error while validating error handling: {str(e)}")
 
 async def node_case6(state:ToolValidationState):
+    # ✅ Ensure context propagates through validation workflow
+    from telemetry_wrapper import set_context
+    set_context(tool_name="tool_validation", call_category="tool_operation")
+    
     try:
         code = state.code
         model = state.model
@@ -474,9 +503,16 @@ async def node_case6(state:ToolValidationState):
         })
         return updated_state
     except Exception as e:
+        if is_guardrail_exception(e):
+            log.warning(f"Guardrail triggered during malicious code detection: {e}")
+            return state.model_copy(update={"validation_case6": False, "feedback_case6": "Content policy violation detected in tool code. Please review the tool code for policy-violating content."})
         log.error(f"Error while validating malicious code detection: {str(e)}")
 
 async def node_case7(state: ToolValidationState):
+    # ✅ Ensure context propagates through validation workflow
+    from telemetry_wrapper import set_context
+    set_context(tool_name="tool_validation", call_category="tool_operation")
+    
     try:
         code = state.code
         model = state.model
@@ -497,6 +533,9 @@ async def node_case7(state: ToolValidationState):
         })
         return updated_state
     except Exception as e:
+        if is_guardrail_exception(e):
+            log.warning(f"Guardrail triggered during hardcoded values validation: {e}")
+            return state.model_copy(update={"validation_case7": False, "feedback_case7": "Content policy violation detected in tool code. Please review the tool code for policy-violating content."})
         log.error(f"Error while validating hardcoded values: {str(e)}")
 
 async def node_case8(state: ToolValidationState):

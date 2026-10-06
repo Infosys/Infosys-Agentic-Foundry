@@ -10,3 +10,9 @@ python-docx
 PyMuPDF
 Pillow
 rapidocr-onnxruntime
+openpyxl
+xlrd
+python-pptx
+rank-bm25
+azure-identity>=1.25.2
+azure-keyvault-secrets>=4.10.0

@@ -3,6 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { useMessage } from "./MessageContext"; // assumes MessageContext exports useMessage
 import { extractErrorMessage, extractErrorWithFriendlyMessage } from "../utils/errorUtils";
 import { env } from "../constant";
+import { dispatchGlobalAuth401, isDeletedAccountError } from "../auth/authSessionUtils";
 
 // dynamic suppression support (module scoped) ---
 let suppressedStatusCodes = new Set();
@@ -55,7 +56,14 @@ export const useErrorHandler = () => {
     let logoutPending = false;
 
     const handle401Event = (event) => {
-      const { url, postRefresh } = event.detail || {};
+      const { url, reason, message } = event.detail || {};
+
+      // During auto-SSO login, 401s are expected (user not yet authenticated).
+      // Suppress the notification/logout until a session is established.
+      const directSso =
+        (window._env_ && window._env_.REACT_APP_DIRECT_SSO_LOGIN) ||
+        process.env.REACT_APP_DIRECT_SSO_LOGIN;
+      if (directSso === "true" && !localStorage.getItem("auth_type")) return;
 
       // Prevent multiple rapid logout attempts
       if (logoutPending) return;
@@ -68,13 +76,17 @@ export const useErrorHandler = () => {
       logoutPending = true;
 
       if (addMessage) {
-        addMessage("Session expired. Logging out...", "error");
+        const logoutMessage =
+          reason === "account-deactivated"
+            ? "Your account is no longer active. Logging out..."
+            : "Session expired. Logging out...";
+        addMessage(logoutMessage, "error");
       }
 
       // Small delay so the toast is visible before redirect
       setTimeout(() => {
         try {
-          logout && logout("session-expired");
+          logout && logout(reason || "session-expired");
         } catch (_) {
           window.location.href = "/login";
         } finally {
@@ -143,6 +155,19 @@ export const useErrorHandler = () => {
   const handleApiError = useCallback(
     (rawError, options = {}) => {
       const { customMessage, context, severity = "error", silent = false } = options || {};
+
+      // Deleted/deactivated account — trigger logout without duplicate error toasts.
+      if (isDeletedAccountError(rawError)) {
+        dispatchGlobalAuth401({ reason: "account-deactivated" });
+        return {
+          statusCode: rawError?.response?.status,
+          message: "Your account is no longer active.",
+          originalMessage: rawError?.message,
+          context,
+          severity,
+          suppressed: true,
+        };
+      }
 
       const statusCode = rawError?.response?.status || rawError?.statusCode || rawError?.status;
       // ...existing extraction code...

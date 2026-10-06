@@ -12,6 +12,7 @@ import { useDatabases } from "./service/databaseService.js";
 import CodeEditor from "../commonComponents/CodeEditor.jsx";
 import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button.jsx";
 import SubHeader from "../commonComponents/SubHeader";
+import Loader from "../commonComponents/Loader.jsx";
 
 const DataConnectorsContent = () => {
   // Always call hooks first
@@ -79,7 +80,7 @@ const DataConnectorsContent = () => {
 
   // Permission check (generalized) - after all hooks
   if (permissionsLoading) {
-    return <div>Loading...</div>;
+    return <Loader />;
   }
   const dataConnectorAllowed = typeof hasPermission === "function" ? hasPermission("data_connector_access") : !(permissions && permissions.data_connector_access === false);
   if (!dataConnectorAllowed) {

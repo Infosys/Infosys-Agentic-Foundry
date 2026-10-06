@@ -66,7 +66,7 @@ export const useSystemUtilityService = () => {
    * GET /utility/cleanup/report/download/{filename}
    */
   const getReportDownloadUrl = (filename) => {
-    return `${APIs.CLEANUP_REPORT_DOWNLOAD}${encodeURIComponent(filename)}`;
+    return `${APIs.CLEANUP_REPORT_DOWNLOAD}/${encodeURIComponent(filename)}`;
   };
 
   /**

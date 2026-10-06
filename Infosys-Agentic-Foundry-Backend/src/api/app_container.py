@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 from src.auth.auth_service import AuthService
 from src.auth.authorization_service import AuthorizationService
-from src.auth.repositories import ApprovalPermissionRepository, AuditLogRepository, UserRepository, RefreshTokenRepository, RoleRepository, DepartmentRepository, UserDepartmentMappingRepository, RegistrationRequestRepository
+from src.auth.repositories import ApprovalPermissionRepository, AuditLogRepository, UserRepository, RefreshTokenRepository, RoleRepository, DepartmentRepository, UserDepartmentMappingRepository, RegistrationRequestRepository, AuthorizationCodeRepository
 from src.utils.remote_model_client import RemoteCrossEncoder as CrossEncoder
 from src.auth.repositories import UserAccessKeyRepository
 from src.database.repositories import AccessKeyDefinitionsRepository
@@ -14,7 +14,7 @@ from src.database.repositories import (
     ToolRepository, ToolVersionRepository, ToolVersionRecycleBinRepository, McpToolRepository, ToolAgentMappingRepository, RecycleToolRepository, RecycleMcpToolRepository,
     AgentRepository, RecycleAgentRepository, ChatHistoryRepository,
     FeedbackLearningRepository, EvaluationDataRepository, QueryTokenUsageRepository,
-    TokenUsageLogsRepository, ModelCostsRepository,
+    TokenUsageLogsRepository, ModelCostsRepository, LLMRequestTrackingRepository,
     ToolEvaluationMetricsRepository, AgentEvaluationMetricsRepository,
     ExportAgentRepository, AgentMetadataRepository, AgentDataTableRepository, ChatStateHistoryManagerRepository,
     WorkflowRepository, WorkflowRunRepository, WorkflowStepsRepository, AgentWorkflowMappingRepository,
@@ -23,10 +23,15 @@ from src.database.repositories import (
     GroupRepository, GroupSecretsRepository,
     ToolDepartmentSharingRepository, AgentDepartmentSharingRepository, McpToolDepartmentSharingRepository,
     KbDepartmentSharingRepository, WorkflowDepartmentSharingRepository,
-    TaskRegistryRepository
+    TaskRegistryRepository, AsyncTaskRepository
 )
-from src.database.admin_config_repository import AdminConfigRepository
-from src.database.admin_config_service import AdminConfigService
+from src.database.repositories.admin_config_repository import AdminConfigRepository
+from src.database.services.admin_config_service import AdminConfigService
+from src.database.repositories.scheduler_repository import (
+    ScheduledJobRepository,
+    ScheduleExecutionHistoryRepository,
+)
+from src.database.services.scheduler_service import SchedulerService
 from src.tools.tool_code_processor import ToolCodeProcessor
 from src.database.services import (
     TagService, McpToolService, ToolService, AgentServiceUtils, AgentService, ChatService,
@@ -35,7 +40,8 @@ from src.database.services import (
     ToolGenerationCodeVersionService, ToolGenerationConversationHistoryService, KnowledgebaseService, RoleAccessService, DepartmentService,
     TaskRegistryService
 )
-from src.database.core_evaluation_service import CoreEvaluationService, CoreConsistencyEvaluationService, CoreRobustnessEvaluationService
+from src.database.services.async_task_service import AsyncTaskService
+from src.database.services.core_evaluation_service import CoreEvaluationService, CoreConsistencyEvaluationService, CoreRobustnessEvaluationService
 from src.models.model_service import ModelService
 # EXPORT:EXCLUDE:START
 from src.agent_templates import (
@@ -58,7 +64,8 @@ from src.inference.google_adk_inference.planner_executor_agent_gadk_inference im
 from src.inference.google_adk_inference.react_critic_agent_gadk_inference import ReactCriticAgentGADKInference
 from src.inference.google_adk_inference.meta_agent_gadk_inference import MetaAgentGADKInference
 from src.inference.google_adk_inference.planner_meta_agent_gadk_inference import PlannerMetaAgentGADKInference
-
+# Skill-based Agent Inference
+from src.inference.skill_agent_inference import SkillAgentInference
 from src.utils.file_manager import FileManager
 from src.utils.tool_file_manager import ToolFileManager
 from src.utils.postgres_vector_store_jsonb import PostgresVectorStoreJSONB
@@ -72,7 +79,8 @@ from telemetry_wrapper import logger as log
 from src.inference.inference_utils import EpisodicMemoryManager
 from src.utils.remote_model_client import RemoteSentenceTransformer as SentenceTransformer
 from src.utils.remote_model_client import get_remote_models_and_utils, ModelServerClient
-from src.utils.kafka_manager import KafkaManager
+from src.utils.message_queue_factory.mq_factory import create_mq_manager
+from src.utils.message_queue_factory.message_queue_manager import MessageQueueManager
 
 # EXPORT:EXCLUDE:START
 from src.onboard.tools_agents_onboarding import insert_sample_tools, insert_sample_agents, insert_sample_workflows, insert_sample_mcp_tools
@@ -115,6 +123,8 @@ class AppContainer:
         self.chat_history_repo: ChatHistoryRepository = None
         self.feedback_learning_repo: FeedbackLearningRepository = None
         self.query_token_usage_repo: QueryTokenUsageRepository = None
+        self.token_usage_logs_repo: TokenUsageLogsRepository = None
+        self.llm_request_tracking_repo: LLMRequestTrackingRepository = None
         self.evaluation_data_repo: EvaluationDataRepository = None
         self.tool_evaluation_metrics_repo: ToolEvaluationMetricsRepository = None
         self.agent_evaluation_metrics_repo: AgentEvaluationMetricsRepository = None
@@ -176,6 +186,9 @@ class AppContainer:
         # Python based Template Inferences
         self.hybrid_agent_inference: HybridAgentInference = None
 
+        # Skill-based Agent Inference
+        self.skill_agent_inference: SkillAgentInference = None
+
         # Google ADK based Template Inferences
         self.gadk_react_agent_inference: ReactAgentGADKInference = None
         self.gadk_planner_executor_critic_agent_inference: PlannerExecutorCriticAgentGADKInference = None
@@ -197,6 +210,15 @@ class AppContainer:
         # Task Registry for M2M async task tracking
         self.task_registry_repo: TaskRegistryRepository = None
         self.task_registry_service: TaskRegistryService = None
+
+        # Async Task store for flag-based async response mode (long-running endpoints)
+        self.async_task_repo: AsyncTaskRepository = None
+        self.async_task_service: AsyncTaskService = None
+
+        # Cron scheduler subsystem
+        self.scheduled_job_repo: ScheduledJobRepository = None
+        self.schedule_history_repo: ScheduleExecutionHistoryRepository = None
+        self.scheduler_service: SchedulerService = None
         
         # Tool generation code versioning
         self.tool_generation_code_version_repo: ToolGenerationCodeVersionRepository = None
@@ -247,8 +269,8 @@ class AppContainer:
         # Tool Export/Import
         self.tool_export_import_service: ToolExportImportService = None
 
-        # Kafka Manager
-        self.kafka_manager: KafkaManager = None
+        # Message Queue Manager
+        self.mq_manager: MessageQueueManager = None
 
 
     async def initialize_services(self):
@@ -263,8 +285,11 @@ class AppContainer:
 
         # 2. Check and Create Databases (Administrative Task)
         # This ensures the databases exist before we try to connect pools to them.
-        await self.db_manager.check_and_create_databases(required_db_names=app_config.postgres_db.required_databases)
-        log.info("AppContainer: All required databases checked/created.")
+        if app_config.enable_create_tables:
+            await self.db_manager.check_and_create_databases(required_db_names=app_config.postgres_db.required_databases)
+            log.info("AppContainer: All required databases checked/created.")
+        else:
+            log.info("AppContainer: ENABLE_CREATE_TABLES=false — skipping database creation (assuming databases already exist).")
 
         # 3. Connect to all required database pools
         # Pass the list of all databases to connect to.
@@ -318,6 +343,7 @@ class AppContainer:
         self.query_token_usage_repo = QueryTokenUsageRepository(pool=main_pool, login_pool=login_pool)
         self.token_usage_logs_repo = TokenUsageLogsRepository(pool=main_pool, login_pool=login_pool)
         self.model_costs_repo = ModelCostsRepository(pool=main_pool, login_pool=login_pool)
+        self.llm_request_tracking_repo = LLMRequestTrackingRepository(pool=main_pool, login_pool=login_pool)
         self.evaluation_data_repo = EvaluationDataRepository(pool=logs_pool, login_pool=login_pool, agent_repo=self.agent_repo)
         self.tool_evaluation_metrics_repo = ToolEvaluationMetricsRepository(pool=logs_pool, login_pool=login_pool, agent_repo= self.agent_repo)
         self.agent_evaluation_metrics_repo = AgentEvaluationMetricsRepository(pool=logs_pool, login_pool=login_pool, agent_repo= self.agent_repo)
@@ -336,7 +362,12 @@ class AppContainer:
         
         # Initialize task registry repository for M2M async task tracking
         self.task_registry_repo = TaskRegistryRepository(pool=main_pool, login_pool=login_pool)
-        await self.task_registry_repo.create_table()
+
+        # Initialize async task repository for flag-based async response mode
+        self.async_task_repo = AsyncTaskRepository(pool=main_pool, login_pool=login_pool)
+
+        self.scheduled_job_repo = ScheduledJobRepository(pool=main_pool, login_pool=login_pool)
+        self.schedule_history_repo = ScheduleExecutionHistoryRepository(pool=main_pool, login_pool=login_pool)
         
         # Initialize tool generation code version repository
         self.tool_generation_code_version_repo = ToolGenerationCodeVersionRepository(pool=main_pool, login_pool=login_pool)
@@ -362,6 +393,7 @@ class AppContainer:
         self.audit_log_repo = AuditLogRepository(pool=login_pool)
         self.refresh_token_repo = RefreshTokenRepository(pool=login_pool)
         self.registration_request_repo = RegistrationRequestRepository(pool=login_pool)
+        self.authorization_code_repo = AuthorizationCodeRepository(pool=login_pool)
 
         # Initialize admin configuration repository and service
         self.admin_config_repo = AdminConfigRepository(pool=main_pool, login_pool=login_pool)
@@ -464,7 +496,8 @@ class AppContainer:
             refresh_repo=self.refresh_token_repo,
             department_repo=self.department_repo,
             user_dept_mapping_repo=self.user_dept_mapping_repo,
-            registration_request_repo=self.registration_request_repo
+            registration_request_repo=self.registration_request_repo,
+            authorization_code_repo=self.authorization_code_repo
         )
         self.authorization_service = AuthorizationService(
             user_repo=self.user_repo,
@@ -551,8 +584,8 @@ class AppContainer:
                 'user': os.getenv('POSTGRESQL_USER'),
                 'password': os.getenv('POSTGRESQL_PASSWORD')
             }
-            secrets_handler = UserSecretsManager(secrets_db_config)
-            public_keys_handler = PublicKeysManager(secrets_db_config)
+            secrets_handler = UserSecretsManager(secrets_db_config, enable_create_tables=app_config.enable_create_tables)
+            public_keys_handler = PublicKeysManager(secrets_db_config, enable_create_tables=app_config.enable_create_tables)
             
             # Store handlers in class variables for global access
             self.secrets_handler = secrets_handler
@@ -585,6 +618,17 @@ class AppContainer:
         self.task_registry_service = TaskRegistryService(
             task_registry_repo=self.task_registry_repo
         )
+
+        # Initialize async task service for flag-based async response mode
+        self.async_task_service = AsyncTaskService(
+            async_task_repo=self.async_task_repo
+        )
+
+        # Initialize cron scheduler service
+        self.scheduler_service = SchedulerService(
+            job_repo=self.scheduled_job_repo,
+            history_repo=self.schedule_history_repo,
+        )
         
         # Initialize tool generation code version service
         self.tool_generation_code_version_service = ToolGenerationCodeVersionService(
@@ -605,7 +649,7 @@ class AppContainer:
         
         # Handle empty or None model server URL
         if not model_server_url or model_server_url.lower() == "none":
-            log.info("MODEL_SERVER_URL not configured. Remote model features (embeddings, cross-encoder) will be unavailable.")
+            log.info("AppContainer: MODEL_SERVER_URL not configured. Remote model features (embeddings, cross-encoder) will be unavailable.")
         else:
             try:
                 client = ModelServerClient(model_server_url)
@@ -613,11 +657,11 @@ class AppContainer:
                     remote_components = get_remote_models_and_utils(model_server_url)
                     self.embedding_model = remote_components["embedding_model"]
                     self.cross_encoder = remote_components["cross_encoder"]
-                    log.info("Remote embeddings and cross-encoder initialized successfully.")
+                    log.info("AppContainer: Remote embeddings and cross-encoder initialized successfully.")
                 else:
-                    log.warning("Model server is not available. Remote embeddings and cross-encoder features will be unavailable.")
+                    log.warning("AppContainer: Model server is not available. Remote embeddings and cross-encoder features will be unavailable.")
             except Exception as e:
-                log.error(f"Failed to initialize remote models: {e}")
+                log.error(f"AppContainer: Failed to initialize remote models: {e}")
 
             self.chat_service.embedding_model = self.embedding_model
             self.chat_service.cross_encoder = self.cross_encoder
@@ -646,6 +690,9 @@ class AppContainer:
         # Python based Template Inferences
         self.hybrid_agent_inference = HybridAgentInference(inference_utils=self.inference_utils)
 
+        # Skill-based Agent Inference
+        self.skill_agent_inference = SkillAgentInference(inference_utils=self.inference_utils)
+
         # Google ADK based Template Inferences
         self.gadk_react_agent_inference = ReactAgentGADKInference(inference_utils=self.inference_utils)
         self.gadk_planner_executor_critic_agent_inference = PlannerExecutorCriticAgentGADKInference(inference_utils=self.inference_utils)
@@ -665,6 +712,9 @@ class AppContainer:
 
             # Python
             hybrid_agent_inference=self.hybrid_agent_inference,
+
+            # Skill-based
+            skill_agent_inference=self.skill_agent_inference,
 
             # Google ADK
             gadk_react_agent_inference=self.gadk_react_agent_inference,
@@ -691,11 +741,13 @@ class AppContainer:
             centralized_agent_inference=self.centralized_agent_inference,
             model_service=self.model_service
         )
+        log.info("AppContainer: Core evaluation service initialized.")
         self.core_consistency_service = CoreConsistencyEvaluationService(
             consistency_service=self.consistency_service,
             model_service=self.model_service,
             centralized_agent_inference=self.centralized_agent_inference
         )
+        log.info("AppContainer: Core consistency service initialized.")
 
         self.core_robustness_service = CoreRobustnessEvaluationService(
             consistency_service=self.consistency_service,
@@ -703,125 +755,176 @@ class AppContainer:
             centralized_agent_inference=self.centralized_agent_inference,
             react_agent_inference=self.react_agent_inference
         )
+        log.info("AppContainer: Core robustness service initialized.")
 
         self.multi_db_connection_repo = MultiDBConnectionRepository(pool=main_pool)
+        log.info("AppContainer: Multi DB connection repository initialized.")
 
         self.file_manager = FileManager()
+        log.info("AppContainer: File manager initialized.")
         
         self.vm_management_service = VMManagementService()
+        log.info("AppContainer: VM management service initialized.")
 
-        # Kafka Manager
-        self.kafka_manager = KafkaManager()
+        # Message Queue Manager
+        self.mq_manager = create_mq_manager()
+        log.info("AppContainer: Message queue manager initialized.")
 
         # 8. Create Tables (if they don't exist)
-        # Call create_tables_if_not_exists for each service/repository that manages tables.
-        # Order matters for foreign key dependencies.
-        
-        # Create departments table first (required for foreign key references)
-        try:
-            await self.department_repo.create_table_if_not_exists()
-            log.info("Departments table created successfully")
-            await self.department_repo.initialize_default_department("SYSTEM")
-            log.info("Default department initialized successfully")
-        except Exception as e:
-            log.error(f"Error initializing departments: {e}")
-            raise
+        # Gated by ENABLE_CREATE_TABLES (default: true). Set to false in production
+        # where the DB role lacks DDL privileges and tables are pre-created by a DBA.
+        if not app_config.enable_create_tables:
+            log.info("AppContainer: ENABLE_CREATE_TABLES=false — skipping all DDL commands.")
+        else:
+            log.info("AppContainer: ENABLE_CREATE_TABLES=true — running DDL setup.")
+            # Order matters for foreign key dependencies.
 
-        # Create login_credential table BEFORE userdepartmentmapping (FK dependency)
-        await self.user_repo.create_table_if_not_exists()
-        await self.refresh_token_repo.create_table_if_not_exists()
+            # Create departments table first (required for foreign key references)
+            try:
+                await self.department_repo.create_table_if_not_exists()
+                log.info("AppContainer: Departments table created successfully")
+                await self.department_repo.initialize_default_department("SYSTEM")
+                log.info("AppContainer: Default department initialized successfully")
+            except Exception as e:
+                log.error(f"AppContainer: Error initializing departments: {e}")
+                raise
 
-        # Now create user-department mapping table (has FK to login_credential and departments)
-        try:
-            await self.user_dept_mapping_repo.create_table_if_not_exists()
-            log.info("User-department mapping table created successfully")
-        except Exception as e:
-            log.error(f"Error initializing user-department mapping: {e}")
-            raise
+            # Create login_credential table BEFORE userdepartmentmapping (FK dependency)
+            await self.user_repo.create_table_if_not_exists()
+            await self.refresh_token_repo.create_table_if_not_exists()
 
-        # Initialize default roles for departments using clean department-based design
-        try:
-            await self.department_repo.initialize_default_department_roles("SYSTEM")
-            log.info("Default department roles initialized successfully")
-        except Exception as e:
-            log.error(f"Error initializing department roles: {e}")
-            raise
+            # Now create user-department mapping table (has FK to login_credential and departments)
+            try:
+                await self.user_dept_mapping_repo.create_table_if_not_exists()
+                log.info("AppContainer: User-department mapping table created successfully")
+            except Exception as e:
+                log.error(f"AppContainer: Error initializing user-department mapping: {e}")
+                raise
 
-        # Create role management tables and initialize default data
-        try:
-            await self.role_repo.create_tables_if_not_exists()
-            log.info("Role tables created successfully")
-            await self.role_repo.initialize_default_roles_and_permissions("SYSTEM")
-            log.info("Default roles and permissions initialized successfully")
-        except Exception as e:
-            log.error(f"Error initializing roles: {e}")
-            raise
+            # Initialize default roles for departments using clean department-based design
+            try:
+                await self.department_repo.initialize_default_department_roles("SYSTEM")
+                log.info("AppContainer: Default department roles initialized successfully")
+            except Exception as e:
+                log.error(f"AppContainer: Error initializing department roles: {e}")
+                raise
 
-        await self.approval_permission_repo.create_table_if_not_exists()
-        await self.registration_request_repo.create_table_if_not_exists()
-        await self.audit_log_repo.create_table_if_not_exists()
-        await self.admin_config_repo.create_table_if_not_exists()
-        await self.tag_repo.create_table_if_not_exists()
-        await self.tool_repo.create_table_if_not_exists()
-        await self.tool_version_repo.create_table_if_not_exists()
-        await self.tool_version_recycle_bin_repo.create_table_if_not_exists()
-        # Migrate existing versioning data from JSON column to new table
-        await self.tool_version_repo.migrate_from_json_versioning(self.tool_repo)
-        await self.mcp_tool_repo.create_table_if_not_exists()
-        await self.agent_repo.create_table_if_not_exists()
-        await self.chat_history_repo.create_agent_conversation_summary_table()
-        await self.feedback_learning_repo.create_tables_if_not_exists()
-        await self.query_token_usage_repo.create_table_if_not_exists()
-        await self.token_usage_logs_repo.create_table_if_not_exists()
-        await self.model_costs_repo.create_table_if_not_exists()
-        await self.evaluation_service.create_evaluation_tables_if_not_exists()
-        await self.consistency_service.create_evaluation_table_if_not_exists()
-        await self.multi_db_connection_repo.create_db_connections_table_if_not_exists() # Create multi-DB connections table
-        # EXPORT:EXCLUDE:START
-        await self.export_repo.create_table_if_not_exists()
-        # EXPORT:EXCLUDE:END
-        await self.chat_state_history_manager_repo.create_table_if_not_exists()
-        
-        # Run pipeline→workflow schema migration
-        await self.agent_workflow_mapping_repo.migrate_pipeline_to_workflow_schema()
-        await self.agent_workflow_mapping_repo.migrate_ppl_to_wf_prefix()
-        
-        # Workflow tables
-        await self.workflow_repo.create_table_if_not_exists()
-        
-        # Tool generation code version table
-        await self.tool_generation_code_version_repo.create_table_if_not_exists()
-        
-        # Tool generation conversation history table
-        await self.tool_generation_conversation_history_repo.create_table_if_not_exists()
-        # Knowledgebase tables
-        await self.knowledgebase_repo.create_table_if_not_exists()
-        await self.postgres_vector_store.create_table()  # Create vector_embeddings_jsonb table
-        # await self.user_agent_access_repo.create_table_if_not_exists()
-        await self.group_repo.create_table_if_not_exists()
-        await self.group_secrets_repo.create_table_if_not_exists()
-        await self.user_access_key_repo.create_table_if_not_exists()  # Tool access control table
-        await self.tool_access_key_mapping_repo.create_table_if_not_exists()  # Tool-to-access-key mapping table
-        await self.access_key_definitions_repo.create_table_if_not_exists()  # Master access key definitions table
-        await self.tool_sharing_repo.create_table_if_not_exists()  # Tool sharing across departments
-        await self.agent_sharing_repo.create_table_if_not_exists()  # Agent sharing across departments
-        await self.mcp_tool_sharing_repo.create_table_if_not_exists()  # MCP tool sharing across departments
-        await self.kb_sharing_repo.create_table_if_not_exists()  # KB sharing across departments
-        await self.workflow_sharing_repo.create_table_if_not_exists()  # Workflow sharing across departments
+            # Create role management tables and initialize default data
+            try:
+                await self.role_repo.create_tables_if_not_exists()
+                log.info("AppContainer: Role tables created successfully")
+                await self.role_repo.initialize_default_roles_and_permissions("SYSTEM")
+                log.info("AppContainer: Default roles and permissions initialized successfully")
+            except Exception as e:
+                log.error(f"AppContainer: Error initializing roles: {e}")
+                raise
 
-        # Mapping tables (depend on main tables)
-        await self.tag_tool_mapping_repo.create_table_if_not_exists()
-        await self.tag_agent_mapping_repo.create_table_if_not_exists()
-        await self.tool_agent_mapping_repo.create_table_if_not_exists()
-        await self.agent_workflow_mapping_repo.create_table_if_not_exists()  # Agent-Workflow mapping table
-        await self.agent_workflow_mapping_repo.migrate_workflows_to_agent_mappings()  # Migrate legacy workflow data
-        await self.agent_kb_mapping_repo.create_table_if_not_exists()  # Agent-KB mapping table
+            await self.approval_permission_repo.create_table_if_not_exists()
+            await self.registration_request_repo.create_table_if_not_exists()
+            await self.authorization_code_repo.create_table_if_not_exists()
+            await self.audit_log_repo.create_table_if_not_exists()
+            await self.admin_config_repo.create_table_if_not_exists()
+            await self.tag_repo.create_table_if_not_exists()
+            await self.tool_repo.create_table_if_not_exists()
+            await self.tool_version_repo.create_table_if_not_exists()
+            await self.tool_version_recycle_bin_repo.create_table_if_not_exists()
+            # Migrate existing versioning data from JSON column to new table
+            await self.tool_version_repo.migrate_from_json_versioning(self.tool_repo)
+            # CRITICAL: Ensure ALL tools have at least v1 in tool_versions_table
+            await self.tool_version_repo.ensure_all_tools_have_versions(self.tool_repo)
+            # NOW safe to drop legacy versioning columns (after all migrations complete)
+            await self.tool_repo.drop_legacy_versioning_columns()
+            await self.mcp_tool_repo.create_table_if_not_exists()
+            await self.agent_repo.create_table_if_not_exists()
+            await self.chat_history_repo.migrate_adk_session_tables()
+            await self.chat_history_repo.create_agent_conversation_summary_table()
+            await self.scheduled_job_repo.create_table()
+            await self.schedule_history_repo.create_table()
+            await self.task_registry_repo.create_table()
+            await self.async_task_repo.create_table()
+            await self.feedback_learning_repo.create_tables_if_not_exists()
+            await self.query_token_usage_repo.create_table_if_not_exists()
+            await self.token_usage_logs_repo.create_table_if_not_exists()
+            await self.model_costs_repo.create_table_if_not_exists()
+            await self.llm_request_tracking_repo.create_table_if_not_exists()
+            await self.evaluation_service.create_evaluation_tables_if_not_exists()
+            await self.consistency_service.create_evaluation_table_if_not_exists()
+            await self.multi_db_connection_repo.create_db_connections_table_if_not_exists() # Create multi-DB connections table
+            async with await self.chat_service.get_checkpointer_context_manager() as checkpointer:
+                # Ensure table exists for langgraph's short term memory.
+                # checkpointer.setup() is often called implicitly or handled by LangGraph's app.compile()
+                # but explicitly calling it here ensures the table exists if it's the first time.
+                await checkpointer.setup()
+
+            # EXPORT:EXCLUDE:START
+            await self.export_repo.create_table_if_not_exists()
+            # EXPORT:EXCLUDE:END
+            await self.chat_state_history_manager_repo.create_table_if_not_exists()
+
+            # Run pipeline→workflow schema migration
+            await self.agent_workflow_mapping_repo.migrate_pipeline_to_workflow_schema()
+            await self.agent_workflow_mapping_repo.migrate_ppl_to_wf_prefix()
+
+            # Workflow tables
+            await self.workflow_repo.create_table_if_not_exists()
+            await self.workflow_run_repo.create_table_if_not_exists()
+            await self.workflow_steps_repo.create_table_if_not_exists()
+
+            # Tool generation code version table
+            await self.tool_generation_code_version_repo.create_table_if_not_exists()
+
+            # Tool generation conversation history table
+            await self.tool_generation_conversation_history_repo.create_table_if_not_exists()
+            # Knowledgebase tables
+            await self.knowledgebase_repo.create_table_if_not_exists()
+            await self.postgres_vector_store.create_table()  # Create vector_embeddings_jsonb table
+            # await self.user_agent_access_repo.create_table_if_not_exists()
+            await self.group_repo.create_table_if_not_exists()
+            await self.group_secrets_repo.create_table_if_not_exists()
+            await self.user_access_key_repo.create_table_if_not_exists()  # Tool access control table
+            await self.tool_access_key_mapping_repo.create_table_if_not_exists()  # Tool-to-access-key mapping table
+            await self.access_key_definitions_repo.create_table_if_not_exists()  # Master access key definitions table
+            await self.tool_sharing_repo.create_table_if_not_exists()  # Tool sharing across departments
+            await self.agent_sharing_repo.create_table_if_not_exists()  # Agent sharing across departments
+            await self.mcp_tool_sharing_repo.create_table_if_not_exists()  # MCP tool sharing across departments
+            await self.kb_sharing_repo.create_table_if_not_exists()  # KB sharing across departments
+            await self.workflow_sharing_repo.create_table_if_not_exists()  # Workflow sharing across departments
+
+            # Mapping tables (depend on main tables)
+            await self.tag_tool_mapping_repo.create_table_if_not_exists()
+            await self.tag_agent_mapping_repo.create_table_if_not_exists()
+            await self.tool_agent_mapping_repo.create_table_if_not_exists()
+            await self.agent_workflow_mapping_repo.create_table_if_not_exists()  # Agent-Workflow mapping table
+            await self.agent_workflow_mapping_repo.migrate_workflows_to_agent_mappings()  # Migrate legacy workflow data
+            await self.agent_kb_mapping_repo.create_table_if_not_exists()  # Agent-KB mapping table
+
+            # Recycle tables (depend on nothing but their pool)
+            await self.recycle_tool_repo.create_table_if_not_exists()
+            await self.recycle_mcp_tool_repo.create_table_if_not_exists()
+            await self.recycle_agent_repo.create_table_if_not_exists()
+
+            # EXPORT:EXCLUDE:START
+            await self.tag_tool_mapping_repo.drop_tool_id_fk_constraint()
+            # EXPORT:EXCLUDE:END
 
         # EXPORT:EXCLUDE:START
         await insert_sample_tools(self.tool_service)
         await insert_sample_mcp_tools(self.mcp_tool_service)
         await insert_sample_agents(self.agent_service)
         await insert_sample_workflows(self.workflow_service)
+
+        # Populate sandbox exemption set with tool IDs from the system-onboarded
+        # "Tool Onboard Agent" workflow. Covers legacy/test-server tools whose
+        # names don't follow the `_system` convention but are still trusted
+        # because they're attached to a system workflow's agent.
+        try:
+            from src.utils.sandbox import SANDBOX_EXEMPT_TOOLS
+            exempt_ids = await self.workflow_service.get_tool_onboard_agent_tool_ids()
+            if exempt_ids:
+                SANDBOX_EXEMPT_TOOLS.update(exempt_ids)
+                log.info(f"AppContainer: Added {len(exempt_ids)} tool ID(s) to SANDBOX_EXEMPT_TOOLS from 'Tool Onboard Agent'.")
+        except Exception as e:
+            log.warning(f"AppContainer: Failed to populate sandbox exempt tool IDs: {e}")
         # EXPORT:EXCLUDE:END
         # EXPORT:INCLUDE:START
         # await load_exported_data(
@@ -836,15 +939,14 @@ class AppContainer:
         # )
         # EXPORT:INCLUDE:END
 
-        # Recycle tables (depend on nothing but their pool)
-        await self.recycle_tool_repo.create_table_if_not_exists()
-        await self.recycle_mcp_tool_repo.create_table_if_not_exists()
-        await self.recycle_agent_repo.create_table_if_not_exists()
-
         # 9. Load all models into cache (optional, for pre-warming)
 
         await self.model_service.load_all_models_into_cache()
         log.info("AppContainer: All models loaded into cache.")
+
+        # Sync guardrail types from the LiteLLM proxy (source of truth).
+        from src.utils.guardrail_helpers import guardrail_registry
+        await guardrail_registry.sync_from_proxy()
 
         log.info("AppContainer: All database tables checked/created.")
 
@@ -859,7 +961,6 @@ class AppContainer:
         #     await conn.execute("DROP TABLE IF EXISTS models;")
         # log.info("AppContainer: 'models' table dropped from main database if it existed.")
 
-        await self.tag_tool_mapping_repo.drop_tool_id_fk_constraint()
         await self.tool_service.fix_tool_agent_mapping_for_meta_agents()
         # EXPORT:EXCLUDE:END
         log.info("AppContainer: Database data migrations/fixes completed.")
@@ -870,10 +971,15 @@ class AppContainer:
         This method is called once during application shutdown.
         """
         log.info("AppContainer: Shutting down all services and closing database connections.")
+        if self.mq_manager:
+            try:
+                self.mq_manager.close()
+            except Exception as e:
+                log.error(f"AppContainer: Error closing MQ manager: {e}")
         if self.db_manager:
             await self.db_manager.close()
         if self.chat_service and self.chat_service.gadk_session_service:
-            self.chat_service.gadk_session_service.db_engine.dispose(close=True)
+            await self.chat_service.gadk_session_service.db_engine.dispose(close=True)
             log.info("AppContainer: Google ADK database connections closed.")
 
         log.info("AppContainer: Shutdown complete. Database connections closed.")

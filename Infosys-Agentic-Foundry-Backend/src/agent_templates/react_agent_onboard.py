@@ -1,7 +1,7 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
 import asyncio
 from pathlib import Path
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers.string import StrOutputParser
 
 from src.prompts.prompts import react_system_prompt_generator, file_context_system_prompt_generator
@@ -125,7 +125,20 @@ class ReactAgentOnboard(BaseAgentOnboard):
             
             prompt_file_path.write_text(file_context_prompt, encoding="utf-8")
             log.info(f"Saved File-Context System Prompt to: {prompt_file_path}")
-            
+
+            # --- Blob sync: file context prompt ---
+            try:
+                import os as _os
+                _sp = _os.getenv('STORAGE_PROVIDER', '')
+                if _sp:
+                    from src.utils.workspace_blob_sync import WorkspaceBlobSync
+                    from src.storage import get_storage_client
+                    _client = get_storage_client(_sp)
+                    _syncer = WorkspaceBlobSync(storage_client=_client, workspace_root=_os.path.abspath("agent_workspaces"))
+                    _syncer.schedule_file_context_prompt_sync(agent_name)
+            except Exception:
+                pass
+
             return str(prompt_file_path)
             
         except Exception as e:

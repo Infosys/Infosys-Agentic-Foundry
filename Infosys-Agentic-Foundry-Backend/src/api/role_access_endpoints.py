@@ -363,7 +363,7 @@ async def set_role_permissions(
         log.error(f"Set role permissions endpoint error: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.patch("/permissions/update", response_model=RolePermissionsResponse)
+@router.api_route("/permissions/update", methods=["PATCH", "POST"], response_model=RolePermissionsResponse)
 async def patch_role_permissions(
     request: Request,
     permissions_request: UpdateRolePermissionsRequest,

@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from src.schemas import AgentInferenceRequest
 from src.utils.secrets_handler import get_user_secrets, current_user_email, get_public_key, get_group_secrets
 from src.inference.abstract_base_inference import AbstractBaseInference
+from src.inference.base_agent_inference import BaseAgentInference
 from src.models.base_ai_model_service import BaseAIModelService
 from src.tools.mcp_tool_adapter import MCPToolAdapter
 from src.schemas import AdminConfigLimits
@@ -70,7 +71,8 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
                                 llm: BaseAIModelService,
                                 system_prompt: str,
                                 tool_ids: List[str] = [],
-                                tool_versions: Dict[str, str] = None
+                                tool_versions: Dict[str, str] = None,
+                                use_kafka_tool_worker: bool = False
                             ) -> Tuple[BaseAIModelService, Optional[List[Callable]]]:
         """
         Helper method to create a Python-based agent instance with tools loaded dynamically.
@@ -79,10 +81,11 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
         Args:
             tool_versions: Optional dict mapping tool_id -> version (e.g., 'v1', 'v2').
                           If provided, loads versioned code from tool_versions_table.
+            use_kafka_tool_worker: If True, wraps tools for Kafka-based remote execution.
         """
 
         tool_list: List[Union[Callable, MCPToolAdapter]] = []
-        tool_list: List[Union[Callable, MCPToolAdapter]] = await self._get_tools_instances(tool_ids=tool_ids, tool_versions=tool_versions)
+        tool_list: List[Union[Callable, MCPToolAdapter]] = await self._get_tools_instances(tool_ids=tool_ids, tool_versions=tool_versions, use_kafka_tool_worker=use_kafka_tool_worker)
         memory_management_tools = await self._get_memory_management_tools_instances()
         tool_list.extend(memory_management_tools)
 
@@ -260,7 +263,7 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
         return inf
 
     @abstractmethod
-    async def _build_agent_and_chains(self, llm: BaseAIModelService, agent_config: Dict) -> Dict[str, Any]:
+    async def _build_agent_and_chains(self, llm: BaseAIModelService, agent_config: Dict, use_kafka_tool_worker: bool = False) -> Dict[str, Any]:
         """
         Abstract method to build the agent and chains for a specific Python-based agent type.
         Subclasses must implement this.
@@ -287,6 +290,7 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
                                 context_flag: bool = True,
                                 temperature: float = 0,
                                 evaluation_flag: bool = False,
+                                use_kafka_tool_worker: bool = False,
                                 inference_config: AdminConfigLimits = AdminConfigLimits(),
                             ) -> Dict[str, Any]:
         """
@@ -317,7 +321,7 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
                 log.error(f"Error occurred while resetting conversation: {e}")
 
         llm = await self.model_service.get_llm_model_using_python(model_name=model_name, temperature=temperature)
-        chains = await self._build_agent_and_chains(llm, agent_config)
+        chains = await self._build_agent_and_chains(llm, agent_config, use_kafka_tool_worker=use_kafka_tool_worker)
         app: BaseAIModelService = chains.get("agent", None)
         if not app:
             log.error("Agent instance not found in chains.")
@@ -369,6 +373,7 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
                                 temperature: float = 0,
                                 evaluation_flag: bool = False,
                                 enable_streaming_flag: bool = False,
+                                use_kafka_tool_worker: bool = False,
                                 inference_config: AdminConfigLimits = AdminConfigLimits()
                             ) -> AsyncGenerator[Dict[str, Any], None]:
         """
@@ -383,6 +388,7 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
                   agent_config: Optional[Union[dict, None]] = None,
                   insert_into_eval_flag: bool = True,
                   role: str = None,
+                  use_kafka_tool_worker: bool = False,
                   **kwargs
                 ) -> Any:
         """
@@ -391,6 +397,7 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
         Args:
             request (AgentInferenceRequest): The request object containing all necessary parameters.
             role: Optional user role for response filtering.
+            use_kafka_tool_worker: If True, wraps tools for Kafka-based remote execution.
         """
         agentic_application_id = inference_request.agentic_application_id
         if not agent_config:
@@ -415,11 +422,18 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
             tool_interrupt_flag = inference_request.tool_verifier_flag
             tools_to_interrupt = inference_request.interrupt_items
             tool_feedback = inference_request.tool_feedback
+            tool_reject = False
             try:
                 if tool_feedback:
-                    query = ""
-                    tool_feedback = json.loads(tool_feedback)
-                if not isinstance(tool_feedback, (list, dict)):
+                    # Check for reject signal BEFORE JSON parsing
+                    if isinstance(tool_feedback, str) and tool_feedback.strip().lower() == "no":
+                        tool_reject = True
+                        tool_feedback = None
+                        query = ""
+                    else:
+                        query = ""
+                        tool_feedback = json.loads(tool_feedback)
+                if tool_feedback is not None and not isinstance(tool_feedback, (list, dict)):
                     log.error("Tool feedback is not a list or dict, setting to None")
                     tool_feedback = None
 
@@ -479,11 +493,13 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
                     tool_interrupt_flag=tool_interrupt_flag,
                     tools_to_interrupt=tools_to_interrupt,
                     tool_feedback=tool_feedback,
+                    tool_reject=tool_reject,
                     context_flag=context_flag,
                     evaluation_flag=evaluation_flag,
                     validator_flag=validator_flag,
                     temperature=temperature,
                     enable_streaming_flag=enable_streaming_flag,
+                    use_kafka_tool_worker=use_kafka_tool_worker,
                     inference_config=inference_config
                 ):
                     # Forward streaming status updates (but not the final history list)
@@ -512,10 +528,12 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
                     tool_interrupt_flag=tool_interrupt_flag,
                     tools_to_interrupt=tools_to_interrupt,
                     tool_feedback=tool_feedback,
+                    tool_reject=tool_reject,
                     context_flag=context_flag,
                     evaluation_flag=evaluation_flag,
                     validator_flag=validator_flag,
                     temperature=temperature,
+                    use_kafka_tool_worker=use_kafka_tool_worker,
                     inference_config=inference_config
                 )
 
@@ -561,7 +579,10 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
 
                 try:
                     log.info("Inserting evaluation data into the database.")
-                    asyncio.create_task(self.evaluation_service.log_evaluation_data(session_id, agentic_application_id, agent_config, response_evaluation, model_name))
+                    BaseAgentInference._safe_background_task(
+                        self.evaluation_service.log_evaluation_data(session_id, agentic_application_id, agent_config, response_evaluation, model_name),
+                        name="log_evaluation_data",
+                    )
                 except Exception as e:
                     log.error(f"Error Occurred while inserting into evaluation data: {e}")
 

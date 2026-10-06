@@ -40,19 +40,19 @@ const WelcomeModal = ({
   const agentDropdownRef = useRef(null);
   const searchInputRef = useRef(null);
 
-  // Build abbreviation map from welcomeAgentTypes (includes workflow)
-  const abbrOverrides = { workflow: "WF" };
-  const typeAbbreviations = Object.fromEntries(
-    welcomeAgentTypes.map((t) => {
-      // Use override if available, else generate 2-letter abbreviation from label words
-      if (abbrOverrides[t.value]) return [t.value, abbrOverrides[t.value]];
-      const words = t.label.trim().split(/\s+/);
-      const abbr = words.length > 1
-        ? words.map((w) => w[0].toUpperCase()).join("").slice(0, 2)
-        : t.value.toUpperCase().slice(0, 2);
-      return [t.value, abbr];
-    }),
-  );
+  // Hardcoded abbreviation map — must match the main page (AskAssistant.jsx)
+  const typeAbbreviations = {
+    meta_agent: "MA",
+    react_agent: "RA",
+    planner_meta_agent: "MP",
+    planner_executor_agent: "PE",
+    multi_agent: "PC",
+    react_critic_agent: "RC",
+    hybrid_agent: "HA",
+    skill_agent: "SA",
+    workflow: "WF",
+    custom_template: "CT",
+  };
 
   // Get agent type filter options from constant - always show ALL known types
   const getTypeFilterOptions = () => {
@@ -314,6 +314,7 @@ const WelcomeModal = ({
                         setLocalAgentType(option.value);
                         // Keep filter local to WelcomeModal — don't propagate to parent
                       }}
+                      title={option.label}
                     >
                       {option.short}
                     </button>
@@ -347,7 +348,7 @@ const WelcomeModal = ({
                       </div>
                       <span className={styles.agentItemName}>{agent.agentic_application_name}</span>
                       {agent.agentic_application_type && (
-                        <span className={styles.agentItemType}>
+                        <span className={styles.agentItemType} title={agent.agentic_application_type.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}>
                           {typeAbbreviations[agent.agentic_application_type] || agent.agentic_application_type.toUpperCase().slice(0, 2)}
                         </span>
                       )}

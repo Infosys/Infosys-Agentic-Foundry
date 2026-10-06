@@ -1,6 +1,6 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
 import asyncio
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers.string import StrOutputParser
 from telemetry_wrapper import logger as log
 from typing import Optional, TypedDict, Union
@@ -8,7 +8,6 @@ from langgraph.graph import StateGraph, START, END
 
 from langchain_openai import AzureChatOpenAI, ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
 from src.prompts.prompts import react_system_prompt_generator
@@ -179,7 +178,7 @@ class ReactCriticAgentOnboard(BaseAgentOnboard):
             db_connection_names: Optional list of database connection names to include in prompt.
         """
         from ..prompts.prompts import file_context_system_prompt_generator
-        from langchain.prompts import PromptTemplate
+        from langchain_core.prompts import PromptTemplate
         from langchain_core.output_parsers.string import StrOutputParser
         import os
         
@@ -236,5 +235,22 @@ class ReactCriticAgentOnboard(BaseAgentOnboard):
             f.write(file_context_prompt)
         
         log.info("File-context prompt saved to: %s", file_context_path)
+        
+        # --- Fire-and-forget blob sync ---
+        try:
+            _sp = os.getenv('STORAGE_PROVIDER', '')
+            if _sp:
+                from src.utils.workspace_blob_sync import WorkspaceBlobSync
+                from src.storage import get_storage_client
+                _client = get_storage_client(_sp)
+                _syncer = WorkspaceBlobSync(
+                    storage_client=_client,
+                    workspace_root="./agent_workspaces",
+                    department=user_department,
+                )
+                _syncer.schedule_file_context_prompt_sync(agent_name)
+        except Exception:
+            pass  # Non-critical
+        # ---
 
 

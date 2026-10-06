@@ -1,4 +1,4 @@
-﻿/* Login Card - Uses .authCardDark from index.css for dark theme */
+﻿﻿/* Login Card - Uses .authCardDark from index.css for dark theme */
 .loginCard {
   width: 448px;
   min-height: auto;
@@ -273,7 +273,7 @@ input[type="password"]::-ms-reveal {
 /* Form Footer */
 .formFooter {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
   margin-top: 16px;
   padding-top: 8px;
@@ -356,6 +356,115 @@ input[type="password"]::-ms-reveal {
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
+}
+
+/* Register Prompt */
+.registerPrompt {
+  text-align: center;
+  margin-top: 16px;
+  font-size: var(--font-size-sm, 14px);
+  color: var(--content-color, #6b7280);
+}
+
+.registerLink {
+  color: var(--accent, #37acea);
+  cursor: pointer;
+  font-weight: var(--font-weight-medium, 500);
+  transition: color 0.2s ease;
+}
+
+.registerLink:hover {
+  color: var(--accent-hover, #2b8cbf);
+  text-decoration: underline;
+}
+
+/* [MANUAL_TOKEN_MODE] — remove these two rules when removing the feature */
+.manualTokenPrompt {
+  text-align: center;
+  margin-top: 8px;
+}
+
+.manualTokenBtn {
+  background: none;
+  border: none;
+  color: var(--muted, #9ca3af);
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: var(--font-weight-normal, 400);
+  cursor: pointer;
+  padding: 4px 0;
+  transition: color 0.2s ease;
+}
+
+.manualTokenBtn:hover {
+  color: var(--text-primary, #f0f0f0);
+  text-decoration: underline;
+}
+
+/* SSO Divider */
+.ssoDivider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0;
+  width: 100%;
+}
+
+.ssoDividerLine {
+  flex: 1;
+  height: 1px;
+  background: var(--border-color, rgba(255, 255, 255, 0.15));
+}
+
+.ssoDividerText {
+  font-size: var(--font-size-xs, 12px);
+  color: var(--text-secondary, #9ca3af);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+/* SSO Login Button */
+.ssoBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 20px;
+  background: var(--gradient-primary, linear-gradient(135deg, #025d8a, #041c29));
+  color: var(--primary-button-color, #ffffff);
+  border: 1px solid #37acea;
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-base, 16px);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.ssoBtn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(55, 172, 234, 0.5);
+}
+
+.ssoBtn:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+  box-shadow: 0 2px 8px rgba(55, 172, 234, 0.35);
+}
+
+.ssoBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.ssoBtnSpinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: var(--primary-button-color, #ffffff);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
 }
 
 .conflictModalContent {
@@ -481,6 +590,126 @@ input[type="password"]::-ms-reveal {
   .modalBtn {
     width: 100%;
   }
+    /* OAuth Callback Responsive */
+  .oauthCallbackContainer {
+    padding: 16px;
+  }
+
+  .oauthCallbackCard {
+    padding: 32px 24px;
+    max-width: 100%;
+    margin: 0;
+  }
+
+  .oauthCallbackTitle {
+    font-size: var(--font-size-base);
+  }
+
+  .successIcon,
+  .errorIcon {
+    width: 64px;
+    height: 64px;
+    font-size: 32px;
+  }
+
+  .spinner {
+    width: 48px;
+    height: 48px;
+  }
+}
+
+/* ============================================
+   OAUTH CALLBACK STYLES - Matches Auth Design System
+   ============================================ */
+
+/* Container for centering the card (same positioning as div-login) */
+.oauthCallbackContainer {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-primary);
+}
+
+/* Card wrapper - Uses authCardDark pattern */
+.oauthCallbackCard {
+  /* Use the same authCardDark pattern for consistency */
+  --card-bg: #1e293b;
+  --border: rgba(255, 255, 255, 0.1);
+  --text-primary: #ffffff;
+  --text-secondary: #94a3b8;
+  --muted: #64748b;
+
+  background-color: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 48px 40px;
+  text-align: center;
+  max-width: 448px;
+  width: 100%;
+  box-shadow: var(--shadow-lg);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Title - Matches login title styling */
+.oauthCallbackTitle {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  margin: 20px 0 0 0;
+  line-height: 1.4;
+}
+
+/* Subtext for additional info */
+.oauthCallbackSubtext {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin: 8px 0 0 0;
+  line-height: 1.5;
+}
+
+/* Loading Spinner - Brand colored */
+.spinner {
+  width: 56px;
+  height: 56px;
+  border: 4px solid rgba(255, 255, 255, 0.1);
+  border-top-color: var(--app-primary-color);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* SSO Login - Loading & Error States */
+.loginLoadingContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 32px 0;
+}
+
+.loginLoadingText {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.loginErrorContainer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  color: var(--danger, #ef4444);
 }
 
 /* Contact Modal - Full screen overlay on login page (no sidebar) */
@@ -681,4 +910,58 @@ body.login-modal-open [class*="fullModalOverlay"] {
   font-size: var(--font-size-xs, 12px);
   color: var(--success, #27ae60);
   margin-top: 4px;
+}
+
+/* Success Icon - Circular with checkmark */
+.successIcon {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(22, 163, 74, 0.15) 0%, rgba(22, 163, 74, 0.25) 100%);
+  border: 2px solid var(--success);
+  color: var(--success);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  font-weight: var(--font-weight-bold);
+  margin: 0 auto;
+  animation: scaleIn 0.3s ease-out;
+}
+
+/* Error Icon - Circular with X mark */
+.errorIcon {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(239, 68, 68, 0.25) 100%);
+  border: 2px solid var(--danger);
+  color: var(--danger);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  font-weight: var(--font-weight-bold);
+  margin: 0 auto;
+  animation: scaleIn 0.3s ease-out;
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* State-specific text colors */
+.successText {
+  color: var(--success) !important;
+}
+
+.errorText {
+  color: var(--danger) !important;
 }

@@ -31,6 +31,26 @@ class MultiDBConnectionManager:
         self._metadata_session_factory = None
 
     # SQL management
+    def _decrypt_connection_password(self, encrypted: str) -> str:
+        """Decrypt a Fernet-encrypted credential stored in ``db_connections_table``.
+
+        Falls back to returning the value as-is when decryption fails
+        (e.g. legacy rows that were saved as plaintext before encryption
+        was introduced).
+        """
+        if not encrypted:
+            return encrypted
+        try:
+            from cryptography.fernet import Fernet
+            master_key = os.getenv("SECRETS_MASTER_KEY", "")
+            if not master_key:
+                return encrypted  # Cannot decrypt without key — return raw
+            cipher = Fernet(master_key.encode()[:44].ljust(44, b'='))
+            return cipher.decrypt(encrypted.encode("utf-8")).decode("utf-8")
+        except Exception:
+            # Legacy unencrypted value — return as-is
+            return encrypted
+
     def _fetch_connection_config_sync(self, connection_name: str) -> dict:
         """
         Synchronously fetch connection config from PostgreSQL using SQLAlchemy.
@@ -107,7 +127,7 @@ class MultiDBConnectionManager:
                 "host": row_dict.get("connection_host"),
                 "port": row_dict.get("connection_port"),
                 "username": row_dict.get("connection_username"),
-                "password": row_dict.get("connection_password"),
+                "password": self._decrypt_connection_password(row_dict.get("connection_password")),
                 "database": row_dict.get("connection_database_name"),
                 "created_by": row_dict.get("connection_created_by")
             }
@@ -181,6 +201,20 @@ class MultiDBConnectionManager:
             elif db_type == 'mysql':
                 db_url = f"mysql+pymysql://{username}:{password}@{host}:{port}/{database}"
             elif db_type == 'sqlite':
+                # --- Hyper-scale blob restore: ensure .db file is local ---
+                try:
+                    _sp = os.getenv('STORAGE_PROVIDER', '')
+                    if _sp:
+                        from src.utils.workspace_blob_sync import WorkspaceBlobSync
+                        from src.storage import get_storage_client
+                        _client = get_storage_client(_sp)
+                        _syncer = WorkspaceBlobSync(
+                            storage_client=_client,
+                            project_root=os.path.abspath("."),
+                        )
+                        _syncer.restore_sqlite_db_sync(department, database)
+                except Exception:
+                    pass  # best-effort; if blob not configured, proceed with local
                 db_url = f"sqlite:///{UPLOAD_DIR}/{department}/{database}"
             else:
                 log.error(f"[SQL] Unsupported database type '{db_type}' for connection '{db_key}'")

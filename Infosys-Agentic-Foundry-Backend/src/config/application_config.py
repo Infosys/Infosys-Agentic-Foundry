@@ -30,6 +30,9 @@ class PostgresDatabaseConfig:
     password: str = field(default_factory=lambda: os.getenv("POSTGRESQL_PASSWORD", ""))
     pool_size: ConnectionPoolSize = field(default_factory=ConnectionPoolSize.from_env)
     disable_ssl_for_chat_connections: bool = field(default_factory=lambda: os.getenv("DISABLE_SSL_FOR_CHAT_CONNECTIONS", "true").lower() == "true")
+    enable_check_and_create_databases: bool = field(default_factory=lambda: os.getenv("ENABLE_CHECK_AND_CREATE_DATABASES", "false").lower() == "true")
+    enable_vault_debug_logs: bool = field(default_factory=lambda: os.getenv("ENABLE_VAULT_DEBUG_LOGS", "false").lower() == "true")
+    enable_db_debug_logs: bool = field(default_factory=lambda: os.getenv("ENABLE_DB_DEBUG_LOGS", "false").lower() == "true")
 
     # Default admin database for initial connections
     admin_database_name: str = "postgres"
@@ -129,6 +132,19 @@ class ApplicationConfig:
     model_server_url: str = field(default_factory=lambda: os.getenv("MODEL_SERVER_URL", "").strip())
 
     server_name: str = field(default_factory=lambda: os.getenv("SERVER_NAME", "default"))
+
+    # AgentOS specific configs
+    REQUEST_AUDIT_DIR: str = field(default_factory=lambda: os.getenv(
+        "REQUEST_AUDIT_DIR",
+        os.path.join(".", "audit_logs", "requests"),
+    ))
+    AGENT_WORKSPACES_BASE: str = field(default_factory=lambda: os.getenv("AGENT_WORKSPACES_BASE", "./agent_workspaces"))
+    ALLOWED_ABSOLUTE_MOUNT_ROOTS: str = field(default_factory=lambda: os.getenv("ALLOWED_ABSOLUTE_MOUNT_ROOTS", "").strip())
+    DEFAULT_DEPARTMENT: str = field(default_factory=lambda: os.getenv('DEFAULT_DEPARTMENT', 'General'))
+
+    # When False, all DDL commands (CREATE TABLE, ALTER TABLE, CREATE INDEX, etc.)
+    # are skipped at startup. Set to False in production where the DB user lacks DDL privileges.
+    enable_create_tables: bool = field(default_factory=lambda: os.getenv("ENABLE_CREATE_TABLES", "true").lower() == "true")
 
     @property
     def is_production(self) -> bool:

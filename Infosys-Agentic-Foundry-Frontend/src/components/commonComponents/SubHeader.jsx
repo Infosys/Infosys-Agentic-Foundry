@@ -14,6 +14,8 @@ import CheckBox from "../../iafComponents/GlobalComponents/CheckBox/CheckBox";
 const EMPTY_ARRAY = [];
 const NOOP = () => { };
 
+export const SUBHEADER_CUSTOM_ACTIONS_ID = "subheader-custom-actions";
+
 const SubHeader = (props) => {
   const {
     onPlusClick,
@@ -341,7 +343,11 @@ const SubHeader = (props) => {
                 placeholder={getSearchPlaceholder()}
                 value={localSearch}
                 onChange={(e) => {
-                  setLocalSearch(e.target.value);
+                  const value = e.target.value;
+                  setLocalSearch(value);
+                  if (value === "" && typeof props.onSearch === "function") {
+                    props.onSearch("");
+                  }
                 }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") props.onSearch(localSearch);
@@ -440,6 +446,7 @@ const SubHeader = (props) => {
               {getButtonLabel()}
             </IAFButton>
           )}
+          <div id={SUBHEADER_CUSTOM_ACTIONS_ID} className={styles.customActionsSlot} />
         </div>
       </div>
       {/* Select All row - displayed below the header bar, above the cards */}

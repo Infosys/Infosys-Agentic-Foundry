@@ -2,6 +2,7 @@ from fastapi import Request, Response, HTTPException, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from src.auth.dependencies import get_user_info_from_request, get_client_ip, get_user_agent
+from src.auth.models import UserStatus
 from telemetry_wrapper import logger as log, update_session_context
 from typing import Set
 from src.utils.secrets_handler import current_user_email, current_user_department, current_user_role, current_request_headers
@@ -20,13 +21,15 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         "/redoc",
         "/favicon.ico",
         "/health",
+        "/health/detail",
         "/metrics",
         "/get-version",
         "/auth/me",
         "/utility/get/version",
         "/chat/sdlc-agent/inference",
         "/utility/files/user-uploads/download",
-        "/download"
+        "/download",
+        "/chat/schedules/status",
     }
 
     def __init__(self, app, exclude_paths: Set[str] = None):
@@ -46,8 +49,16 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             log.info(f'Setting user email...public endpoint:{user_info}')
             if user_info and user_info.email:
                 current_user_email.set(user_info.email)
+                _headers = current_request_headers.get() or {}
+                _headers["x-user-email"] = user_info.email
+                _headers["x-user-department"] = user_info.department_name or "General"
+                _headers["x-user-role"] = str(user_info.role)
+                current_request_headers.set(_headers)
             else:
                 current_user_email.set("anonymous")
+                _headers = current_request_headers.get() or {}
+                _headers["x-user-email"] = "anonymous"
+                current_request_headers.set(_headers)
             return await call_next(request)
         log.info("about to call options")
         # Skip authentication for OPTIONS requests (CORS preflight)
@@ -66,6 +77,28 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                     content={"detail": "Authentication required"}
                 )
             log.info(f"user details: {user_info}")
+
+            # Azure AD users not in login DB are marked PENDING_APPROVAL —
+            # only allow chat inference, chat history, file upload and download
+            # for them. The department for the file operations is resolved from
+            # the agent, same as chat inference.
+            if user_info.status == UserStatus.PENDING_APPROVAL:
+                allowed_paths = {
+                    "/chat/inference",
+                    "/chat/get/old-conversations",
+                    "/chat/files/upload",
+                    "/utility/files/user-uploads/download",
+                }
+                if request.url.path not in allowed_paths:
+                    log.warning(
+                        f"Azure AD ephemeral user {user_info.email} blocked from "
+                        f"{request.url.path} — only chat inference, chat history and file uploads/downloads are allowed"
+                    )
+                    return JSONResponse(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        content={"detail": "Access restricted. Only chat inference, chat history and file uploads/downloads are available for unregistered Azure AD users."}
+                    )
+
             # Set user context in request state
             request.state.user = user_info
             # Update session context for telemetry (remove user_session, use JWT token if needed)
@@ -77,6 +110,13 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             current_user_email.set(user_info.email)
             current_user_department.set(user_info.department_name)
             current_user_role.set(user_info.role)
+            # Inject user context as synthetic header placeholders so tool code can
+            # access them via: current_request_headers.get().get("x-user-email") etc.
+            _headers = current_request_headers.get() or {}
+            _headers["x-user-email"] = user_info.email
+            _headers["x-user-department"] = user_info.department_name or "General"
+            _headers["x-user-role"] = str(user_info.role)
+            current_request_headers.set(_headers)
 
             # Process the request
             response = await call_next(request)
@@ -131,12 +171,14 @@ class AuditMiddleware(BaseHTTPMiddleware):
 
         user_info = getattr(request.state, 'user', None)
         user_id = user_info.email if user_info and hasattr(user_info, 'email') else 'anonymous'
+        user_role = user_info.role if user_info and hasattr(user_info, 'role') else 'unknown'
+        user_department = user_info.department_name if user_info and hasattr(user_info, 'department_name') else 'unknown'
         
-        # Log request
-        log.info(f"API Request: {method} {path} - User: {user_id} - IP: {ip_address} - Status: {response.status_code}")
+        # Log request with role and department context
+        log.info(f"API Request: {method} {path} - User: {user_id} - Role: {user_role} - Department: {user_department} - IP: {ip_address} - Status: {response.status_code}")
         log.info(f"Request Path: {request.scope.get('path_params', {})}")
 
         # Log response status
-        log.info(f"API Response: {method} {path} - Status: {response.status_code} - User: {user_id}")
+        log.info(f"API Response: {method} {path} - Status: {response.status_code} - User: {user_id} - Role: {user_role} - Department: {user_department}")
         
         return response

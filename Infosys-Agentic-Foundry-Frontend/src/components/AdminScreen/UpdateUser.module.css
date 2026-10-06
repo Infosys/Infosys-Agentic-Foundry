@@ -114,6 +114,109 @@
   margin-top: 4px;
 }
 
+.boundRoleText {
+  font-size: var(--font-size-xs);
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.boundRoleText strong {
+  color: var(--header-color);
+  font-weight: var(--font-weight-medium);
+}
+
+.boundRoleHint {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  margin-top: 4px;
+}
+
+.fieldHint {
+  font-size: var(--font-size-xs);
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+/* Role Badges */
+.roleBadgesContainer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.assignedRolesLabel {
+  margin-top: 10px;
+  margin-bottom: 4px;
+}
+
+.roleBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: var(--accent-light, rgba(55, 172, 234, 0.1));
+  border: 1px solid var(--accent, #37acea);
+  border-radius: 16px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--accent, #37acea);
+}
+
+.roleBadgeRemoved {
+  text-decoration: line-through;
+  opacity: 0.75;
+}
+
+.roleBadgeRemoved .roleBadgeRemove {
+  text-decoration: none;
+}
+
+.roleBadgeUndo:hover {
+  background: var(--accent-light, rgba(55, 172, 234, 0.15));
+  color: var(--accent, #37acea);
+}
+
+.roleChangeHint {
+  display: block;
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
+}
+
+.roleBadgeRemove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 50%;
+  color: var(--accent, #37acea);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.roleBadgeRemove:hover {
+  background: var(--danger, #ef4444);
+  color: #fff;
+}
+
+.roleBadgeLocked {
+  opacity: 0.85;
+  cursor: not-allowed;
+}
+
+.roleBadgeRemoveDisabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.roleBadgeRemoveDisabled:hover {
+  background: none;
+  color: var(--accent, #37acea);
+}
+
 /* API Error display - matches form styling */
 .apiError {
   font-size: var(--font-size-xs);

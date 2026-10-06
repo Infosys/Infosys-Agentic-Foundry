@@ -2,6 +2,21 @@ import React from "react";
 import styles from "./EmptyState.module.css";
 import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
 
+export const FILTER_EMPTY_SUBMESSAGE = "Try adjusting or clearing your filters to see more results";
+
+const getEmptySubMessage = (createButtonLabel) => {
+  if (!createButtonLabel) return "";
+  const entity = createButtonLabel.replace(/^New\s+/i, "").toLowerCase();
+  return `Get started by creating your first ${entity}`;
+};
+
+const resolveSubMessage = ({ subMessage, hasAnyFilters, showCreateButton, onCreateClick, createButtonLabel }) => {
+  if (subMessage) return subMessage;
+  if (hasAnyFilters) return FILTER_EMPTY_SUBMESSAGE;
+  if (showCreateButton && onCreateClick) return getEmptySubMessage(createButtonLabel);
+  return "";
+};
+
 /**
  * EmptyState Component
  *
@@ -13,7 +28,7 @@ import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
  * @param {Array} filters - Active filters to display (search, tags, types, etc.)
  * @param {Function} onClearFilters - Handler to clear all filters
  * @param {Function} onCreateClick - Handler for create button click
- * @param {string} createButtonLabel - Label for the create button (e.g., "Create Tool", "Create Agent")
+ * @param {string} createButtonLabel - Label for the create button (e.g., "New Tool", "New Agent")
  * @param {boolean} showClearFilter - Whether to show the clear filter button
  * @param {boolean} showCreateButton - Whether to show the create button
  * @param {string} message - Main message to display (defaults based on context)
@@ -62,6 +77,13 @@ const EmptyState = ({
   }, [filters]);
 
   const hasAnyFilters = filters && filters.length > 0;
+  const displaySubMessage = resolveSubMessage({
+    subMessage,
+    hasAnyFilters,
+    showCreateButton,
+    onCreateClick,
+    createButtonLabel,
+  });
 
   return (
     <div className={styles.container} data-empty-state="true">
@@ -87,9 +109,8 @@ const EmptyState = ({
 
       <h3 className={styles.heading}>{message}</h3>
 
-      {/* Show sub-message if provided, otherwise show filter-related message */}
-      {subMessage && <p className={styles.message}>{subMessage}</p>}
-      {!subMessage && hasAnyFilters && <p className={styles.message}>Try adjusting or clearing your filters to see more results</p>}
+      {/* Show sub-message when provided or inferred from context */}
+      {displaySubMessage && <p className={styles.message}>{displaySubMessage}</p>}
 
       {hasAnyFilters && (
         <div className={styles.filtersContainer}>

@@ -5,9 +5,8 @@ import mammoth from "mammoth";
 import parse from "html-react-parser";
 import * as XLSX from "xlsx";
 import { useMessage } from "../../Hooks/MessageContext";
-import axios from "axios";
+import { axiosInstance } from "../../Hooks/useAxios";
 import { APIs, BASE_URL } from "../../constant";
-import Cookies from "js-cookie";
 import Loader from "../commonComponents/Loader";
 import SVGIcons from "../../Icons/SVGIcons";
 
@@ -345,20 +344,15 @@ const DocViewerModal = ({ url, fileName, onClose }) => {
           fileUrl = `${BASE_URL}${APIs.DOWNLOAD_FILE}?filename=${encodeURIComponent(url)}`;
         }
 
-        // Get auth token
-        const jwtToken = Cookies.get("jwt-token");
-        const headers = jwtToken ? { Authorization: `Bearer ${jwtToken}` } : {};
-
         // Determine response type based on file type
         let responseType = "arraybuffer";
         if (fileType === "text" || fileType === "json" || fileType === "csv") {
           responseType = "text";
         }
 
-        // Single fetch request
-        const response = await axios.get(fileUrl, {
+        // axiosInstance interceptor auto-attaches the MSAL/JWT token
+        const response = await axiosInstance.get(fileUrl, {
           responseType,
-          headers,
           signal,
         });
 

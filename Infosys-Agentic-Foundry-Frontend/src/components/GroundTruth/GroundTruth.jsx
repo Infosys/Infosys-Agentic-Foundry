@@ -2,13 +2,15 @@ import React, { useState, useEffect, useRef } from "react";
 import styles from "./GroundTruth.module.css";
 import sliderStyles from "../commonComponents/ResourceSlider/ResourceSlider.module.css";
 import { useMessage } from "../../Hooks/MessageContext";
-import { APIs } from "../../constant";
+import { APIs, WORKFLOW_AGENT } from "../../constant";
 import useFetch from "../../Hooks/useAxios";
 import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
 import { getAgentTypeAbbreviation } from "../Workflow/workflowUtils";
 import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
 import UploadBox from "../commonComponents/UploadBox";
 import SvgIcon from "../../Icons/SVGIcons";
+import { getUnconfiguredCostModels } from "../../utils/modelUtils";
+import UnconfiguredModelCostWarning from "../commonComponents/UnconfiguredModelCostWarning";
 
 const GroundTruth = () => {
   const [progressMessages, setProgressMessages] = useState([]);
@@ -36,8 +38,10 @@ const GroundTruth = () => {
   });
   const [loading, setLoading] = useState(false);
   const [templateDownloading, setTemplateDownloading] = useState(false);
+  const [resultDownloading, setResultDownloading] = useState(false);
   const [models, setModels] = useState([]);
   const [modelsLoading, setModelsLoading] = useState(false);
+  const [unconfiguredCostModels, setUnconfiguredCostModels] = useState([]);
   const { addMessage, setShowPopup } = useMessage();
   const { fetchData, postDataStream } = useFetch();
   const [agentsListData, setAgentsListData] = useState([]);
@@ -81,6 +85,7 @@ const GroundTruth = () => {
     setModelsLoading(true);
     try {
       const data = await fetchData(APIs.GET_MODELS);
+      setUnconfiguredCostModels(getUnconfiguredCostModels(data));
       if (data?.models && Array.isArray(data.models)) {
         const formattedModels = data.models.map((model) => ({
           label: model,
@@ -132,10 +137,11 @@ const GroundTruth = () => {
       setAgentListDropdown([]);
       return;
     }
+    const nonWorkflowAgents = agentsListData.filter((agent) => agent.agentic_application_type !== WORKFLOW_AGENT);
     if (agentTypeFilter === "all") {
-      setAgentListDropdown(agentsListData);
+      setAgentListDropdown(nonWorkflowAgents);
     } else {
-      const tempList = agentsListData.filter((list) => list.agentic_application_type === agentTypeFilter);
+      const tempList = nonWorkflowAgents.filter((list) => list.agentic_application_type === agentTypeFilter);
       setAgentListDropdown(tempList || []);
     }
   }, [agentTypeFilter, agentsListData]);
@@ -143,7 +149,7 @@ const GroundTruth = () => {
   // Get unique agent types for filter dropdown with proper { value, label } format
   const agentTypeFilterOptions = [
     { value: "all", label: "All" },
-    ...[...new Set(agentsListData?.map((agent) => agent.agentic_application_type).filter(Boolean) || [])].map((type) => ({
+    ...[...new Set(agentsListData?.map((agent) => agent.agentic_application_type).filter((type) => type && type !== WORKFLOW_AGENT) || [])].map((type) => ({
       value: type,
       label: `${getAgentTypeAbbreviation(type)} - ${type.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}`,
     })),
@@ -370,11 +376,12 @@ const GroundTruth = () => {
   };
 
   const handleDownload = async () => {
-    if (!downloadableResponse) {
-      addMessage("No file is available for download", "error");
+    if (!downloadableResponse || resultDownloading) {
+      if (!downloadableResponse) addMessage("No file is available for download", "error");
       return;
     }
 
+    setResultDownloading(true);
     try {
       if (downloadableResponse.url) {
         const urlObj = new URL(downloadableResponse.url);
@@ -399,6 +406,8 @@ const GroundTruth = () => {
       }
     } catch (error) {
       addMessage(`Error downloading file: ${error.message}`, "error");
+    } finally {
+      setResultDownloading(false);
     }
   };
 
@@ -457,6 +466,10 @@ const GroundTruth = () => {
                   showSearch={true}
                   width="100%"
                   disabled={isExecuting || modelsLoading}
+                />
+                <UnconfiguredModelCostWarning
+                  selectedModel={formData.model_name}
+                  unconfiguredCostModels={unconfiguredCostModels}
                 />
               </div>
 
@@ -714,7 +727,7 @@ const GroundTruth = () => {
             {/* Slider Footer */}
             {evaluationResults.showResults && downloadableResponse && (
               <div className={sliderStyles.sliderFooter} style={{ flexDirection: "row", justifyContent: "flex-end" }}>
-                <IAFButton type="primary" onClick={handleDownload}>
+                <IAFButton type="primary" onClick={handleDownload} disabled={resultDownloading} loading={resultDownloading}>
                   Download
                 </IAFButton>
               </div>

@@ -3,14 +3,13 @@ import { useNavigate } from "react-router-dom";
 import SVGIcons from "../../Icons/SVGIcons";
 import styles from "./SignUpAdmin.module.css";
 import containerStyles from "../../css_modules/AnimatedContainer.module.css";
-import useFetch from "../../Hooks/useAxios";
-import { APIs, BASE_URL, roleOptions } from "../../constant";
+import useFetch, { axiosInstance } from "../../Hooks/useAxios";
+import { APIs, roleOptions } from "../../constant";
 import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
 import DepartmentSelector from "../commonComponents/DepartmentSelector/DepartmentSelector";
 import { useMessage } from "../../Hooks/MessageContext";
 import { encodePassword } from "../../utils/encodeUtils";
 import { getDepartmentFromToken, getRoleFromToken } from "../../utils/jwtUtils";
-import axios from "axios";
 
 const SignUp = ({ isAdminScreen = false, embedded = false }) => {
   const { postData, fetchData, setJwtToken } = useFetch();
@@ -79,7 +78,7 @@ const SignUp = ({ isAdminScreen = false, embedded = false }) => {
       const checkSuperadminExists = async () => {
         setSuperadminCheckLoading(true);
         try {
-          const response = await axios.get(`${BASE_URL}${APIs.SUPERADMIN_EXISTS}`);
+          const response = await axiosInstance.get(APIs.SUPERADMIN_EXISTS);
           const data = response.data;
           setSuperadminExists(data?.superadmin_exists ?? false);
 
@@ -87,7 +86,7 @@ const SignUp = ({ isAdminScreen = false, embedded = false }) => {
           if (data?.superadmin_exists === true) {
             setRegisterDeptLoading(true);
             try {
-              const deptRes = await axios.get(`${BASE_URL}${APIs.GET_DEPARTMENTS}`);
+              const deptRes = await axiosInstance.get(APIs.GET_DEPARTMENTS);
               const resp = deptRes.data;
               let items = [];
               if (resp) {
@@ -161,7 +160,7 @@ const SignUp = ({ isAdminScreen = false, embedded = false }) => {
     }
     setRolesLoading(true);
     try {
-      const url = `${APIs.GET_DEPARTMENT_ROLES}${encodeURIComponent(deptName)}/roles`;
+      const url = `${APIs.GET_DEPARTMENT_ROLES}/${encodeURIComponent(deptName)}/roles`;
       const response = await fetchData(url);
       let rolesArray = [];
       if (Array.isArray(response)) {

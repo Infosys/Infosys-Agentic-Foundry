@@ -41,14 +41,6 @@
   gap: 10px;
 }
 
-.departmentIcon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--app-primary-color, #37acea);
-  flex-shrink: 0;
-}
-
 .departmentLabel {
   font-size: 13px;
   font-weight: 600;
@@ -275,10 +267,87 @@
   border-top: 1px solid var(--border);
 }
 
+.badgesWrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.departmentTag {
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 500;
+  background: rgba(55, 172, 234, 0.12);
+  color: #37acea;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
 .togglesWrapper {
   display: flex;
   align-items: center;
   gap: 20px;
+}
+
+.cardFooterActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.cardActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cardActionBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--header-color);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cardActionBtn:hover:not(:disabled) {
+  background: var(--hover-background);
+}
+
+.cardActionBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.cardPromoteIconBtn {
+  color: var(--app-primary-color, #37acea);
+  border-color: rgba(55, 172, 234, 0.35);
+}
+
+.cardPromoteIconBtn:hover:not(:disabled) {
+  background: rgba(55, 172, 234, 0.1);
+}
+
+.cardRevokeIconBtn {
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.35);
+}
+
+.cardRevokeIconBtn:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.08);
 }
 
 .toggleGroup {
@@ -332,4 +401,78 @@
 :root[data-theme="dark"] .roleDefault {
   background: rgba(100, 116, 139, 0.2);
   color: #94a3b8;
+}
+
+:root[data-theme="dark"] .departmentTag {
+  background: rgba(55, 172, 234, 0.18);
+  color: #5bbde8;
+}
+
+/* Pagination Controls */
+.paginationControls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0 4px;
+  margin-top: 8px;
+  flex-shrink: 0;
+}
+
+.paginationInfo {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.paginationButtons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.paginationButton {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card-bg);
+  color: var(--header-color);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-width: 36px;
+  text-align: center;
+}
+
+.paginationButton:hover:not(:disabled) {
+  background: var(--hover-background);
+  border-color: #37acea;
+  color: #37acea;
+}
+
+.paginationButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.paginationActive {
+  background: #37acea !important;
+  color: #fff !important;
+  border-color: #37acea !important;
+}
+
+@media (max-width: 767px) {
+  .paginationControls {
+    flex-direction: column;
+    gap: 8px;
+    align-items: stretch;
+  }
+
+  .paginationButtons {
+    justify-content: center;
+  }
+
+  .paginationInfo {
+    text-align: center;
+  }
 }

@@ -9,7 +9,7 @@ import { useState, useCallback } from "react";
 import WorkflowList from "./WorkflowList";
 import WorkflowBuilder from "./WorkflowBuilder";
 import { useActiveNavClick } from "../../events/navigationEvents";
-import { useWorkflowService } from "../../services/workflowService";
+import { useWorkflowService, normalizeWorkflowRecord } from "../../services/workflowService";
 import { useMessage } from "../../Hooks/MessageContext";
 import { useErrorHandler } from "../../Hooks/useErrorHandler";
 import { usePermissions } from "../../context/PermissionsContext";
@@ -58,7 +58,7 @@ const Workflow = ({ onClose }) => {
     setLoadingWorkflow(true);
     try {
       const response = await getWorkflowById(workflowId);
-      setSelectedWorkflow(response?.workflow || response);
+      setSelectedWorkflow(normalizeWorkflowRecord(response, workflowId));
       setCurrentView(VIEWS.BUILDER);
     } catch (error) {
       handleError(error);

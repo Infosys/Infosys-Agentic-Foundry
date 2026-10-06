@@ -11,6 +11,8 @@ from src.inference.planner_executor_agent_inference import PlannerExecutorAgentI
 from src.inference.react_critic_agent_inference import ReactCriticAgentInference
 from src.inference.meta_agent_inference import MetaAgentInference
 from src.inference.planner_meta_agent_inference import PlannerMetaAgentInference
+# Skill-based Agent Inference
+from src.inference.skill_agent_inference import SkillAgentInference
 # Python based Inference Imports
 from src.inference.python_based_inference.hybrid_agent_inference import HybridAgentInference
 # Google ADK based Inference Imports
@@ -42,6 +44,8 @@ class CentralizedAgentInference:
 
             hybrid_agent_inference: HybridAgentInference,
 
+            skill_agent_inference: SkillAgentInference,
+
             gadk_react_agent_inference: ReactAgentGADKInference,
             gadk_planner_executor_critic_agent_inference: PlannerExecutorCriticAgentGADKInference,
             gadk_planner_executor_agent_inference: PlannerExecutorAgentGADKInference,
@@ -60,6 +64,8 @@ class CentralizedAgentInference:
 
         self.hybrid_agent_inference = hybrid_agent_inference
 
+        self.skill_agent_inference = skill_agent_inference
+
         self.gadk_react_agent_inference = gadk_react_agent_inference
         self.gadk_planner_executor_critic_agent_inference = gadk_planner_executor_critic_agent_inference
         self.gadk_planner_executor_agent_inference = gadk_planner_executor_agent_inference
@@ -76,7 +82,8 @@ class CentralizedAgentInference:
             AgentType.PLANNER_EXECUTOR_AGENT: self.planner_executor_agent_inference,
             AgentType.REACT_CRITIC_AGENT: self.react_critic_agent_inference,
             AgentType.META_AGENT: self.meta_agent_inference,
-            AgentType.PLANNER_META_AGENT: self.planner_meta_agent_inference
+            AgentType.PLANNER_META_AGENT: self.planner_meta_agent_inference,
+            AgentType.SKILL_AGENT: self.skill_agent_inference,
         }
 
         self.google_adk_inference_services_map = {
@@ -192,7 +199,7 @@ After drafting your response, verify that you've correctly applied all relevant 
         agent_id = inference_request.mentioned_agentic_application_id or inference_request.agentic_application_id
         log.info(f"[{session_id}] CentralizedAgentInference.run started | agent_id={agent_id}, user={user_name}, role={role}, department={department_name}, framework={inference_request.framework_type}, kafka_worker={use_kafka_tool_worker}")
 
-        agent_config = await self.react_agent_inference._get_agent_config(agent_id)
+        agent_config = await self.react_agent_inference._get_agent_config(agent_id, department_name=department_name, user_role=role)
         log.info(f"[{session_id}] Agent config retrieved | agent_type={agent_config['AGENT_TYPE']}, agent_name={agent_config.get('AGENT_NAME')}, tools_count={len(agent_config.get('TOOLS_INFO', []))}")
         
         # Generate user context prompt if user information is available
@@ -212,10 +219,19 @@ After drafting your response, verify that you've correctly applied all relevant 
             log.debug(f"[{session_id}] No feedback learning data found for agent_id={agent_id}")
 
         system_prompts: dict = agent_config.get('SYSTEM_PROMPT', {})
-        for system_prompt_key in system_prompts.keys():
-            agent_config['SYSTEM_PROMPT'][system_prompt_key] += lesson_prompt
-            if user_context_prompt:
-                agent_config['SYSTEM_PROMPT'][system_prompt_key] += user_context_prompt
+        # Skill agents manage their own prompts from .md files — skip injection
+        if agent_config.get("AGENT_TYPE") == AgentType.SKILL_AGENT:
+            # Pure skill agent: use OWNER department for asset resolution (skills,
+            # enterprise_context, databases live in the owner's workspace folder).
+            # This ensures cross-department sharing works — the agent's files are
+            # always located via the owner department, not the requesting user's.
+            agent_config["DEPARTMENT"] = agent_config.get("OWNER_DEPARTMENT", department_name)
+        else:
+            for system_prompt_key in system_prompts.keys():
+                if isinstance(system_prompts[system_prompt_key], str):
+                    agent_config['SYSTEM_PROMPT'][system_prompt_key] += lesson_prompt
+                    if user_context_prompt:
+                        agent_config['SYSTEM_PROMPT'][system_prompt_key] += user_context_prompt
 
 
         agent_inference: BaseAgentInference = await self.get_specialized_agent_inference(agent_type=agent_config["AGENT_TYPE"], framework_type=inference_request.framework_type)
@@ -233,13 +249,21 @@ After drafting your response, verify that you've correctly applied all relevant 
 
         log.info(f"[{session_id}] CentralizedAgentInference.run completed for agent_id={agent_id}")
 
+    async def _get_inference_service_for_agent(self, agent_id: str) -> "BaseAgentInference":
+        """Resolve the correct specialized inference service for an agent_id."""
+        agent_config = await self.react_agent_inference._get_agent_config(agent_id)
+        agent_type = agent_config.get("AGENT_TYPE", AgentType.REACT_AGENT)
+        return self.langgraph_inference_services_map.get(agent_type, self.react_agent_inference)
+
     async def update_response_time(self, agent_id: str, session_id: str,  start_time: float, time_stamp: Any):
-        """Updates the response time in the last executor message for the given session. 
-        As update_response_time method is common for all types we are calling react agent inference method here."""
-        log.debug(f"[{session_id}] Delegating update_response_time to react_agent_inference for agent_id={agent_id}")
-        return await self.react_agent_inference.update_response_time(agent_id, session_id,  start_time=start_time, time_stamp=time_stamp)
+        """Updates the response time in the last executor message for the given session.
+        Delegates to the correct agent-type-specific inference service to preserve interrupt state."""
+        log.debug(f"[{session_id}] Delegating update_response_time for agent_id={agent_id}")
+        service = await self._get_inference_service_for_agent(agent_id)
+        return await service.update_response_time(agent_id, session_id, start_time=start_time, time_stamp=time_stamp)
 
     async def update_token_usage_in_graph(self, agent_id: str, session_id: str, token_records: list):
-        """Delegates token-usage graph injection to react_agent_inference (common for all LangGraph types)."""
-        log.debug(f"[{session_id}] Delegating update_token_usage_in_graph to react_agent_inference for agent_id={agent_id}, records_count={len(token_records) if token_records else 0}")
-        return await self.react_agent_inference.update_token_usage_in_graph(agent_id, session_id, token_records)
+        """Delegates token-usage graph injection to the correct agent-type-specific service."""
+        log.debug(f"[{session_id}] Delegating update_token_usage_in_graph for agent_id={agent_id}, records_count={len(token_records) if token_records else 0}")
+        service = await self._get_inference_service_for_agent(agent_id)
+        return await service.update_token_usage_in_graph(agent_id, session_id, token_records)

@@ -375,29 +375,6 @@
   font-weight: 500;
 }
 
-.downloadLink {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--app-primary-color);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  padding: 5px 12px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: transparent;
-  transition: all 0.2s ease;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.downloadLink:hover {
-  background: var(--app-primary-color);
-  border-color: var(--app-primary-color);
-  color: #fff;
-}
-
 /* ===== Inline loader ===== */
 .inlineLoader {
   padding: 4px 0;

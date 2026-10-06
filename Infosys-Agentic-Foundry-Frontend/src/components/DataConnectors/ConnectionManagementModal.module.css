@@ -291,7 +291,7 @@
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--bg-secondary, #0f172a);
+  background: var(--input-bg);
 }
 
 .detailPre {
@@ -392,12 +392,12 @@
   align-items: center;
   gap: 4px;
   padding: 3px 8px;
-  background: var(--bg-secondary, #1e293b);
-  border: 1px solid var(--border-color, #334155);
+  background: var(--badge-bg);
+  border: 1px solid var(--badge-border);
   border-radius: 12px;
   font-size: 11px;
   font-weight: var(--font-weight-medium, 500);
-  color: var(--content-color, #e2e8f0);
+  color: var(--badge-color);
   font-family: "Consolas", "Monaco", monospace;
 }
 

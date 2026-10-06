@@ -1,18 +1,66 @@
 import { useState, useCallback, useEffect } from "react";
 import { APIs, BASE_URL, env } from "../constant";
-import Cookies from "js-cookie";
 import axios from "axios";
+import authStorage from "../utils/authStorage";
 import { registerAxiosInterceptors } from "../config/axiosInterceptors"; // ensure timing/error interceptors on custom instance
 import { useErrorHandler } from "./useErrorHandler";
 import { getEmailFromToken } from "../utils/jwtUtils";
+import { msalInstance, loginRequest } from "../auth/msalConfig";
+import {
+  dispatchGlobalAuth401,
+  isDeletedAccountError,
+} from "../auth/authSessionUtils";
+// [MANUAL_TOKEN_MODE] — remove this import when removing the feature
+import { MANUAL_TOKEN_MODE, requestTokenFromUser } from "../utils/manualTokenBridge";
 
 let sessionId = null;
 
 const postMethod = "POST";
 const getMethod = "GET";
-const deleteMethod = "DELETE";
-const putMethod = "PUT";
-const patchMethod = "PATCH";
+// Backend was consolidated to accept only POST/GET (Akamai gateway restriction).
+// PUT / PATCH / DELETE are aliased to POST — putData/patchData/deleteData helpers
+// keep their original names for backwards compatibility with existing call sites,
+// but they all issue POST requests under the hood. For endpoints whose URL was
+// ALSO changed (see "List 2" in the migration doc), update the URL at the call
+// site (e.g. `${SCHEDULER_BASE}/update/${jobId}` instead of `${SCHEDULER_BASE}/${jobId}`).
+const deleteMethod = "POST";
+const putMethod = "POST";
+const patchMethod = "POST";
+
+/**
+ * Read error message from a failed fetch Response body.
+ * @param {Response} response
+ * @param {string} fallback
+ * @returns {Promise<string>}
+ */
+const readFetchErrorMessage = async (response, fallback) => {
+  const fallbackMessage = fallback || `Request failed (${response.status})`;
+  try {
+    const text = await response.text();
+    if (!text?.trim()) return fallbackMessage;
+    try {
+      const data = JSON.parse(text);
+      if (typeof data === "string") return data;
+      return data.error || data.detail || data.message || fallbackMessage;
+    } catch {
+      return text.trim();
+    }
+  } catch {
+    return fallbackMessage;
+  }
+};
+
+/**
+ * Throw an Error enriched with response metadata for extractErrorMessage().
+ * @param {Response} response
+ * @param {string} fallback
+ */
+const throwFetchStreamError = async (response, fallback) => {
+  const message = await readFetchErrorMessage(response, fallback);
+  const err = new Error(message);
+  err.response = { status: response.status, data: { error: message } };
+  throw err;
+};
 
 // JWT token storage
 let jwtToken = null;
@@ -32,9 +80,9 @@ const TIME_WINDOW = 10000; // 10 seconds
 
 // Function to set the JWT token (to be called after login/signup)
 export const setJwtToken = (token) => {
-  if (token) {
+  if (token && token !== "undefined" && token !== "null") {
     jwtToken = token;
-    Cookies.set("jwt-token", token, { path: "/", expires: 0.25, sameSite: "Lax" }); // 6h, all paths
+    authStorage.setJwt(token);
     return true;
   }
   return false;
@@ -44,29 +92,57 @@ export const setJwtToken = (token) => {
 export const setRefreshToken = (token) => {
   if (token) {
     refreshToken = token;
-    Cookies.set("refresh-token", token, { path: "/", expires: 0.25, sameSite: "Lax" }); // 6h
+    authStorage.setRefresh(token);
   } else {
     refreshToken = null;
-    Cookies.remove("refresh-token", { path: "/" });
+    authStorage.removeRefresh();
   }
 };
 export const getRefreshToken = () => {
   if (!refreshToken) {
-    refreshToken = Cookies.get("refresh-token") || null;
+    refreshToken = authStorage.getRefresh();
   }
   return refreshToken;
 };
 export const clearRefreshToken = () => {
   refreshToken = null;
-  Cookies.remove("refresh-token", { path: "/" });
+  authStorage.removeRefresh();
 };
 
 // Function to get the current JWT token
 export const getJwtToken = () => {
-  if (!jwtToken) {
-    jwtToken = Cookies.get("jwt-token");
+  // Guard against string coercion bugs ("undefined" / "null" as literal strings)
+  if (!jwtToken || jwtToken === "undefined" || jwtToken === "null") {
+    jwtToken = authStorage.getJwt();
   }
-  return jwtToken;
+  return jwtToken && jwtToken !== "undefined" && jwtToken !== "null" ? jwtToken : null;
+};
+
+/**
+ * Resolve the best available Bearer token: MSAL silent acquire (when accounts exist),
+ * then stored JWT. Used by axios interceptors and fetch-based streaming calls.
+ */
+export const resolveBearerToken = async () => {
+  const accounts = msalInstance.getAllAccounts();
+  if (accounts.length > 0) {
+    try {
+      const result = await msalInstance.acquireTokenSilent({
+        ...loginRequest,
+        account: accounts[0],
+      });
+      if (result?.accessToken) {
+        jwtToken = result.accessToken;
+        authStorage.setJwt(result.accessToken);
+        return result.accessToken;
+      }
+    } catch (msalErr) {
+      if (process.env.NODE_ENV === "development") {
+        // eslint-disable-next-line no-console
+        console.warn("[useAxios] MSAL silent token acquire failed:", msalErr?.message);
+      }
+    }
+  }
+  return getJwtToken();
 };
 
 // Function to check if API calls should be blocked
@@ -117,9 +193,9 @@ const blockApiCalls = (duration = 5000) => {
   }, duration);
 };
 
-// Helper to add Authorization header if JWT token is available
-const addConfigHeaders = (headers = {}) => {
-  const token = getJwtToken();
+// Helper to add Authorization header — used by fetch-based streaming calls.
+const addConfigHeaders = async (headers = {}) => {
+  const token = await resolveBearerToken();
   if (token) {
     return {
       ...headers,
@@ -132,7 +208,7 @@ const addConfigHeaders = (headers = {}) => {
 // Function to get the current session ID
 export const getSessionId = () => {
   if (!sessionId) {
-    sessionId = Cookies.get("user_session");
+    sessionId = authStorage.getSession();
   }
   return sessionId;
 };
@@ -165,10 +241,13 @@ try {
   }
 }
 
-// Request interceptor to attach auth header
+// Request interceptor to attach auth header (MSAL or JWT).
 axiosInstance.interceptors.request.use(
-  (config) => {
-    const token = getJwtToken();
+  async (config) => {
+    if (config.headers?.Authorization) {
+      return config;
+    }
+    const token = await resolveBearerToken();
     if (token) {
       config.headers = config.headers || {};
       config.headers.Authorization = `Bearer ${token}`;
@@ -187,13 +266,21 @@ const performTokenRefresh = async () => {
   if (isRefreshing && refreshPromise) return refreshPromise;
   isRefreshing = true;
   refreshPromise = (async () => {
+    // [MANUAL_TOKEN_MODE] — remove this block to restore normal refresh-token behavior
+    // Only prompt for a pasted token when the user actually logged in via manual token.
+    // The env flag alone enables the login-page button; it must not hijack SSO/local refresh.
+    if (MANUAL_TOKEN_MODE && localStorage.getItem("auth_type") === "manual_token") {
+      const token = await requestTokenFromUser();
+      setJwtToken(token);
+      return token;
+    }
     const rToken = getRefreshToken();
     const email = getEmailFromToken();
-    const user_session = Cookies.get("user_session");
+    const user_session = authStorage.getSession();
     if (!email || !user_session) {
       throw new Error("Refresh prerequisites missing (email/session)");
     }
-    const isSessionStillActive = () => Boolean(Cookies.get("user_session")) && Boolean(getEmailFromToken());
+    const isSessionStillActive = () => Boolean(authStorage.getSession()) && Boolean(getEmailFromToken());
     try {
       if (process.env.NODE_ENV === "development") {
         // eslint-disable-next-line no-console
@@ -201,8 +288,15 @@ const performTokenRefresh = async () => {
       }
       const payload = { email, user_session };
       if (rToken) payload.refresh_token = rToken; // include only if present
+      // Include the (possibly expired) JWT so the backend can extract user info
+      // even though it's expired — many backends require this for refresh validation.
+      const currentJwt = await resolveBearerToken();
+      const refreshHeaders = {};
+      if (currentJwt) {
+        refreshHeaders.Authorization = `Bearer ${currentJwt}`;
+      }
       // Use refreshAxios (no interceptors) to avoid globalAuth401 on failure
-      const response = await refreshAxios.post(`${BASE_URL}${APIs.REFRESH_TOKEN}`, payload);
+      const response = await refreshAxios.post(`${BASE_URL}${APIs.REFRESH_TOKEN}`, payload, { headers: refreshHeaders });
       // If user logged out while we were refreshing, abort and mark invalidation
       if (!isSessionStillActive()) {
         sessionInvalidatedDuringRefresh = true;
@@ -213,18 +307,10 @@ const performTokenRefresh = async () => {
       if (!newAccess) throw new Error("No access token in refresh response");
       setJwtToken(newAccess);
       if (newRefresh) setRefreshToken(newRefresh);
-      if (process.env.NODE_ENV === "development") {
-        // eslint-disable-next-line no-console
-        console.debug("✅ Token refresh succeeded — new JWT stored");
-      }
       return newAccess;
     } catch (e) {
-      if (process.env.NODE_ENV === "development") {
-        // eslint-disable-next-line no-console
-        console.error("❌ Token refresh failed", e?.response?.status, e?.message);
-      }
       clearRefreshToken();
-      Cookies.remove("jwt-token", { path: "/" });
+      authStorage.removeJwt();
       throw e;
     } finally {
       isRefreshing = false;
@@ -286,19 +372,36 @@ const isAuthenticationError = (error) => {
 const handleFetch401 = async (response, url) => {
   if (response.status !== 401) return null;
 
+  // MSAL / JWT: refresh via resolveBearerToken (includes MSAL silent acquire).
+  if (localStorage.getItem("auth_type") === "msal") {
+    try {
+      const newToken = await resolveBearerToken();
+      if (newToken) {
+        return newToken;
+      }
+    } catch (_) {}
+    dispatchGlobalAuth401({
+      error: { status: 401 },
+      url,
+      method: "STREAM",
+      source: "fetch",
+      reason: "session-expired",
+    });
+    return null;
+  }
+
   // Check if we have session credentials to attempt refresh
   const email = getEmailFromToken();
-  const user_session = Cookies.get("user_session");
+  const user_session = authStorage.getSession();
 
   if (!email || !user_session) {
-    // No session - emit logout event
-    try {
-      window.dispatchEvent(
-        new CustomEvent("globalAuth401", {
-          detail: { error: { status: 401 }, url, method: "STREAM", source: "fetch" },
-        })
-      );
-    } catch (_) {}
+    dispatchGlobalAuth401({
+      error: { status: 401 },
+      url,
+      method: "STREAM",
+      source: "fetch",
+      reason: "session-expired",
+    });
     return null;
   }
 
@@ -319,14 +422,13 @@ const handleFetch401 = async (response, url) => {
       // eslint-disable-next-line no-console
       console.debug("❌ Token refresh failed for streaming request", refreshErr);
     }
-    // Emit global 401 to trigger logout
-    try {
-      window.dispatchEvent(
-        new CustomEvent("globalAuth401", {
-          detail: { error: refreshErr, url, method: "STREAM", source: "fetch" },
-        })
-      );
-    } catch (_) {}
+    dispatchGlobalAuth401({
+      error: refreshErr,
+      url,
+      method: "STREAM",
+      source: "fetch",
+      reason: "session-expired",
+    });
     return null;
   }
 };
@@ -337,77 +439,125 @@ axiosInstance.interceptors.response.use(
     const status = error?.response?.status;
     const originalConfig = error?.config || {};
 
+    // Deleted/deactivated account — logout immediately (no token refresh).
+    if (isDeletedAccountError(error)) {
+      dispatchGlobalAuth401({ reason: "account-deactivated" });
+      return Promise.reject(error);
+    }
+
     // Use enhanced authentication check that also looks at response body
     const isAuthError = status === 401 || isAuthenticationError(error);
 
     if (isAuthError && !originalConfig._retry) {
-      // Attempt silent refresh first; do NOT logout yet.
-      if (getEmailFromToken() && Cookies.get("user_session")) {
-        originalConfig._retry = true;
+      originalConfig._retry = true;
+
+      // MSAL: refresh via resolveBearerToken; never call the backend refresh endpoint.
+      if (localStorage.getItem("auth_type") === "msal") {
         try {
-          if (isRefreshing) {
-            // Wait for ongoing refresh
-            return await new Promise((resolve, reject) => {
-              addSubscriber(async (newToken) => {
-                if (!newToken) {
-                  reject(error);
-                  return;
-                }
-                originalConfig.headers = originalConfig.headers || {};
-                originalConfig.headers.Authorization = `Bearer ${newToken}`;
-                try {
-                  const replayResp = await axiosInstance(originalConfig);
-                  resolve(replayResp);
-                } catch (e) {
-                  reject(e);
-                }
-              });
+          const newToken = await resolveBearerToken();
+          if (newToken) {
+            originalConfig.headers = originalConfig.headers || {};
+            originalConfig.headers.Authorization = `Bearer ${newToken}`;
+            return axiosInstance(originalConfig);
+          }
+        } catch (_) {}
+        dispatchGlobalAuth401({
+          error,
+          url: originalConfig?.url,
+          method: originalConfig?.method,
+          reason: "session-expired",
+        });
+        return Promise.reject(error);
+      }
+
+      // Non-MSAL: attempt backend token refresh.
+      if (getEmailFromToken() && authStorage.getSession()) {
+        // Case 1: another refresh is already in-flight — queue up and wait for it.
+        // NOTE: We DO NOT wrap the replay in the same try/catch as the refresh call.
+        // Replay errors (e.g. legitimate 404s from the actual API) must NOT trigger logout.
+        if (isRefreshing) {
+          return new Promise((resolve, reject) => {
+            addSubscriber(async (newToken) => {
+              if (!newToken) {
+                // Refresh failed elsewhere; reject silently — the refresh path already dispatched globalAuth401
+                reject(error);
+                return;
+              }
+              originalConfig.headers = originalConfig.headers || {};
+              originalConfig.headers.Authorization = `Bearer ${newToken}`;
+              try {
+                const replayResp = await axiosInstance(originalConfig);
+                resolve(replayResp);
+              } catch (e) {
+                // Replay error (404, 500, business error, etc.) — reject as-is, no logout
+                reject(e);
+              }
             });
-          }
-          const newToken = await performTokenRefresh();
-          // Guard: if session invalidated during refresh or artifacts missing, do not replay queued requests
-          if (sessionInvalidatedDuringRefresh || !Cookies.get("user_session")) {
-            sessionInvalidatedDuringRefresh = false; // reset for next cycle
-            notifySubscribers(null); // fail fast queued subscribers
-            try {
-              const evt = new CustomEvent("globalAuth401", {
-                detail: { error, url: originalConfig?.url, method: originalConfig?.method, abortedReplay: true },
-              });
-              window.dispatchEvent(evt);
-            } catch (_) {}
-            return Promise.reject(error);
-          }
-          notifySubscribers(newToken);
-          if (process.env.NODE_ENV === "development") {
-            // eslint-disable-next-line no-console
-            console.debug("✅ Token refresh succeeded, replaying original request", originalConfig.url);
-          }
-          originalConfig.headers = originalConfig.headers || {};
-          originalConfig.headers.Authorization = `Bearer ${newToken}`;
-          return axiosInstance(originalConfig);
+          });
+        }
+
+        // Case 2: kick off a new refresh. ONLY the refresh call itself is guarded — replay is separate.
+        let newToken;
+        try {
+          newToken = await performTokenRefresh();
         } catch (refreshErr) {
           notifySubscribers(null);
           if (process.env.NODE_ENV === "development") {
             // eslint-disable-next-line no-console
             console.debug("❌ Token refresh failed", refreshErr);
           }
-          // Refresh failed -> now emit global 401 to trigger logout elsewhere
-          try {
-            const evt = new CustomEvent("globalAuth401", {
-              detail: { error: refreshErr, url: originalConfig?.url, method: originalConfig?.method },
-            });
-            window.dispatchEvent(evt);
-          } catch (_) {}
-        }
-      } else {
-        // No refresh possible (missing email/session) -> emit global 401
-        try {
-          const evt = new CustomEvent("globalAuth401", {
-            detail: { error, url: originalConfig?.url, method: originalConfig?.method },
+          // Genuine refresh failure -> emit global 401 to trigger logout
+          dispatchGlobalAuth401({
+            error: refreshErr,
+            url: originalConfig?.url,
+            method: originalConfig?.method,
+            reason: "session-expired",
           });
-          window.dispatchEvent(evt);
-        } catch (_) {}
+          return Promise.reject(error);
+        }
+
+        // Guard: session invalidated (user logged out) or artifacts cleared during refresh window
+        if (sessionInvalidatedDuringRefresh || !authStorage.getSession()) {
+          sessionInvalidatedDuringRefresh = false; // reset for next cycle
+          notifySubscribers(null); // fail fast queued subscribers
+          dispatchGlobalAuth401({
+            error,
+            url: originalConfig?.url,
+            method: originalConfig?.method,
+            abortedReplay: true,
+            reason: "session-expired",
+          });
+          return Promise.reject(error);
+        }
+
+        // Refresh succeeded — release queued subscribers and replay the original request.
+        // Replay is OUTSIDE any try/catch here: if it fails with a non-auth error (404, 500, …)
+        // that rejection bubbles up naturally to the caller and MUST NOT trigger logout.
+        notifySubscribers(newToken);
+        if (process.env.NODE_ENV === "development") {
+          // eslint-disable-next-line no-console
+          console.debug("✅ Token refresh succeeded, replaying original request", originalConfig.url);
+        }
+        originalConfig.headers = originalConfig.headers || {};
+        originalConfig.headers.Authorization = `Bearer ${newToken}`;
+        return axiosInstance(originalConfig);
+      } else {
+        dispatchGlobalAuth401({
+          error,
+          url: originalConfig?.url,
+          method: originalConfig?.method,
+          reason: "session-expired",
+        });
       }
+    } else if (status === 401 && originalConfig._retry) {
+      // Refresh was attempted but the replayed request still returned 401.
+      dispatchGlobalAuth401({
+        error,
+        url: originalConfig?.url,
+        method: originalConfig?.method,
+        postRefresh: true,
+        reason: "session-expired",
+      });
     }
     return Promise.reject(error);
   }
@@ -419,14 +569,17 @@ const useFetch = () => {
     const onChunk = isFn ? configOrCallback : typeof maybeCallback === "function" ? maybeCallback : configOrCallback.onChunk;
     const cfg = isFn ? {} : configOrCallback || {};
     const fullUrl = url.startsWith("http") ? url : `${BASE_URL}${url}`;
-    const headers = addConfigHeaders({
+    const headers = await addConfigHeaders({
       ...defaultConfig.headers,
       Accept: cfg.accept || "text/event-stream, application/json",
-      "Cache-Control": "no-cache",
-      Pragma: "no-cache",
       ...cfg.headers,
     });
-    const response = await fetch(fullUrl, { method: getMethod, headers, signal: cfg.signal });
+    const response = await fetch(fullUrl, {
+      method: getMethod,
+      headers,
+      signal: cfg.signal,
+      cache: "no-store",
+    });
 
     // Handle 401 with token refresh retry
     if (response.status === 401 && !_isRetry) {
@@ -442,7 +595,9 @@ const useFetch = () => {
       throw new Error(`Streaming request failed (${response.status}) - Authentication failed`);
     }
 
-    if (!response.ok) throw new Error(`Streaming request failed (${response.status})`);
+    if (!response.ok) {
+      await throwFetchStreamError(response, `Streaming request failed (${response.status})`);
+    }
     if (!response.body) throw new Error("No response body for streaming");
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -502,7 +657,7 @@ const useFetch = () => {
     const fullUrl = url.startsWith("http") ? url : `${normalizedBase}${normalizedPath}`;
     let contentType = "application/json";
     let dataToSend = postData;
-    let skipBody = postData === null || postData === undefined;
+    const skipBody = postData === null || postData === undefined;
     if (postData instanceof FormData) {
       contentType = undefined; // let browser set boundary
     } else if (cfg.headers?.["Content-Type"] === "application/x-www-form-urlencoded") {
@@ -513,11 +668,9 @@ const useFetch = () => {
     } else if (!skipBody) {
       dataToSend = JSON.stringify(postData);
     }
-    const headers = addConfigHeaders({
+    const headers = await addConfigHeaders({
       ...defaultConfig.headers,
       Accept: cfg.accept || "text/event-stream, application/json",
-      "Cache-Control": "no-cache",
-      Pragma: "no-cache",
       ...cfg.headers,
       ...(contentType && !skipBody ? { "Content-Type": contentType } : {}),
     });
@@ -526,6 +679,7 @@ const useFetch = () => {
       headers,
       ...(skipBody ? {} : { body: dataToSend }),
       signal: cfg.signal,
+      cache: "no-store",
     });
 
     // Handle 401 with token refresh retry
@@ -542,7 +696,9 @@ const useFetch = () => {
       throw new Error(`Streaming POST failed (${response.status}) - Authentication failed`);
     }
 
-    if (!response.ok) throw new Error(`Streaming POST failed (${response.status})`);
+    if (!response.ok) {
+      await throwFetchStreamError(response, `Streaming POST failed (${response.status})`);
+    }
     if (!response.body) throw new Error("No response body for streaming");
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -628,7 +784,7 @@ const useFetch = () => {
       setLoading((prevLoading) => ({ ...prevLoading, fetch: true }));
       try {
         // Add token to headers for GET requests
-        const headers = addConfigHeaders({
+        const headers = await addConfigHeaders({
           ...defaultConfig.headers,
           ...config.headers,
         });
@@ -693,7 +849,7 @@ const useFetch = () => {
           dataToSend = JSON.stringify(postData);
         }
 
-        const headers = addConfigHeaders({
+        const headers = await addConfigHeaders({
           ...defaultConfig.headers,
           ...config.headers,
           ...(contentType ? { "Content-Type": contentType } : {}),
@@ -758,7 +914,7 @@ const useFetch = () => {
         } else {
           dataToSend = JSON.stringify(putData);
         }
-        const headers = addConfigHeaders({
+        const headers = await addConfigHeaders({
           ...defaultConfig.headers,
           ...config.headers,
           ...(contentType ? { "Content-Type": contentType } : {}),
@@ -815,7 +971,7 @@ const useFetch = () => {
         } else {
           dataToSend = JSON.stringify(patchPayload);
         }
-        const headers = addConfigHeaders({
+        const headers = await addConfigHeaders({
           ...defaultConfig.headers,
           ...config.headers,
           ...(contentType ? { "Content-Type": contentType } : {}),
@@ -868,7 +1024,7 @@ const useFetch = () => {
         } else {
           dataToSend = JSON.stringify(deleteData);
         }
-        const headers = addConfigHeaders({
+        const headers = await addConfigHeaders({
           ...defaultConfig.headers,
           ...config.headers,
           ...(contentType ? { "Content-Type": contentType } : {}),
@@ -906,7 +1062,7 @@ const useFetch = () => {
   // Clear token (for logout)
   const clearJwtToken = useCallback(() => {
     jwtToken = null;
-    Cookies.remove("jwt-token", { path: "/" });
+    authStorage.removeJwt();
   }, []);
 
   return {

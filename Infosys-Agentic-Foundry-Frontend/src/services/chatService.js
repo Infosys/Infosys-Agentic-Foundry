@@ -2,6 +2,9 @@ import { APIs } from "../constant";
 import useFetch from "../Hooks/useAxios";
 import React from "react";
 import Cookies from "js-cookie";
+import authStorage from "../utils/authStorage";
+import { isAsyncModeEnabled, submitAndPollAsync, withAsyncFlag } from "../utils/asyncTaskPoller";
+import { normalizeInferenceResult } from "../utils/messageUtils";
 
 export const useChatServices = () => {
   const { fetchData, postData, deleteData, postDataStream } = useFetch();
@@ -50,8 +53,20 @@ export const useChatServices = () => {
       }
       return null;
     }
+
+    // Async mode: disable streaming, use polling instead of SSE
+    if (isAsyncModeEnabled()) {
+      try {
+        const asyncPayload = { ...chatData, enable_streaming_flag: false };
+        const result = await submitAndPollAsync(postData, url, asyncPayload);
+        return normalizeInferenceResult(result);
+      } catch (error) {
+        return null;
+      }
+    }
+
     try {
-      const streamArray = await postDataStream(url, chatData, {}, typeof onChunk === "function" ? onChunk : undefined);
+      const streamArray = await postDataStream(withAsyncFlag(url), chatData, {}, typeof onChunk === "function" ? onChunk : undefined);
       if (!Array.isArray(streamArray) || streamArray.length === 0) return null;
       const finalObj = [...streamArray].reverse().find(o => o && (o.executor_messages || o.response || o.raw || o.tool_verifier || o.plan_verifier)) || streamArray[streamArray.length - 1];
       // Ensure response_time is captured even if it arrived in a separate stream chunk
@@ -62,7 +77,7 @@ export const useChatServices = () => {
         }
       }
       try { Object.defineProperty(finalObj, '__raw_chunks', { value: streamArray, enumerable: false }); } catch (_) {}
-      return finalObj;
+      return normalizeInferenceResult(finalObj);
     } catch (error) {
       if (process.env.NODE_ENV === "development") {
         console.error("[chatService.getChatQueryResponse] Streaming error", error);
@@ -79,7 +94,7 @@ export const useChatServices = () => {
       const response = await postData(apiUrl, chatData);
 
       if (response) {
-        return response;
+        return normalizeInferenceResult(response);
       } else {
         return null;
       }
@@ -90,13 +105,22 @@ export const useChatServices = () => {
 
   const fetchFeedback = async (data, feedback) => {
     try {
-      const apiUrl = `${APIs.GET_FEEDBACK_RESPONSE}${feedback}`;
-      const response = await postData(apiUrl, data);
-      if (response) {
-        return response;
-      } else {
-        return null;
+      const apiUrl = `${APIs.GET_FEEDBACK_RESPONSE}/${feedback}`;
+      const payload = isAsyncModeEnabled()
+        ? { ...data, enable_streaming_flag: false }
+        : data;
+
+      const response = isAsyncModeEnabled()
+        ? await submitAndPollAsync(postData, apiUrl, payload)
+        : await postData(withAsyncFlag(apiUrl), payload);
+
+      if (!response) return null;
+
+      // Regenerate / dislike responses are inference-shaped and drive chat re-render
+      if (feedback !== "like") {
+        return normalizeInferenceResult(response);
       }
+      return response;
     } catch (error) {
       return null;
     }
@@ -121,6 +145,7 @@ export const useChatServices = () => {
       const apiUrl = `${APIs.GET_NEW_SESSION_ID}`;
       const response = await fetchData(apiUrl);
       if (response) {
+        authStorage.setSession(response);
         Cookies.set("user_session", response, { path: "/" });
         return response;
       } else {
@@ -163,7 +188,7 @@ export const useChatServices = () => {
   // Get tools mapped to an agent
   const getToolsMappedByAgent = async (agentId) => {
     try {
-      const apiUrl = `${APIs.GET_TOOLS_MAPPED_BY_AGENT}${encodeURIComponent(agentId)}`;
+      const apiUrl = `${APIs.GET_TOOLS_MAPPED_BY_AGENT}/${encodeURIComponent(agentId)}`;
       const response = await fetchData(apiUrl);
       if (response) {
         return response;
@@ -176,19 +201,17 @@ export const useChatServices = () => {
   };
 
   // Upload files for chat
-  const uploadChatFiles = async (files, sessionId) => {
+  const uploadChatFiles = async (files, sessionId, overwrite = false, subdirectory = null) => {
     try {
       const formData = new FormData();
       files.forEach((file) => formData.append("files", file));
       formData.append("session_id", sessionId);
-      const response = await postData(APIs.CHAT_FILES_UPLOAD, formData);
-      if (response) {
-        return response;
-      } else {
-        return null;
-      }
+      let url = `${APIs.CHAT_FILES_UPLOAD}?overwrite=${overwrite}`;
+      if (subdirectory) url += `&subdirectory=${encodeURIComponent(subdirectory)}`;
+      const response = await postData(url, formData, { silent: true });
+      return response || null;
     } catch (error) {
-      return null;
+      return error?.response?.data || null;
     }
   };
 

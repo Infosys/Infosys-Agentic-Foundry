@@ -382,6 +382,7 @@ class CallCategorizer:
     """
     
     # Category detection rules (file path patterns)
+    # SIMPLIFIED TO 4 CATEGORIES: agent_inference, tool_operation, evaluation, other
     FILE_PATTERNS = {
         'agent_inference': [
             'react_agent_inference',
@@ -394,10 +395,15 @@ class CallCategorizer:
             'base_agent_inference',
             'python_based_agent_inference',
             'centralized_agent_inference',  # Main inference entry point
+            'agent_inference',  # Generic catch-all
+            '_inference',  # Generic pattern
         ],
         'tool_operation': [
             'tool_validation',
             'tool_code_processor',
+            'tool_worker',
+            'tool_wrappers',
+            'mq_tool_worker',
             'tool_export_import',
             'tool_code_dependency_analyzer',
             'tool_endpoints',
@@ -406,34 +412,13 @@ class CallCategorizer:
             'groundtruth',
             'evaluation',
             'core_evaluation_service',
+            'evaluation_endpoints',
+            'evaluate',
         ],
-        'prompt_generation': [
-            'prompt_generator',
-            'prompt_builder',
-            'prompt_factory',
-        ],
-        'file_analysis': [
-            'file_analyzer',
-            'document_processor',
-        ],
-        'rag_query': [
-            'knowledgebase',
-            'vector_store',
-            'rag_',
-        ],
-        'guardrail': [
-            'guardrail',
-            'moderation',
-            'safety',
-        ],
-        'conversation': [
-            'conversation',
-            'chat_endpoints',
-            'session',
-        ],
+        # All other categories map to 'other' by default
     }
     
-    # Function name patterns
+    # Function name patterns - SIMPLIFIED TO 4 CATEGORIES
     FUNCTION_PATTERNS = {
         'agent_inference': [
             'agent_',
@@ -444,6 +429,9 @@ class CallCategorizer:
             'run_hybrid',
             'agent_executor',
             'create_agent',
+            'astream_events',
+            'ainvoke',
+            'invoke_agent',
         ],
         'tool_operation': [
             'validate_tool',
@@ -451,6 +439,9 @@ class CallCategorizer:
             'auto_fix_tool',
             'check_tool',
             'verify_tool',
+            'execute_tool',
+            'run_tool',
+            'tool_call',
         ],
         'evaluation': [
             'evaluate',
@@ -459,25 +450,10 @@ class CallCategorizer:
             'assess',
             'grade',
             'score',
+            'groundtruth',
+            'eval_',
         ],
-        'prompt_generation': [
-            'generate_prompt',
-            'create_prompt',
-            'build_prompt',
-            'prompt_gen',
-        ],
-        'file_analysis': [
-            'analyze_file',
-            'process_file',
-            'parse_document',
-            'analyze_document',
-        ],
-        'rag_query': [
-            'query_knowledgebase',
-            'rag_query',
-            'retrieve_',
-            'search_documents',
-        ],
+        # Everything else defaults to 'other'
     }
     
     # Agent type detection (order matters: more specific patterns first)
@@ -561,25 +537,48 @@ class CallCategorizer:
         # 1. Detect main category (stack-based)
         result['call_category'] = cls._detect_category(filepath_str, funcname_str)
 
-        # 1b. CONTEXT FALLBACK: When stack returns 'other', use SessionContext to detect
-        # agent_inference calls. This is needed because LangGraph runs nodes in separate
-        # asyncio tasks, so the react_agent_inference.py frames are absent from the stack
-        # by the time the token hook fires. If an agent_id is present in SessionContext,
-        # the call is definitionally an agent_inference call.
+        # 1b. ENHANCED CONTEXT FALLBACK: Use SessionContext to detect all 4 categories
+        # Priority 1: Check for EXPLICIT call_category set in context (most reliable!)
+        # This allows each function to explicitly set its category via set_context(call_category="...")
         if result['call_category'] == 'other':
             try:
                 from telemetry_wrapper import SessionContext
                 ctx = SessionContext.get()
-                # SessionContext tuple: 0=user_id, 1=session_id, 3=agent_id, 9=agent_type
-                agent_id  = ctx[3]  if ctx[3]  != 'Unassigned' else None
-                agent_type = ctx[9] if ctx[9]  != 'Unassigned' else None
-                if agent_id:
+                # SessionContext tuple indices:
+                # 0=user_id, 1=session_id, 3=agent_id, 5=tool_id, 6=tool_name, 8=tags, 9=agent_type, 19=call_category
+                
+                log.debug(f"🔍 [Categorizer] Full context tuple length: {len(ctx)}")
+                log.debug(f"🔍 [Categorizer] Context[19] (call_category): {ctx[19] if len(ctx) > 19 else 'NOT FOUND'}")
+                
+                explicit_category = ctx[19] if len(ctx) > 19 and ctx[19] != 'Unassigned' else None
+                agent_id  = ctx[3] if ctx[3] != 'Unassigned' else None
+                tool_id   = ctx[5] if ctx[5] != 'Unassigned' else None
+                tool_name = ctx[6] if ctx[6] != 'Unassigned' else None
+                agent_type = ctx[9] if ctx[9] != 'Unassigned' else None
+                
+                # Priority 1: Use explicit category if set
+                if explicit_category in ['agent_inference', 'tool_operation', 'evaluation', 'other']:
+                    result['call_category'] = explicit_category
+                    log.info(f"✅ [Categorizer] Using EXPLICIT call_category='{explicit_category}' from context")
+                
+                # Priority 2: Check for tool operations (tool_id present)
+                elif tool_id or tool_name:
+                    result['call_category'] = 'tool_operation'
+                    result['tool_id'] = tool_id
+                    result['tool_name'] = tool_name
+                    log.info(f"🔍 Context fallback → tool_operation (tool_id={tool_id}, tool_name={tool_name})")
+                
+                # Priority 3: Check for agent inference (agent_id present)
+                elif agent_id:
                     result['call_category'] = 'agent_inference'
                     if agent_type:
                         result['agent_type'] = agent_type
                     log.info(f"🔍 Context fallback → agent_inference (agent_id={agent_id}, agent_type={agent_type})")
+                else:
+                    log.debug(f"🔍 [Categorizer] No explicit category or fallback found - remains 'other'")
+                    
             except Exception as e:
-                log.debug(f"Context fallback skipped: {e}")
+                log.warning(f"⚠️ [Categorizer] Context fallback error: {e}", exc_info=True)
 
         # 2. Detect sub-category based on category
         if result['call_category'] == 'agent_inference':
@@ -614,25 +613,9 @@ class CallCategorizer:
             result['call_sub_category'] = f"eval_{result['evaluation_type']}" if result['evaluation_type'] else 'eval_general'
             result['call_operation'] = 'evaluation'
             
-        elif result['call_category'] == 'prompt_generation':
-            result['call_sub_category'] = 'prompt_generation'
-            result['call_operation'] = 'generate_prompt'
-            
-        elif result['call_category'] == 'file_analysis':
-            result['call_sub_category'] = 'file_analysis'
-            result['call_operation'] = 'analyze_file'
-            
-        elif result['call_category'] == 'rag_query':
-            result['call_sub_category'] = 'rag_query'
-            result['call_operation'] = 'knowledge_retrieval'
-            
-        elif result['call_category'] == 'guardrail':
-            result['call_sub_category'] = 'guardrail_check'
-            result['call_operation'] = 'content_moderation'
-            
-        elif result['call_category'] == 'conversation':
-            result['call_sub_category'] = 'conversation_management'
-            result['call_operation'] = 'conversation'
+        else:  # 'other' category
+            result['call_sub_category'] = 'other'
+            result['call_operation'] = 'other'
         
         log.debug(f"🔍 Auto-categorized call: {result}")
         return result
@@ -645,40 +628,28 @@ class CallCategorizer:
         log.info(f"🔍 [Categorizer] filepath_str: {filepath_str[:400] if len(filepath_str) > 400 else filepath_str}")
         log.info(f"🔍 [Categorizer] funcname_str: {funcname_str[:400] if len(funcname_str) > 400 else funcname_str}")
         
-        # PRIORITY 1: Check for specific operation types FIRST (tool, agent, evaluation, etc.)
-        # These take precedence over infrastructure (guardrail_aware_llm.py file)
-        for category, patterns in cls.FILE_PATTERNS.items():
-            if category == 'guardrail':
-                continue  # Handle guardrail LAST (lowest priority)
-            for pattern in patterns:
-                if pattern.lower() in combined:
-                    log.info(f"🔍 Matched category '{category}' via FILE_PATTERNS (pattern: '{pattern}')")
-                    return category
+        # SIMPLIFIED: Check for the 4 main categories only
+        # Priority order: agent_inference, tool_operation, evaluation, other
         
-        # PRIORITY 2: Check function name patterns for specific operations
-        for category, patterns in cls.FUNCTION_PATTERNS.items():
-            if any(pattern.lower() in funcname_str for pattern in patterns):
-                log.info(f"🔍 Matched category '{category}' via FUNCTION_PATTERNS (priority match)")
-                return category
+        # Check FILE_PATTERNS first (most reliable)
+        for category in ['agent_inference', 'tool_operation', 'evaluation']:
+            if category in cls.FILE_PATTERNS:
+                for pattern in cls.FILE_PATTERNS[category]:
+                    if pattern.lower() in combined:
+                        log.info(f"🔍 Matched category '{category}' via FILE_PATTERNS (pattern: '{pattern}')")
+                        return category
         
-        # PRIORITY 3 (LOWEST): Only categorize as guardrail if:
-        # - guardrail_aware_llm.py is in path AND
-        # - NO other specific operation was detected above AND
-        # - There's evidence of actual moderation/safety operations
-        if 'guardrail_aware_llm' in filepath_str:
-            has_guardrail_evidence = any([
-                'moderation' in funcname_str,
-                'safety' in funcname_str,
-                'content_filter' in funcname_str,
-            ])
-            log.info(f"🔍 Guardrail check (fallback): evidence={has_guardrail_evidence}")
-            if has_guardrail_evidence:
-                log.info(f"🔍 Categorized as guardrail (no specific operation detected)")
-                return 'guardrail'
+        # Check FUNCTION_PATTERNS second
+        for category in ['agent_inference', 'tool_operation', 'evaluation']:
+            if category in cls.FUNCTION_PATTERNS:
+                for pattern in cls.FUNCTION_PATTERNS[category]:
+                    if pattern.lower() in funcname_str:
+                        log.info(f"🔍 Matched category '{category}' via FUNCTION_PATTERNS (pattern: '{pattern}')")
+                        return category
         
         # If nothing matched, default to 'other'
         log.info(f"🔍 No category match - defaulting to 'other'")
-        log.info(f"🔍 [Categorizer] DEBUG: Checked {len(cls.FILE_PATTERNS)} file patterns and {len(cls.FUNCTION_PATTERNS)} function patterns")
+        log.info(f"🔍 [Categorizer] DEBUG: Checked FILE_PATTERNS and FUNCTION_PATTERNS for 3 categories")
         return 'other'
     
     @classmethod

@@ -4,6 +4,7 @@ This module provides a function to get a model based on the configuration.
 """
 import dotenv
 import asyncio
+import concurrent.futures
 from src.models.model_service import global_model_service
 from telemetry_wrapper import logger as log
 
@@ -17,16 +18,14 @@ def load_model(model_name: str = global_model_service.default_model_name, temper
     log.info(f"Loading model: {model_name} with temperature: {temperature}")
 
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
+        # There's a running loop - run in a separate thread with its own event loop
+        log.info("Running event loop detected, executing in separate thread")
+        with concurrent.futures.ThreadPoolExecutor(1) as executor:
+            return executor.submit(asyncio.run, get_model_async_call).result()
     except RuntimeError:
-        # No running loop, create one
-        log.debug("No running event loop found, creating new event loop with asyncio.run()")
+        # No running loop, safe to use asyncio.run directly
+        log.info("No running event loop found, creating new event loop with asyncio.run()")
         return asyncio.run(get_model_async_call)
-    else:
-        # There's a running loop - use run_until_complete or nest_asyncio
-        log.debug("Running event loop detected, using nest_asyncio for nested async execution")
-        import nest_asyncio
-        nest_asyncio.apply()
-        return loop.run_until_complete(get_model_async_call)
 
 

@@ -29,19 +29,22 @@ from src.inference.inference_utils import EpisodicMemoryManager
 from src.inference.centralized_agent_inference import CentralizedAgentInference
 from src.inference.workflow_inference import WorkflowInference
 from src.api.dependencies import ServiceProvider # The dependency provider
+from src.api.async_response import supports_async
 from src.auth.dependencies import get_current_user, get_user_info_from_request, setup_tool_user_context
 from src.decorators.tool_access import ToolUserContext
 from src.utils.file_manager import FileManager
-from src.utils.kafka_manager import KafkaManager
+from src.utils.helper_functions import resolve_pending_user_department
+from src.utils.message_queue_factory.message_queue_manager import MessageQueueManager
 
-from src.utils.secrets_handler import current_user_department, current_user_email
-
+from src.utils.secrets_handler import current_user_department, current_user_email, current_request_headers
+from src.config.constants import FrameworkType
 
 from telemetry_wrapper import logger as log, update_session_context
+from src.utils.llm_request_tracker import with_request_tracking
 
 from src.models.model_service import ModelService
 from src.models.base_ai_model_service import BaseAIModelService
-from src.auth.models import UserRole, User
+from src.auth.models import UserRole, UserStatus, User
 
 
 
@@ -123,7 +126,7 @@ async def save_feedback_and_logs(
 async def m2m_inference_endpoint(
     request: Request,
     chat_request: M2MInferenceRequest,
-    kafka_manager: KafkaManager = Depends(ServiceProvider.get_kafka_manager),
+    mq_manager: MessageQueueManager = Depends(ServiceProvider.get_message_queue_manager),
     task_registry_service: TaskRegistryService = Depends(ServiceProvider.get_task_registry_service),
     user_data: User = Depends(get_current_user)
     ):
@@ -137,6 +140,22 @@ async def m2m_inference_endpoint(
     # Session ID is task_id + user email (no user input needed)
     session_id = f"{task_id}_{current_user_email.get()}"
     
+    # Generate correlation request_id for this entire M2M request
+    import time
+    user_email = current_user_email.get() or "unknown"
+    correlation_request_id = f"req_{str(uuid.uuid4())[:8]}_{user_email[:20].replace('@', '_').replace('.', '_')}_{int(time.time())}"
+    log.info(f"🆔 [REQUEST_CORRELATION] Generated request_id: {correlation_request_id} for M2M task: {task_id}")
+    
+    # Store in thread-local storage as fallback
+    try:
+        from src.models.guardrail_aware_llm import _set_request_id
+        _set_request_id(correlation_request_id)
+    except Exception as e:
+        log.warning(f"⚠️ [REQUEST_ID] Could not store in thread-local fallback: {e}")
+    
+    # Update session context with request_id
+    update_session_context(user_id=user_email, session_id=session_id, request_id=correlation_request_id)
+    
     # Register task with computed session_id
     await task_registry_service.register_task(
         task_id=task_id,
@@ -148,7 +167,7 @@ async def m2m_inference_endpoint(
     )
     
     # Send request to Kafka for async processing by AgentWorker
-    success = kafka_manager.send_agent_request(
+    success = mq_manager.send_agent_request(
         agent_call_id=task_id,
         agentic_application_id=chat_request.agentic_application_id,
         session_id=session_id,
@@ -184,7 +203,7 @@ async def m2m_inference_endpoint(
 async def batch_m2m_inference_endpoint(
     request: Request,
     chat_requests: List[M2MInferenceRequest],
-    kafka_manager: KafkaManager = Depends(ServiceProvider.get_kafka_manager),
+    mq_manager: MessageQueueManager = Depends(ServiceProvider.get_message_queue_manager),
     task_registry_service: TaskRegistryService = Depends(ServiceProvider.get_task_registry_service),
     user_data: User = Depends(get_current_user)
     ):
@@ -206,6 +225,21 @@ async def batch_m2m_inference_endpoint(
         # Session ID is task_id + user email (no user input needed)
         session_id = f"{task_id}_{user_email}"
         
+        # Generate correlation request_id for this specific batch task
+        import time
+        correlation_request_id = f"req_{str(uuid.uuid4())[:8]}_{user_email[:20].replace('@', '_').replace('.', '_')}_{int(time.time())}"
+        log.info(f"🆔 [REQUEST_CORRELATION] Generated request_id: {correlation_request_id} for batch task: {task_id}")
+        
+        # Store in thread-local storage as fallback
+        try:
+            from src.models.guardrail_aware_llm import _set_request_id
+            _set_request_id(correlation_request_id)
+        except Exception as e:
+            log.warning(f"⚠️ [REQUEST_ID] Could not store in thread-local fallback: {e}")
+        
+        # Update session context with request_id for this task
+        update_session_context(user_id=user_email, session_id=session_id, request_id=correlation_request_id)
+        
         # Register task with computed session_id
         await task_registry_service.register_task(
             task_id=task_id,
@@ -218,7 +252,7 @@ async def batch_m2m_inference_endpoint(
         )
         
         # Send request to Kafka for async processing by AgentWorker
-        success = kafka_manager.send_agent_request(
+        success = mq_manager.send_agent_request(
             agent_call_id=task_id,
             agentic_application_id=chat_request.agentic_application_id,
             session_id=session_id,
@@ -572,6 +606,7 @@ async def get_agent_tasks_endpoint(
 
 
 @router.post("/inference")
+@supports_async("inference")
 async def run_agent_inference_endpoint(
                         request: Request,
                         inference_request: AgentInferenceRequest,
@@ -582,7 +617,7 @@ async def run_agent_inference_endpoint(
                         authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
                         user_data: User = Depends(get_current_user),
                         tool_context: ToolUserContext = Depends(setup_tool_user_context),
-                        kafka_manager: KafkaManager = Depends(ServiceProvider.get_kafka_manager),
+                        mq_manager: MessageQueueManager = Depends(ServiceProvider.get_message_queue_manager),
                         query_token_usage_repo: QueryTokenUsageRepository = Depends(ServiceProvider.get_query_token_usage_repo)
                     ):
     """
@@ -606,12 +641,39 @@ async def run_agent_inference_endpoint(
     role = user_data.role
     
     # Check department-specific execute permission for agents
+    # Skip for Azure AD ephemeral users (PENDING_APPROVAL) who are not in the login DB
     user_department = user_data.department_name
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "execute", "agents", user_department):
-        raise HTTPException(
-            status_code=403,
-            detail=f"Access denied. User does not have execute permission for agents in department '{user_department}'."
-        )
+    if user_data.status != UserStatus.PENDING_APPROVAL:
+        if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "execute", "agents", user_department):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Access denied. User does not have execute permission for agents in department '{user_department}'."
+            )
+    else:
+        # External SSO user (PENDING_APPROVAL): resolve agent's department and use it
+        # as the user's department context. This ensures the temporary user operates
+        # within the agent's department with "Developer" role.
+        try:
+            agent_service = ServiceProvider.get_agent_service()
+            agent_id = inference_request.agentic_application_id
+            agent_records = await agent_service.agent_repo.get_agent_record(agentic_application_id=agent_id)
+            if agent_records:
+                user_department = agent_records[0].get("department_name")
+                
+                log.info(f"PENDING_APPROVAL user {user_data.email}: resolved agent department '{user_department}' from agent '{agent_id}'")
+            else:
+                user_department = None
+                log.warning(f"PENDING_APPROVAL user {user_data.email}: agent '{agent_id}' not found, using None department")
+        except Exception as e:
+            log.warning(f"PENDING_APPROVAL user {user_data.email}: failed to resolve agent department: {e}")
+            user_department = None
+
+        # Update ContextVars so tools also see the resolved agent department
+        if user_department:
+            current_user_department.set(user_department)
+            _headers = current_request_headers.get() or {}
+            _headers["x-user-department"] = user_department
+            current_request_headers.set(_headers)
     
     start_time = time.monotonic()
     start_time_stamp = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -622,6 +684,47 @@ async def run_agent_inference_endpoint(
     user_session = request.cookies.get("user_session")
     session_id = inference_request.session_id
 
+    # Ensure session_id is prefixed with user email for chat history retrieval.
+    # If session_id doesn't start with the user's email, prepend it.
+    if not session_id.startswith(user_data.email):
+        session_id = f"{user_data.email}_{session_id}"
+        inference_request.session_id = session_id
+    
+    # Generate correlation request_id for this entire user request
+    # Special handling: If resuming from tool/plan interrupt, preserve the original request_id
+    import uuid
+    
+    # Check if we're resuming from an interrupt using existing feedback flags
+    # Note: final_response_feedback is intentionally excluded - it's treated as a new request
+    is_resuming_interrupt = bool(inference_request.tool_feedback or inference_request.plan_feedback)
+    
+    if is_resuming_interrupt:
+        # Resuming from interrupt - try to preserve existing request_id
+        correlation_request_id = None
+        try:
+            from src.models.guardrail_aware_llm import _request_id_context
+            if hasattr(_request_id_context, 'request_id') and _request_id_context.request_id:
+                correlation_request_id = _request_id_context.request_id
+                log.info(f"🔄 [REQUEST_CORRELATION] Resuming from interrupt - preserved request_id: {correlation_request_id}")
+        except:
+            pass
+        
+        # Fallback: Generate new if preservation failed (shouldn't normally happen in same session)
+        if not correlation_request_id:
+            correlation_request_id = f"req_{str(uuid.uuid4())[:8]}_{user_id[:20].replace('@', '_').replace('.', '_')}_{int(time.time())}"
+            log.warning(f"⚠️ [REQUEST_CORRELATION] Resuming interrupt but couldn't preserve request_id - generated new: {correlation_request_id}")
+    else:
+        # New request - generate fresh request_id
+        correlation_request_id = f"req_{str(uuid.uuid4())[:8]}_{user_id[:20].replace('@', '_').replace('.', '_')}_{int(time.time())}"
+        log.info(f"🆔 [REQUEST_CORRELATION] New request - generated request_id: {correlation_request_id}")
+    
+    # Store in thread-local storage as fallback
+    try:
+        from src.models.guardrail_aware_llm import _set_request_id
+        _set_request_id(correlation_request_id)
+    except Exception as e:
+        log.warning(f"⚠️ [REQUEST_ID] Could not store in thread-local fallback: {e}")
+
     # Open a fresh per-request token accumulator so every LLM hook call during
     # this inference can append its record — enabling per-query token totals.
     from litellm_standalone_tracker import init_request_accumulator
@@ -631,8 +734,8 @@ async def run_agent_inference_endpoint(
     message_queue = inference_request.message_queue
 
     
-    # Update context
-    update_session_context(user_session=user_session, user_id=user_id)
+    # Update context with request_id for correlation tracking (primary storage)
+    update_session_context(user_session=user_session, user_id=user_id, request_id=correlation_request_id, department_name=user_department)
 
     log.info(f"[{session_id}] Received inference request. Streaming: {inference_request.enable_streaming_flag}")
 
@@ -651,7 +754,8 @@ async def run_agent_inference_endpoint(
         session_id=session_id,
         model_used=inference_request.model_name,
         user_query=inference_request.query,
-        response="Processing..."
+        response="Processing...",
+        department_name=user_department
     )
 
    # Modify inference request flags based on user role permissions (dynamic access control)
@@ -715,14 +819,14 @@ async def run_agent_inference_endpoint(
         task_id = f"task_{uuid.uuid4().hex[:16]}"
         
         # Send request to Kafka for async processing by AgentWorker
-        success = kafka_manager.send_agent_request(
+        success = mq_manager.send_agent_request(
             agent_call_id=task_id,
             agentic_application_id=inference_request.agentic_application_id,
             session_id=session_id,
             model_name=inference_request.model_name,
             query=inference_request.query,
             user_role=role,
-            department_name=user_data.department_name,
+            department_name=user_department,
             username=user_data.email,
             user_email=user_data.email,  # Pass user_email
             reset_conversation=inference_request.reset_conversation,
@@ -741,6 +845,7 @@ async def run_agent_inference_endpoint(
             mentioned_agentic_application_id=inference_request.mentioned_agentic_application_id,
             interrupt_items=inference_request.interrupt_items,
             uploaded_files=inference_request.uploaded_files,
+            execution_mode=getattr(inference_request, 'execution_mode', None),
         )
         
         if not success:
@@ -953,26 +1058,26 @@ async def run_agent_inference_endpoint(
                     is_streaming=True,
                     department_name=user_department
                 )
-                if chat_service and not await chat_service.is_python_based_agent(inference_request.agentic_application_id):
+                if chat_service and not await chat_service.is_python_based_agent(inference_request.agentic_application_id) and inference_request.framework_type == FrameworkType.LANGGRAPH:
                     response_time = await inference_service.update_response_time(agent_id=inference_request.agentic_application_id, session_id=session_id, start_time=start_time, time_stamp=start_time_stamp)
-                    # Inject per-query token totals into the same checkpoint
                     from litellm_standalone_tracker import get_and_clear_accumulator
                     token_records = get_and_clear_accumulator(session_id)
-                    if token_records and last_message:
+                    if token_records:
                         agent_name = token_records[0].get("agent_name") if token_records else None
                         await inference_service.update_token_usage_in_graph(
                             agent_id=inference_request.agentic_application_id,
                             session_id=session_id,
                             token_records=token_records,
                         )
-                        last_message["token_usage"] = {
-                            "prompt_tokens":     sum(r.get("prompt_tokens", 0)     for r in token_records),
-                            "completion_tokens": sum(r.get("completion_tokens", 0) for r in token_records),
-                            "total_tokens":      sum(r.get("total_tokens", 0)      for r in token_records),
-                            "cached_tokens":     sum(r.get("cached_tokens", 0)     for r in token_records),
-                            "total_cost":        sum(r.get("total_cost", 0.0)      for r in token_records),
-                            "llm_calls":         token_records,
-                        }
+                        if last_message:
+                            last_message["token_usage"] = {
+                                "prompt_tokens":     sum(r.get("prompt_tokens", 0)     for r in token_records),
+                                "completion_tokens": sum(r.get("completion_tokens", 0) for r in token_records),
+                                "total_tokens":      sum(r.get("total_tokens", 0)      for r in token_records),
+                                "cached_tokens":     sum(r.get("cached_tokens", 0)     for r in token_records),
+                                "total_cost":        sum(r.get("total_cost", 0.0)      for r in token_records),
+                                "llm_calls":         token_records,
+                            }
                         asyncio.create_task(query_token_usage_repo.insert(
                             session_id=session_id,
                             user_id=user_data.email,
@@ -980,6 +1085,7 @@ async def run_agent_inference_endpoint(
                             agent_name=agent_name,
                             query=inference_request.query,
                             token_records=token_records,
+                            department_name=user_department,
                         ))
                 else:
                     response_time = time.monotonic() - start_time
@@ -990,20 +1096,21 @@ async def run_agent_inference_endpoint(
                         }
                     }
                     thread_id = await chat_service._get_thread_id(inference_request.agentic_application_id, session_id)
-                    await inference_service.hybrid_agent_inference._add_additional_data_to_final_response(response_time_details, thread_id=thread_id)
-                    # Drain accumulator and persist per-query token usage for python-based agents
+                    if inference_request.framework_type != FrameworkType.GOOGLE_ADK:
+                        await inference_service.hybrid_agent_inference._add_additional_data_to_final_response(response_time_details, thread_id=thread_id)
                     from litellm_standalone_tracker import get_and_clear_accumulator
                     token_records = get_and_clear_accumulator(session_id)
-                    if token_records and last_message:
+                    if token_records:
                         agent_name = token_records[0].get("agent_name") if token_records else None
-                        last_message["token_usage"] = {
-                            "prompt_tokens":     sum(r.get("prompt_tokens", 0)     for r in token_records),
-                            "completion_tokens": sum(r.get("completion_tokens", 0) for r in token_records),
-                            "total_tokens":      sum(r.get("total_tokens", 0)      for r in token_records),
-                            "cached_tokens":     sum(r.get("cached_tokens", 0)     for r in token_records),
-                            "total_cost":        sum(r.get("total_cost", 0.0)      for r in token_records),
-                            "llm_calls":         token_records,
-                        }
+                        if last_message:
+                            last_message["token_usage"] = {
+                                "prompt_tokens":     sum(r.get("prompt_tokens", 0)     for r in token_records),
+                                "completion_tokens": sum(r.get("completion_tokens", 0) for r in token_records),
+                                "total_tokens":      sum(r.get("total_tokens", 0)      for r in token_records),
+                                "cached_tokens":     sum(r.get("cached_tokens", 0)     for r in token_records),
+                                "total_cost":        sum(r.get("total_cost", 0.0)      for r in token_records),
+                                "llm_calls":         token_records,
+                            }
                         asyncio.create_task(query_token_usage_repo.insert(
                             session_id=session_id,
                             user_id=user_data.email,
@@ -1011,6 +1118,7 @@ async def run_agent_inference_endpoint(
                             agent_name=agent_name,
                             query=inference_request.query,
                             token_records=token_records,
+                            department_name=user_department,
                         ))
                 if last_message:
                     last_message["response_time"] = response_time
@@ -1047,7 +1155,10 @@ async def run_agent_inference_endpoint(
             last_message = dict()
             if "executor_messages" in response and isinstance(response["executor_messages"], list) and response["executor_messages"]:
                 last_message = response["executor_messages"][-1]
-                last_message["start_timestamp"] = start_time_stamp.isoformat()
+                if isinstance(last_message, dict):
+                    last_message["start_timestamp"] = start_time_stamp.isoformat()
+                else:
+                    last_message = dict()
 
             # Run Post-Processing
             await save_feedback_and_logs(
@@ -1060,7 +1171,7 @@ async def run_agent_inference_endpoint(
                 is_streaming=False,
                 department_name=user_department
             )
-            if chat_service and not await chat_service.is_python_based_agent(inference_request.agentic_application_id):
+            if chat_service and not await chat_service.is_python_based_agent(inference_request.agentic_application_id) and inference_request.framework_type == FrameworkType.LANGGRAPH:
                 response_time = await inference_service.update_response_time(agent_id=inference_request.agentic_application_id, session_id=session_id, start_time=start_time, time_stamp=start_time_stamp)
                 # Inject per-query token totals into the same checkpoint
                 from litellm_standalone_tracker import get_and_clear_accumulator
@@ -1072,14 +1183,15 @@ async def run_agent_inference_endpoint(
                         session_id=session_id,
                         token_records=token_records,
                     )
-                    last_message["token_usage"] = {
-                        "prompt_tokens":     sum(r.get("prompt_tokens", 0)     for r in token_records),
-                        "completion_tokens": sum(r.get("completion_tokens", 0) for r in token_records),
-                        "total_tokens":      sum(r.get("total_tokens", 0)      for r in token_records),
-                        "cached_tokens":     sum(r.get("cached_tokens", 0)     for r in token_records),
-                        "total_cost":        sum(r.get("total_cost", 0.0)      for r in token_records),
-                        "llm_calls":         token_records,
-                    }
+                    if isinstance(last_message, dict):
+                        last_message["token_usage"] = {
+                            "prompt_tokens":     sum(r.get("prompt_tokens", 0)     for r in token_records),
+                            "completion_tokens": sum(r.get("completion_tokens", 0) for r in token_records),
+                            "total_tokens":      sum(r.get("total_tokens", 0)      for r in token_records),
+                            "cached_tokens":     sum(r.get("cached_tokens", 0)     for r in token_records),
+                            "total_cost":        sum(r.get("total_cost", 0.0)      for r in token_records),
+                            "llm_calls":         token_records,
+                        }
                     asyncio.create_task(query_token_usage_repo.insert(
                         session_id=session_id,
                         user_id=user_data.email,
@@ -1087,6 +1199,7 @@ async def run_agent_inference_endpoint(
                         agent_name=agent_name,
                         query=inference_request.query,
                         token_records=token_records,
+                        department_name=user_department,
                     ))
             else:
                 response_time = time.monotonic() - start_time
@@ -1095,20 +1208,22 @@ async def run_agent_inference_endpoint(
                     "start_timestamp": start_time_stamp.isoformat()
                 }
                 thread_id = await chat_service._get_thread_id(inference_request.agentic_application_id, session_id)
-                await inference_service.hybrid_agent_inference._add_additional_data_to_final_response(response_time_details, thread_id=thread_id)
+                if inference_request.framework_type != FrameworkType.GOOGLE_ADK:
+                    await inference_service.hybrid_agent_inference._add_additional_data_to_final_response(response_time_details, thread_id=thread_id)
                 # Drain accumulator and persist per-query token usage for python-based agents
                 from litellm_standalone_tracker import get_and_clear_accumulator
                 token_records = get_and_clear_accumulator(session_id)
                 if token_records:
                     agent_name = token_records[0].get("agent_name") if token_records else None
-                    last_message["token_usage"] = {
-                        "prompt_tokens":     sum(r.get("prompt_tokens", 0)     for r in token_records),
-                        "completion_tokens": sum(r.get("completion_tokens", 0) for r in token_records),
-                        "total_tokens":      sum(r.get("total_tokens", 0)      for r in token_records),
-                        "cached_tokens":     sum(r.get("cached_tokens", 0)     for r in token_records),
-                        "total_cost":        sum(r.get("total_cost", 0.0)      for r in token_records),
-                        "llm_calls":         token_records,
-                    }
+                    if isinstance(last_message, dict):
+                        last_message["token_usage"] = {
+                            "prompt_tokens":     sum(r.get("prompt_tokens", 0)     for r in token_records),
+                            "completion_tokens": sum(r.get("completion_tokens", 0) for r in token_records),
+                            "total_tokens":      sum(r.get("total_tokens", 0)      for r in token_records),
+                            "cached_tokens":     sum(r.get("cached_tokens", 0)     for r in token_records),
+                            "total_cost":        sum(r.get("total_cost", 0.0)      for r in token_records),
+                            "llm_calls":         token_records,
+                        }
                     asyncio.create_task(query_token_usage_repo.insert(
                         session_id=session_id,
                         user_id=user_data.email,
@@ -1116,13 +1231,17 @@ async def run_agent_inference_endpoint(
                         agent_name=agent_name,
                         query=inference_request.query,
                         token_records=token_records,
+                        department_name=user_department,
                     ))
                     
-            last_message["response_time"] = response_time
+            if isinstance(last_message, dict):
+                last_message["response_time"] = response_time
             return response
 
         except asyncio.CancelledError:
             raise HTTPException(status_code=499, detail="Request was cancelled")
+        except HTTPException:
+            raise
         except Exception as e:
             log.error(f"[{session_id}] Inference failed: {e}")
             raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
@@ -1132,11 +1251,21 @@ async def run_agent_inference_endpoint(
                 agent_id='Unassigned', session_id='Unassigned', 
                 model_used='Unassigned', user_query='Unassigned', response='Unassigned'
             )
+            # Clear thread-local request_id fallback storage
+            try:
+                from src.models.guardrail_aware_llm import _clear_request_id
+                _clear_request_id()
+                log.debug(f"✅ [REQUEST_ID] Cleared thread-local fallback storage")
+            except Exception as e:
+                log.debug(f"⚠️ [REQUEST_ID] Could not clear thread-local fallback: {e}")
+            
             if session_id in task_tracker and task_tracker[session_id].done():
                 del task_tracker[session_id]
 
 
 @router.post("/get/feedback-response/{feedback_type}")
+@supports_async("feedback_response")
+@with_request_tracking("feedback_learning")
 async def send_feedback_endpoint(
     request: Request,
     feedback_type: Literal["like", "regenerate", "submit_feedback"],
@@ -1322,20 +1451,16 @@ async def get_chat_history_endpoint(
     role = user_data.role
     user_department = user_data.department_name
     # Try to get workflow history first
-    try:
+    if chat_session_request.agent_id.startswith("wf_") or chat_session_request.agent_id.startswith("ppl_"):
         workflow_history = await workflow_service.get_workflow_conversation_history(
             workflow_id=chat_session_request.agent_id,
             session_id=chat_session_request.session_id,
             role=role
         )
-        if workflow_history:
-            update_session_context(user_session="Unassigned", user_id="Unassigned", session_id="Unassigned", agent_id="Unassigned")
-            # Wrap in executor_messages format to match regular chat history structure
-            return {"executor_messages": workflow_history}
-    except Exception as e:
-        log.warning(f"Error fetching workflow history, falling back to agent history: {e}")
+        update_session_context(user_session="Unassigned", user_id="Unassigned", session_id="Unassigned", agent_id="Unassigned")
+        return {"executor_messages": workflow_history or []}
 
-    # Fall back to regular chat history
+    # Regular agent: fetch from agent chat tables
     history = await chat_service.get_chat_history_from_short_term_memory(
         agentic_application_id=chat_session_request.agent_id,
         session_id=chat_session_request.session_id,
@@ -1347,7 +1472,7 @@ async def get_chat_history_endpoint(
     return history
 
 
-@router.delete("/clear-history")
+@router.api_route("/clear-history", methods=["DELETE", "POST"])
 async def clear_chat_history_endpoint(
     request: Request, 
     chat_session_request: ChatSessionRequest, 
@@ -1372,17 +1497,16 @@ async def clear_chat_history_endpoint(
     update_session_context(user_session=user_session, user_id=user_id)
     
     # Try to delete workflow history
-    try:
-        workflow_result = await workflow_service.delete_workflow_session(
+    if chat_session_request.agent_id.startswith("wf_") or chat_session_request.agent_id.startswith("ppl_"):
+        result = await workflow_service.delete_workflow_session(
             workflow_id=chat_session_request.agent_id,
             session_id=chat_session_request.session_id
         )
-        if workflow_result.get("status") == "success":
-            log.info(f"Workflow history cleared for session '{chat_session_request.session_id}'")
-    except Exception as e:
-        log.debug(f"No workflow history to clear: {e}")
-    
-    # Also delete regular chat history
+        if result.get("status") == "error":
+            raise HTTPException(status_code=500, detail=result.get("message"))
+        return result
+
+    # Regular agent: delete from agent chat tables
     result = await chat_service.delete_session(
         agentic_application_id=chat_session_request.agent_id,
         session_id=chat_session_request.session_id,
@@ -1418,17 +1542,16 @@ async def get_old_conversations_endpoint(
     update_session_context(user_session=user_session, user_id=user_id)
 
     # Try to get workflow old conversations first
-    try:
+    if chat_session_request.agent_id.startswith("wf_") or chat_session_request.agent_id.startswith("ppl_"):
         workflow_result = await workflow_service.get_old_workflow_conversations(
             user_email=chat_session_request.user_email,
             workflow_id=chat_session_request.agent_id
         )
-        if workflow_result:
-            return JSONResponse(content=jsonable_encoder(workflow_result))
-    except Exception as e:
-        log.debug(f"No workflow conversations found, checking agent conversations: {e}")
+        if not workflow_result:
+            raise HTTPException(status_code=404, detail="No old chats found for this user and workflow.")
+        return JSONResponse(content=jsonable_encoder(workflow_result))
 
-    # Fall back to regular chat history
+    # Regular agent: fetch from agent chat tables
     result = await chat_service.get_old_chats_by_user_and_agent(
         user_email=chat_session_request.user_email,
         agent_id=chat_session_request.agent_id,
@@ -1462,14 +1585,17 @@ async def create_new_session_endpoint(request: Request, chat_service: ChatServic
 
 
 @router.get("/auto-suggest-agent-queries")
+@with_request_tracking("auto_suggest")
 async def auto_suggest_agent_queries_endpoint(
     fastapi_request: Request, 
     agentic_application_id: str, 
     user_email: str, 
-    chat_service: ChatService = Depends(ServiceProvider.get_chat_service)
+    chat_service: ChatService = Depends(ServiceProvider.get_chat_service),
+    workflow_service: WorkflowService = Depends(ServiceProvider.get_workflow_service)
 ):
     """
     Suggests agent queries based on the provided agentic application ID and user email.
+    Supports both regular agents and workflows.
 
     Args:
         fastapi_request (Request): The FastAPI request object.
@@ -1487,10 +1613,16 @@ async def auto_suggest_agent_queries_endpoint(
     update_session_context(user_session=user_session, user_id=user_id)
     
     try:
-        suggestions = await chat_service.fetch_all_user_queries(
-            agentic_application_id=agentic_application_id, 
-            user_email=user_email
-        )
+        if agentic_application_id.startswith("wf_") or agentic_application_id.startswith("ppl_"):
+            suggestions = await workflow_service.fetch_workflow_user_queries(
+                user_email=user_email,
+                workflow_id=agentic_application_id
+            )
+        else:
+            suggestions = await chat_service.fetch_all_user_queries(
+                agentic_application_id=agentic_application_id, 
+                user_email=user_email
+            )
         return suggestions
     except Exception as e:
         log.error(f"Error suggesting queries for agent {agentic_application_id}: {str(e)}")
@@ -1556,7 +1688,7 @@ async def store_episodic_example(
             detail=f"Failed to store example: {str(e)}"
         )
 
-@router.get("/memory/get-examples/")
+@router.get("/memory/get-examples")
 async def get_stored_examples(
                             agent_id: str,
                             limit: int = 10,
@@ -1605,7 +1737,7 @@ async def get_stored_examples(
             detail=f"Failed to retrieve examples: {str(e)}"
         )
 
-@router.delete("/memory/delete-examples/")
+@router.api_route("/memory/delete-examples", methods=["DELETE", "POST"])
 async def delete_stored_example(
                             agent_id: str,
                             key: str,
@@ -1632,7 +1764,7 @@ async def delete_stored_example(
             detail=f"Failed to delete example: {str(e)}"
         )
 
-@router.put("/memory/update-examples/")
+@router.api_route("/memory/update-examples", methods=["PUT", "POST"])
 async def update_stored_example(agent_id: str, key: str, label: str = None):
     try:
         manager = await get_global_manager()
@@ -1679,6 +1811,9 @@ async def upload_chat_files(
     request: Request,
     files: List[UploadFile] = File(..., description="Files to upload."),
     session_id: str = Form(..., description="Session ID for the conversation."),
+    subdirectory: str = Form("", description="Optional subfolder under the department (e.g. custom folder or user email folder)."),
+    overwrite: str = Form("false", description="If true, overwrite existing file in the target directory."),
+    agentic_application_id: str = Form("", description="Agent ID — used to resolve department for unregistered Azure AD users."),
     file_manager: FileManager = Depends(ServiceProvider.get_file_manager),
     user_data: User = Depends(get_current_user)
 ):
@@ -1688,41 +1823,58 @@ async def upload_chat_files(
     user_id = request.cookies.get("user_id") or user_data.email
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
-    
-    uploaded_files = []
-    
-    # Get user's department and create department-specific subdirectory
+
     user_department = current_user_department.get()
+    # Unregistered Azure AD users have no department — resolve it from the agent, same as chat inference.
+    if not user_department and user_data.status == UserStatus.PENDING_APPROVAL:
+        user_department = await resolve_pending_user_department(agentic_application_id)
     if not user_department:
         raise HTTPException(status_code=400, detail="User department not found")
-    
-    department_subdirectory = user_department
 
-    if STORAGE_PROVIDER == "":
-        for file in files:
-            file_path = await file_manager.save_chat_file(
-                uploaded_file=file,
-                session_id=session_id,
-                subdirectory=department_subdirectory
-            )
-            log.info(f"File '{file.filename}' uploaded successfully to '{file_path}' for department '{user_department}'")
-            uploaded_files.append(file_path)
-        
-        return {
-            "success": True,
-            "message": f"Uploaded {len(uploaded_files)} file(s) successfully.",
-            "uploaded_files": uploaded_files
-        }
+    # Accept subdirectory and overwrite from either form field or query param
+    subdirectory = request.query_params.get("subdirectory", subdirectory)
+    overwrite_raw = request.query_params.get("overwrite", overwrite)
+    should_overwrite = overwrite_raw.strip().lower() in ("true", "1", "yes")
+
+    department_subdirectory = f"{user_department}/{subdirectory}" if subdirectory else user_department
+
+    uploaded_files = []
+    conflict_files = []
+
+    for file in files:
+        saved_path = await file_manager.save_chat_file(
+            uploaded_file=file,
+            session_id=session_id,
+            subdirectory=department_subdirectory,
+            overwrite=should_overwrite,
+        )
+        if saved_path is None:
+            conflict_files.append(file.filename)
+            log.info(f"File '{file.filename}' skipped — already exists in '{department_subdirectory}'")
+        else:
+            uploaded_files.append({"original_name": file.filename, "saved_path": saved_path})
+            log.info(f"File '{file.filename}' uploaded to '{saved_path}'")
+
+    total = len(uploaded_files) + len(conflict_files)
+    if conflict_files and uploaded_files:
+        msg = f"{len(uploaded_files)} of {total} file(s) uploaded. {len(conflict_files)} file(s) already exist — choose overwrite or a subfolder."
+    elif conflict_files and not uploaded_files:
+        msg = f"No files uploaded. {len(conflict_files)} file(s) already exist — choose overwrite or a subfolder."
     else:
-        status = {}
-        for uploaded_file in files:
-            status[uploaded_file.filename] = await file_manager.upload_file_to_storage(
-                file=uploaded_file,
-                storage_provider=STORAGE_PROVIDER
-            )
-            uploaded_files.append(uploaded_file.filename)
-        
-        return status
+        msg = f"{len(uploaded_files)} file(s) uploaded successfully."
+
+    warnings = {
+        "files": conflict_files,
+        "message": f"{len(conflict_files)} file(s) already exist.",
+        "conflict_path": subdirectory,
+    } if conflict_files else {}
+
+    return {
+        "success": not conflict_files,
+        "message": msg,
+        "uploaded_files": uploaded_files,
+        "warnings": warnings,
+    }
 
 @router.get("/files/list")
 async def list_chat_files(

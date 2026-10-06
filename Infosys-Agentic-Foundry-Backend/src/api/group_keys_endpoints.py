@@ -193,70 +193,9 @@ async def get_group_secret(
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
-@router.put("/{group_name}/secrets/{key_name}", response_model=SecretResponse)
-async def update_group_secret(
-    group_name: str,
-    key_name: str,
-    request: SecretUpdateRequest,
-    current_user: User = Depends(get_current_user),
-    group_secrets_service: GroupSecretsService = Depends(ServiceProvider.get_group_secrets_service),
-    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service)
-):
-    """Update a key in a group (Admin/Developer only)"""
-    if current_user.role == UserRole.SUPER_ADMIN:
-        raise HTTPException(status_code=403, detail="Superadmin is not allowed to update group secrets.")
-    # Extract department from user data
-    department_name = current_user.department_name 
-    
-    # Check vault access permission
-    has_access = await authorization_service.check_vault_access(current_user.role, department_name)
-    if not has_access:
-        raise HTTPException(status_code=403, detail="Access denied: You don't have permission to access vault endpoints")
-    
-    try:
-        response = await group_secrets_service.update_group_secret(
-            group_name=group_name,
-            department_name=department_name,
-            key_name=key_name,
-            secret_value=request.secret_value,
-            user=current_user
-        )
-        
-        # Check if the service returned an error
-        if not response.get("success", False):
-            message = response.get("message", "Unknown error")
-            if "does not exist" in message or "not found" in message:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=message)
-            elif "does not have access" in message or "role:" in message:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=message)
-            else:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
-        
-        # For update, we need to get the updated secret_record to return full details
-        get_response = await group_secrets_service.get_group_secret(
-            group_name=group_name,
-            department_name=department_name,
-            key_name=key_name,
-            user=current_user
-        )
-        
-        if not get_response.get("success", False):
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
-                              detail="Secret updated but could not retrieve details")
-        
-        return SecretResponse(
-            key_name=get_response["key_name"],
-            secret_value=get_response["secret_value"],
-            created_by=get_response["created_by"],
-            created_at=get_response["created_at"].isoformat(),
-            updated_at=get_response["updated_at"].isoformat() if get_response["updated_at"] else None
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 @router.delete("/{group_name}/secrets")
+@router.post("/{group_name}/secrets/delete")
 async def delete_group_secret(
     group_name: str,
     request: GroupSecretDeleteRequest,
@@ -343,3 +282,69 @@ async def delete_group_secret(
         raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.put("/{group_name}/secrets/{key_name}", response_model=SecretResponse)
+@router.post("/{group_name}/secrets/{key_name}/update", response_model=SecretResponse)
+async def update_group_secret(
+    group_name: str,
+    key_name: str,
+    request: SecretUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    group_secrets_service: GroupSecretsService = Depends(ServiceProvider.get_group_secrets_service),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service)
+):
+    """Update a key in a group (Admin/Developer only)"""
+    if current_user.role == UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Superadmin is not allowed to update group secrets.")
+    # Extract department from user data
+    department_name = current_user.department_name 
+    
+    # Check vault access permission
+    has_access = await authorization_service.check_vault_access(current_user.role, department_name)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="Access denied: You don't have permission to access vault endpoints")
+    
+    try:
+        response = await group_secrets_service.update_group_secret(
+            group_name=group_name,
+            department_name=department_name,
+            key_name=key_name,
+            secret_value=request.secret_value,
+            user=current_user
+        )
+        
+        # Check if the service returned an error
+        if not response.get("success", False):
+            message = response.get("message", "Unknown error")
+            if "does not exist" in message or "not found" in message:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=message)
+            elif "does not have access" in message or "role:" in message:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=message)
+            else:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+        
+        # For update, we need to get the updated secret_record to return full details
+        get_response = await group_secrets_service.get_group_secret(
+            group_name=group_name,
+            department_name=department_name,
+            key_name=key_name,
+            user=current_user
+        )
+        
+        if not get_response.get("success", False):
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+                              detail="Secret updated but could not retrieve details")
+        
+        return SecretResponse(
+            key_name=get_response["key_name"],
+            secret_value=get_response["secret_value"],
+            created_by=get_response["created_by"],
+            created_at=get_response["created_at"].isoformat(),
+            updated_at=get_response["updated_at"].isoformat() if get_response["updated_at"] else None
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+

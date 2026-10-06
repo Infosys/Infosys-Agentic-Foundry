@@ -915,7 +915,7 @@
 
 .sctCardActions {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
   flex-shrink: 0;
 }
@@ -925,9 +925,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 8px 10px;
+  width: 38px;
+  height: 38px;
+  padding: 0;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
   cursor: pointer;
@@ -990,13 +992,7 @@
   background: var(--primary-btn-bg);
   color: var(--primary-btn-text);
   border: 1px solid var(--accent);
-  padding: 10px 24px;
-  border-radius: 8px;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  cursor: pointer;
-  transition: all 0.25s ease;
-  box-shadow: var(--shadow-card);
+  border-radius: 6px;
 }
 
 .saveBtn:hover:not(:disabled) {
@@ -1017,7 +1013,7 @@
   background: var(--card-bg);
   border: 1px solid var(--border-color);
   border-radius: 10px;
-  padding: 12px 14px;
+  padding: 16px 18px;
   margin-bottom: 10px;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: var(--shadow-card);
@@ -1033,13 +1029,25 @@
 .savedSctRow {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   overflow: hidden;
 }
 
+.savedSctInfo {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.savedSctNameRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .savedSctName {
-  flex: 0 1 140px;
-  min-width: 80px;
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
   font-size: var(--font-size-sm);
@@ -1074,23 +1082,14 @@
 }
 
 .savedSctDivider {
-  width: 2px;
-  height: 28px;
-  background: linear-gradient(180deg, transparent, var(--accent), transparent);
-  flex-shrink: 0;
-  opacity: 0.8;
+  display: none;
 }
 
 .savedSctValue {
-  flex: 1 1 auto;
-  min-width: 60px;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: var(--font-size-xs);
   color: var(--text-tertiary);
-  background: var(--bg-tertiary);
-  padding: 6px 10px;
-  border-radius: 6px;
-  letter-spacing: 2px;
+  letter-spacing: 3px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1099,8 +1098,6 @@
 .savedSctValue.revealed {
   color: var(--text-primary);
   letter-spacing: normal;
-  background: rgba(59, 130, 246, 0.08);
-  border: 1px solid rgba(59, 130, 246, 0.2);
 }
 
 .savedSctCard.revealedCard {
@@ -1116,14 +1113,14 @@
 }
 
 .inlineInput {
-  flex: 0 1 120px;
-  min-width: 60px;
+  width: 100%;
   padding: 8px 10px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   color: var(--text-primary);
   font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
   font-family: inherit;
   outline: none;
   transition: all 0.2s ease;
@@ -1137,13 +1134,15 @@
 
 .inlineInput::placeholder {
   color: var(--text-tertiary);
+  font-weight: var(--font-weight-normal, 400);
+  opacity: 0.5;
 }
 
 .inlineInput.valueInput {
-  flex: 1 1 auto;
-  min-width: 60px;
+  width: 100%;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-normal, 400);
 }
 
 /* Code Snippet Section - only layout positioning */

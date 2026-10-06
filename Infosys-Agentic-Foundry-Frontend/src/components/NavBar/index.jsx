@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import styles from "../../css_modules/NavBar.module.css";
 import SVGIcons from "../../Icons/SVGIcons";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { usePermissions } from "../../context/PermissionsContext";
 import { useAuth } from "../../context/AuthContext";
 import Cookies from "js-cookie";
 import { emitActiveNavClick } from "../../events/navigationEvents";
 import brandlogo from "../../Assets/Agentic-Foundry-Logo-Blue-2.png";
-import { APIs, mkDocs_baseURL, grafanaDashboardUrl } from "../../constant";
+import { APIs, mkDocs_baseURL, grafanaDashboardUrl, DIRECT_SSO_LOGIN } from "../../constant";
 import { useApiUrl } from "../../context/ApiUrlContext";
 import { useVersion } from "../../context/VersionContext";
 import useFetch from "../../Hooks/useAxios";
@@ -15,6 +15,9 @@ import { useMessage } from "../../Hooks/MessageContext";
 import { useTheme } from "../../Hooks/ThemeContext";
 import { getDepartmentFromToken, getRoleFromToken } from "../../utils/jwtUtils";
 import PermissionsModal from "./PermissionsModal";
+import DepartmentSwitcher from "../DepartmentSwitcher/DepartmentSwitcher";
+import RoleSwitcher from "../DepartmentSwitcher/RoleSwitcher";
+import Loader from "../commonComponents/Loader";
 
 export default function NavBar() {
   const [activeButton, setActiveButton] = useState("");
@@ -22,6 +25,7 @@ export default function NavBar() {
   const [showPermissionsModal, setShowPermissionsModal] = useState(false);
   const [isNavCollapsed, setIsNavCollapsed] = useState(true);
   const [isChatbotHidden, setIsChatbotHidden] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   // Listen for chatbot hide event
   useEffect(() => {
@@ -32,6 +36,7 @@ export default function NavBar() {
   const [pendingNotifCount, setPendingNotifCount] = useState(0);
   const userMenuRef = useRef(null);
   const location = useLocation();
+  const navigate = useNavigate();
   const { user, role: authRole, logout, isAuthenticated } = useAuth();
   const { postData, fetchData } = useFetch();
   const { addMessage } = useMessage();
@@ -42,8 +47,24 @@ export default function NavBar() {
   const department = getDepartmentFromToken();
   const isAdmin = role && role.toUpperCase() === "ADMIN";
   const isSuperAdmin = role && role.toUpperCase() === "SUPERADMIN";
+  const isUser = role && role.toUpperCase() === "USER";
+  const isDeveloper = role && role.toUpperCase() === "DEVELOPER";
+  const showTokenUsage = isUser || isDeveloper;
   const { hasPermission } = usePermissions();
   const { theme, toggleTheme } = useTheme();
+
+  // Scheduler visibility based on backend status
+  const [schedulerEnabled, setSchedulerEnabled] = useState(false);
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    fetchData(APIs.SCHEDULER_STATUS, { silent: true })
+      .then((res) => {
+        setSchedulerEnabled(Boolean(res?.available));
+      })
+      .catch(() => {
+        setSchedulerEnabled(false);
+      });
+  }, [isAuthenticated]);
 
   // Permission-based visibility check - only canAddTools is needed for Resource Dashboard nav item
   const canAddTools = hasPermission("add_access.tools", false);
@@ -140,24 +161,22 @@ export default function NavBar() {
   };
 
   const handleLogout = async () => {
+    // All cookie/localStorage cleanup is handled by clearAuthArtifacts() in AuthContext.logout
+    setLoggingOut(true);
     try {
-      await postData(APIs.LOGOUT);
-    } catch (error) {
-      addMessage("Logout request failed, but clearing local session.", "error");
+      await logout("manual");
     } finally {
-      Cookies.remove("email");
-      Cookies.remove("jwt-token");
-      Cookies.remove("refresh-token");
-      try {
-        localStorage.removeItem("login_timestamp");
-        Cookies.remove("login_timestamp");
-      } catch (_) { }
-      logout("manual");
+      setLoggingOut(false);
     }
   };
 
   const handleGrafanaClick = () => {
     window.open(grafanaDashboardUrl, "_blank");
+  };
+
+  const handleLlmTrackerClick = () => {
+    navigate("/llm-tracker");
+    setShowUserMenu(false);
   };
 
   const handleRestoreChatbot = () => {
@@ -177,6 +196,7 @@ export default function NavBar() {
   };
 
   const handleLogoutClick = () => {
+    if (DIRECT_SSO_LOGIN === "true") return;
     setShowUserMenu(false);
     handleLogout();
   };
@@ -229,6 +249,14 @@ export default function NavBar() {
           </nav>
           {/* Bottom User Section */}
           <div className={styles.bottomSection}>
+            {/* Department Switcher - Show only for authenticated users */}
+            {isAuthenticated && displayName !== "Guest" && (
+              <DepartmentSwitcher wrapperClassName={styles.departmentSwitcherWrapper} />
+            )}
+            {/* Role Switcher - Show when user has multiple roles in current department */}
+            {isAuthenticated && displayName !== "Guest" && (
+              <RoleSwitcher wrapperClassName={styles.departmentSwitcherWrapper} />
+            )}
             <div className={styles.topRow}>
               <div className={styles.userInfo}>
                 <div className={styles.userName} title={`${displayName} (${role}${department ? ` - ${department}` : ""})`}>
@@ -260,10 +288,16 @@ export default function NavBar() {
                         <SVGIcons icon="fa-question" width={14} height={14} fill="var(--text-primary)" />
                         <span>Help</span>
                       </button>
-                      <button className={`${styles.menuItem} ${styles.logoutMenuItem}`} onClick={handleLogoutClick} role="menuitem" tabIndex={0}>
-                        <SVGIcons icon="logout" width={14} height={14} fill="var(--text-primary)" />
-                        <span>Sign Out</span>
+                      <button className={styles.menuItem} onClick={handleLlmTrackerClick} role="menuitem" tabIndex={0}>
+                        <SVGIcons icon="fa-chart-line" width={14} height={14} fill="var(--text-primary)" />
+                        <span>LLM Tracker</span>
                       </button>
+                      {DIRECT_SSO_LOGIN !== "true" && (
+                        <button className={`${styles.menuItem} ${styles.logoutMenuItem}`} onClick={handleLogoutClick} role="menuitem" tabIndex={0}>
+                          <SVGIcons icon="logout" width={14} height={14} fill="var(--text-primary)" />
+                          <span>Sign Out</span>
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -273,6 +307,11 @@ export default function NavBar() {
         </div>
         {/* Permissions Modal */}
         <PermissionsModal isOpen={showPermissionsModal} onClose={() => setShowPermissionsModal(false)} />
+        {loggingOut && (
+          <div className={styles.logoutOverlay}>
+            <Loader />
+          </div>
+        )}
       </div>
     );
   }
@@ -394,6 +433,18 @@ export default function NavBar() {
               )}
             </li>
 
+            {/* Hooks */}
+            <li>
+              {mainNavLink(
+                "/hooks",
+                <>
+                  <SVGIcons icon="plug" />
+                  <span>Hooks</span>
+                </>,
+                "Hooks",
+              )}
+            </li>
+
             {/* Resource Dashboard - Show if user has tools create permission */}
             {canAddTools && (
               <li>
@@ -419,6 +470,20 @@ export default function NavBar() {
                 "Evaluation",
               )}
             </li>
+
+            {/* Token Usage - User & Developer */}
+            {showTokenUsage && (
+              <li>
+                {mainNavLink(
+                  "/token-usage",
+                  <>
+                    <SVGIcons icon="fa-chart-line" width={14} height={14} fill="var(--navbar-icon-color)" />
+                    <span>Token Usage</span>
+                  </>,
+                  "Token Usage",
+                )}
+              </li>
+            )}
 
             {/* Admin - Show only for Admin role */}
             {isAdmin && (
@@ -479,11 +544,33 @@ export default function NavBar() {
                 )}
               </li>
             )}
+
+            {/* Scheduler - Show only when backend has scheduler enabled */}
+            {!isSuperAdmin && !isUser && schedulerEnabled && (
+              <li>
+                {mainNavLink(
+                  "/scheduler",
+                  <>
+                    <SVGIcons icon="clock" />
+                    <span>Scheduler</span>
+                  </>,
+                  "Scheduler",
+                )}
+              </li>
+            )}
           </ul>
         </nav>
 
         {/* Bottom User Section */}
         <div className={styles.bottomSection}>
+          {/* Department Switcher - Show only for authenticated users */}
+          {isAuthenticated && displayName !== "Guest" && (
+            <DepartmentSwitcher wrapperClassName={styles.departmentSwitcherWrapper} />
+          )}
+          {/* Role Switcher - Show when user has multiple roles in current department */}
+          {isAuthenticated && displayName !== "Guest" && (
+            <RoleSwitcher wrapperClassName={styles.departmentSwitcherWrapper} />
+          )}
           <div className={styles.topRow}>
             <div className={styles.userInfo}>
               <div className={styles.userName} title={displayName === "Guest" ? displayName : `${displayName} (${role}${department ? ` - ${department}` : ""})`}>
@@ -530,10 +617,16 @@ export default function NavBar() {
                       <SVGIcons icon="grafana" width={14} height={14} />
                       <span>Grafana</span>
                     </button>
-                    <button className={`${styles.menuItem} ${styles.logoutMenuItem}`} onClick={handleLogoutClick} role="menuitem" tabIndex={0}>
-                      <SVGIcons icon="logout" width={14} height={14} fill="var(--text-primary)" />
-                      <span>Sign Out</span>
+                    <button className={styles.menuItem} onClick={handleLlmTrackerClick} role="menuitem" tabIndex={0}>
+                      <SVGIcons icon="fa-chart-line" width={14} height={14} fill="var(--text-primary)" />
+                      <span>LLM Tracker</span>
                     </button>
+                    {DIRECT_SSO_LOGIN !== "true" && (
+                      <button className={`${styles.menuItem} ${styles.logoutMenuItem}`} onClick={handleLogoutClick} role="menuitem" tabIndex={0}>
+                        <SVGIcons icon="logout" width={14} height={14} fill="var(--text-primary)" />
+                        <span>Sign Out</span>
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -544,6 +637,11 @@ export default function NavBar() {
         <PermissionsModal isOpen={showPermissionsModal} onClose={() => setShowPermissionsModal(false)} />
       </div>
       {/* End of navInner */}
+      {loggingOut && (
+        <div className={styles.logoutOverlay}>
+          <Loader />
+        </div>
+      )}
     </div>
   );
 }

@@ -12,7 +12,7 @@ department admins to:
 **Admin Only** - All endpoints require Admin or SuperAdmin role.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from src.auth.models import User, UserRole
@@ -54,6 +54,19 @@ class AccessKeyListResponse(BaseModel):
     department_name: str
     total_count: int
     access_keys: List[AccessKeyDefinition]
+
+
+class PaginatedAccessKeysResponse(BaseModel):
+    """Response model for paginated access key search results"""
+    success: bool
+    message: str
+    details: List[AccessKeyDefinition]
+    total_count: int
+    total_pages: int
+    current_page: int
+    page_size: int
+    has_next: bool
+    has_previous: bool
 
 
 class ToolUsingAccessKey(BaseModel):
@@ -139,6 +152,42 @@ async def list_access_keys_in_department(
             for ak in access_keys
         ]
     )
+
+@router.get("/access-keys/search-paginated-allocation", response_model=PaginatedAccessKeysResponse)
+async def search_paginated_access_keys(
+    search_value: Optional[str] = Query(None, description="Access key name to search for (partial, case-insensitive match)"),
+    page_number: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(20, ge=1, le=100, description="Number of items per page"),
+    created_by: Optional[str] = Query(None, description="Filter by the user who created the access key"),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Search access keys in the admin's department with pagination.
+
+    **Admin Only** - Requires Admin or SuperAdmin role.
+
+    Args:
+        search_value: Optional access key name to search for (partial, case-insensitive match)
+        page_number: Page number for pagination (starts from 1)
+        page_size: Number of results per page
+        created_by: Optional filter by the user who created the access key
+
+    Returns:
+        Paginated access key search results with pagination metadata
+    """
+    require_admin(current_user)
+
+    repo = ServiceProvider.get_access_key_definitions_repository()
+    result = await repo.get_access_keys_by_search_or_page(
+        search_value=search_value or '',
+        limit=page_size,
+        page=page_number,
+        created_by=created_by,
+        department_name=current_user.department_name
+    )
+
+    return result
+
 
 @router.get("/access-keys/{access_key}/users", response_model=AccessKeyUsersResponse)
 async def get_users_with_access_key(
@@ -254,7 +303,7 @@ async def get_user_values_for_access_key(
 # UNIFIED USER ACCESS UPDATE ENDPOINT (ADMIN ONLY)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.put("/access-keys/{access_key}/users/{user_email}/access")
+@router.api_route("/access-keys/{access_key}/users/{user_email}/access", methods=["PUT", "POST"])
 async def update_user_access(
     access_key: str,
     user_email: str,
@@ -492,7 +541,7 @@ async def update_user_access(
 # BULK AND USER MANAGEMENT ENDPOINTS (ADMIN ONLY)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.put("/access-keys/{access_key}/users")
+@router.api_route("/access-keys/{access_key}/users", methods=["PUT", "POST"])
 async def update_access_key_users(
     access_key: str,
     request: UpdateAccessKeyUsersRequest,
@@ -761,7 +810,7 @@ async def bulk_assign_values_to_users(
     }
 
 
-@router.delete("/access-keys/{access_key}", response_model=DeleteAccessKeyResponse)
+@router.api_route("/access-keys/{access_key}", methods=["DELETE", "POST"], response_model=DeleteAccessKeyResponse)
 async def delete_access_key(
     access_key: str,
     current_user: User = Depends(get_current_user)
@@ -810,8 +859,8 @@ async def delete_access_key(
         )
         
     
-    # Delete the access key definition
-    result = await access_key_repo.delete_access_key(access_key, department_name=current_user.department_name, requesting_user=current_user.email)
+    # Admin can delete any key in their department, skip creator check
+    result = await access_key_repo.delete_access_key(access_key, department_name=current_user.department_name, requesting_user=current_user.username, skip_creator_check=True)
     
     if not result.get("success"):
         raise HTTPException(
@@ -832,7 +881,7 @@ async def delete_access_key(
     )
 
 
-@router.delete("/access-keys/{access_key}/users/{user_email}")
+@router.api_route("/access-keys/{access_key}/users/{user_email}", methods=["DELETE", "POST"])
 async def remove_user_access_key_values(
     access_key: str,
     user_email: str,

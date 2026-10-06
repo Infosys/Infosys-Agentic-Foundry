@@ -80,8 +80,7 @@ function GroupOnBoarding(props) {
         if (!isAddGroup && editGroup && (editGroup.group_name || editGroup.name)) {
           const groupName = editGroup.group_name || editGroup.name;
           try {
-            const groupDetails = await fetchData(`${APIs.GET_GROUP_BY_NAME}${encodeURIComponent(groupName)}`);
-            console.log("Fetched full group details:", groupDetails);
+            const groupDetails = await fetchData(`${APIs.GET_GROUP_BY_NAME}/${encodeURIComponent(groupName)}`);
             if (groupDetails) {
               setFullGroupData(groupDetails);
               // Store original data for diff calculation - this won't change during editing
@@ -238,20 +237,10 @@ function GroupOnBoarding(props) {
         const agentsToAdd = newAgents.filter((agentId) => !currentAgents.includes(agentId));
         const agentsToRemove = currentAgents.filter((agentId) => !newAgents.includes(agentId));
 
-        console.log("=== UPDATE GROUP DEBUG ===");
-        console.log("Original users (from server):", currentUsers);
-        console.log("Selected users (current UI):", newUsers);
-        console.log("Users to ADD:", usersToAdd);
-        console.log("Users to REMOVE:", usersToRemove);
-        console.log("Original agents (from server):", currentAgents);
-        console.log("Selected agents (current UI):", newAgents);
-        console.log("Agents to ADD:", agentsToAdd);
-        console.log("Agents to REMOVE:", agentsToRemove);
-
         const encodedGroupName = encodeURIComponent(groupName);
 
         // Single PUT request with combined payload (description + user/agent changes)
-        const updateUrl = `${APIs.UPDATE_GROUP}${encodedGroupName}`;
+        const updateUrl = `${APIs.UPDATE_GROUP}/${encodedGroupName}`;
         const updatePayload = {
           group_description: formData.description.trim(),
           add_users: usersToAdd,
@@ -260,11 +249,7 @@ function GroupOnBoarding(props) {
           remove_agents: agentsToRemove,
         };
 
-        console.log("Update group URL:", updateUrl);
-        console.log("Update group payload:", updatePayload);
-
         result = await putData(updateUrl, updatePayload);
-        console.log("Update group result:", result);
       }
 
       // Check for successful response - handle various API response formats

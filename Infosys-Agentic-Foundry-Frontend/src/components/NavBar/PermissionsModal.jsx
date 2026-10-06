@@ -44,6 +44,8 @@ const PermissionsModal = ({ isOpen, onClose }) => {
         { key: "update_access.tools", label: "Update Access" },
         { key: "delete_access.tools", label: "Delete Access" },
         { key: "execute_access.tools", label: "Execute Access" },
+        { key: "export_tools_access", label: "Export Tools" },
+        { key: "import_tools_access", label: "Import Tools" },
       ],
     },
     Agents: {
@@ -55,6 +57,7 @@ const PermissionsModal = ({ isOpen, onClose }) => {
         { key: "delete_access.agents", label: "Delete Access" },
         { key: "execute_access.agents", label: "Execute Access" },
         { key: "export_agents_access", label: "Export Agents" },
+        { key: "import_agents_access", label: "Import Agents" },
       ],
     },
     "MCP Servers": {
@@ -65,6 +68,9 @@ const PermissionsModal = ({ isOpen, onClose }) => {
         { key: "update_access.mcp_servers", label: "Update Access" },
         { key: "delete_access.mcp_servers", label: "Delete Access" },
         { key: "execute_access.mcp_servers", label: "Execute Access" },
+        { key: "export_servers_access", label: "Export MCP Servers" },
+        { key: "import_servers_access", label: "Import MCP Servers" },
+        { key: "convert_to_mcp_access", label: "Convert to MCP" },
       ],
     },
     Workflows: {

@@ -48,20 +48,15 @@ except ImportError:
 
 
 # ==========================================
-# CALL CATEGORIZATION ENUMS
+# CALL CATEGORIZATION ENUMS - SIMPLIFIED TO 4 CATEGORIES
 # ==========================================
 
 class LLMCallCategory(str, Enum):
     """Main categories of LLM calls for tracking and filtering"""
     AGENT_INFERENCE = "agent_inference"           # Agent chat/reasoning
-    TOOL_OPERATION = "tool_operation"             # Tool validation/execution
+    TOOL_OPERATION = "tool_operation"             # Tool validation/execution  
     EVALUATION = "evaluation"                      # Response evaluation
-    PROMPT_GENERATION = "prompt_generation"        # Dynamic prompt creation
-    FILE_ANALYSIS = "file_analysis"                # File/document processing
-    RAG_QUERY = "rag_query"                       # Knowledge base queries
-    GUARDRAIL = "guardrail"                        # Safety/moderation checks
-    CONVERSATION = "conversation"                  # Welcome msgs, summaries
-    OTHER = "other"                                # Miscellaneous
+    OTHER = "other"                                # Everything else
 
 class AgentType(str, Enum):
     """Types of agents for agent_inference calls"""
@@ -255,6 +250,101 @@ def extract_base_model(model_name: str) -> str:
 
 # Load base model mapping at module initialization
 _BASE_MODEL_MAPPING = load_base_model_mapping()
+
+
+# ==========================================
+# STATIC FALLBACK PRICING (Alternative to LiteLLM Cost Map)
+# ==========================================
+# This serves as a final fallback when database and LiteLLM API are unavailable
+# Prices are per 1M tokens (divide by 1,000,000 for per-token cost)
+# Update these manually based on official pricing pages
+
+STATIC_MODEL_PRICING = {
+    # OpenAI GPT-4o Models (as of 2024)
+    "gpt-4o": {
+        "input": 2.50,      # $2.50 per 1M input tokens
+        "output": 10.00,    # $10.00 per 1M output tokens
+        "cached": 1.25      # 50% discount for cached inputs
+    },
+    "gpt-4o-mini": {
+        "input": 0.150,     # $0.15 per 1M input tokens
+        "output": 0.600,    # $0.60 per 1M output tokens
+        "cached": 0.075
+    },
+    "gpt-4o-2024-11-20": {
+        "input": 2.50,
+        "output": 10.00,
+        "cached": 1.25
+    },
+    "gpt-4o-mini-2024-07-18": {
+        "input": 0.150,
+        "output": 0.600,
+        "cached": 0.075
+    },
+    
+    # OpenAI GPT-4 Turbo Models
+    "gpt-4-turbo": {
+        "input": 10.00,
+        "output": 30.00,
+        "cached": 5.00
+    },
+    "gpt-4-turbo-2024-04-09": {
+        "input": 10.00,
+        "output": 30.00,
+        "cached": 5.00
+    },
+    
+    # OpenAI GPT-3.5 Turbo
+    "gpt-35-turbo": {
+        "input": 0.50,
+        "output": 1.50,
+        "cached": 0.25
+    },
+    "gpt-3.5-turbo": {
+        "input": 0.50,
+        "output": 1.50,
+        "cached": 0.25
+    },
+    
+    # Add your custom/internal models here
+    "gpt-5-mini": {
+        "input": 0.200,
+        "output": 0.800,
+        "cached": 0.100
+    },
+    "gpt-5-chat": {
+        "input": 3.00,
+        "output": 12.00,
+        "cached": 1.50
+    },
+    "gpt-5-nano": {
+        "input": 0.100,
+        "output": 0.400,
+        "cached": 0.050
+    },
+}
+
+def get_static_pricing(model_name: str) -> Optional[Dict[str, float]]:
+    """
+    Get pricing from static dictionary as final fallback.
+    
+    Args:
+        model_name: Model identifier
+        
+    Returns:
+        Dict with 'input', 'output', 'cached' costs per 1M tokens, or None
+    """
+    # Try exact match first
+    if model_name in STATIC_MODEL_PRICING:
+        return STATIC_MODEL_PRICING[model_name]
+    
+    # Try extracting base model
+    base_model = extract_base_model(model_name)
+    if base_model in STATIC_MODEL_PRICING:
+        log.info(f"📋 Static pricing fallback: {model_name} -> {base_model}")
+        return STATIC_MODEL_PRICING[base_model]
+    
+    return None
 
 
 # ==========================================
@@ -596,6 +686,7 @@ class ModelCostService:
         try:
             async with _db_pool.acquire() as conn:
                 rows = await conn.fetch("SELECT * FROM model_costs")
+                self._cache.clear()
                 
                 for row in rows:
                     self._cache[row['name']] = {
@@ -680,18 +771,19 @@ class ModelCostService:
     
     def calculate_cost(self, model_name: str, prompt_tokens: int, completion_tokens: int, cached_tokens: int = 0, fallback_model: Optional[str] = None) -> Tuple[float, float, float, float]:
         """
-        Calculate costs for token usage with comprehensive fallback chain.
+        Calculate costs for token usage with comprehensive 5-layer fallback chain.
         
         Lookup order:
-        1. Exact model name match (e.g., 'gpt-5.1-chat')
-        2. Fallback model (deployment name like 'gpt-4o')
+        1. Exact model name match in DB cache (e.g., 'gpt-5.1-chat')
+        2. Fallback model from deployment config (e.g., 'gpt-4o')
         3. Environment-configured base model mapping (BASE_MODEL_MAPPING)
         4. Auto-extracted base model from response name (removes date suffixes)
-        5. Return zero costs if nothing matches
+        5. Static pricing dictionary (STATIC_MODEL_PRICING) - hardcoded fallback
+        6. Return zero costs if nothing matches
 
         When the exact model_name (e.g. the version string returned by Azure like
-        'gpt-5.1-2025-11-13') is not in the pricing cache, falls back to
-        fallback_model (typically the configured deployment name, e.g. 'gpt-4o').
+        'gpt-5.1-2025-11-13') is not in the pricing cache, falls back through
+        the chain above until a match is found.
 
         Returns:
             Tuple of (prompt_cost, completion_cost, cached_cost, total_cost)
@@ -724,13 +816,30 @@ class ModelCostService:
                 cost_data = self._cache.get(base_model)
                 if cost_data:
                     used_lookup = f"auto-extracted: {base_model}"
+        
+        # Step 5: Try static fallback pricing dictionary (NEW!)
+        if not cost_data:
+            static_pricing = get_static_pricing(model_name)
+            if static_pricing:
+                # Convert from per-1M-tokens to per-token
+                cost_data = {
+                    'input_cost_per_token': static_pricing['input'] / 1_000_000,
+                    'output_cost_per_token': static_pricing['output'] / 1_000_000,
+                    'cache_read_input_token_cost': static_pricing.get('cached', 0) / 1_000_000
+                }
+                used_lookup = f"static pricing: {model_name}"
+                log.info(f"📋 Using static pricing for '{model_name}': ${static_pricing['input']}/1M input, ${static_pricing['output']}/1M output")
 
         if not cost_data:
-            log.warning(
-                f"⚠️ No cost data found for model '{model_name}' "
+            log.error(
+                f"❌ UNCONFIGURED MODEL COST: No cost data found for model '{model_name}' "
+                f"after exhausting all lookup methods. "
                 f"(fallback: {fallback_model or 'none'}, "
-                f"env mapping: {_BASE_MODEL_MAPPING.get(model_name, 'none')})"
+                f"env mapping: {_BASE_MODEL_MAPPING.get(model_name, 'none')}, "
+                f"static pricing: not found). "
+                f"Cost will default to $0.00. Admin must configure pricing in model_costs table."
             )
+            _unconfigured_cost_models.add(model_name)
             return (0.0, 0.0, 0.0, 0.0)
         
         # Log successful lookup method
@@ -752,6 +861,39 @@ class ModelCostService:
 
 # Global cost service instance
 _cost_service = ModelCostService()
+
+# Track models that have no configured cost (used by /get/models API)
+_unconfigured_cost_models: set = set()
+
+
+def get_unconfigured_cost_models() -> List[str]:
+    """Return list of model names that had zero cost after all lookup attempts."""
+    return sorted(_unconfigured_cost_models)
+
+
+def scan_unconfigured_models(available_models: List[str]) -> List[str]:
+    """
+    Compare available models against the cost cache and return those with
+    missing or all-zero pricing. This is called on every GET /get/models
+    request and at startup to ensure freshness.
+    """
+    unconfigured = []
+    for model in available_models:
+        cost_data = _cost_service._cache.get(model)
+        if not cost_data:
+            unconfigured.append(model)
+        else:
+            input_cost = cost_data.get('input_cost_per_token', 0) or 0
+            output_cost = cost_data.get('output_cost_per_token', 0) or 0
+            if input_cost == 0 and output_cost == 0:
+                unconfigured.append(model)
+    return unconfigured
+
+
+async def reload_cost_cache():
+    """Reload the cost cache from database. Call after admin CRUD operations."""
+    await _cost_service._load_costs_from_db()
+    log.info(f"Cost cache reloaded: {len(_cost_service._cache)} models")
 
 
 # ==========================================
@@ -783,6 +925,11 @@ def start_cost_update_scheduler():
     global _scheduler_task, _scheduler_running
     
     if not _config.enabled:
+        return
+
+    use_litellm = os.getenv("USE_LITELLM_PROXY_FLAG", "false").lower() == "true"
+    if not use_litellm:
+        log.info("⏭️ LiteLLM proxy disabled - skipping periodic cost sync from LiteLLM API. Using model_costs table + static pricing.")
         return
     
     if _scheduler_task and not _scheduler_task.done():
@@ -858,6 +1005,7 @@ class StandaloneTokenLogger:
         agent_type: Optional[str] = None,
         agent_component: Optional[str] = None,
         deployment_model: Optional[str] = None,
+        department_name: Optional[str] = None,
     ):
         """
         Log token usage to token_usage_logs table with categorization
@@ -917,21 +1065,23 @@ class StandaloneTokenLogger:
                     await conn.execute(
                         """
                         INSERT INTO token_usage_logs (
-                            timestamp, agent_id, agent_name, model_name, session_id, user_id, request_id,
+                            agent_id, agent_name, model_name, session_id, user_id, request_id,
                             prompt_tokens, completion_tokens, total_tokens, cached_tokens,
                             prompt_tokens_cost, cached_tokens_cost, completion_tokens_cost, total_cost,
                             status, error_message,
                             call_category, call_sub_category, call_operation,
-                            tool_id, tool_name, evaluation_type, agent_type, agent_component
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
-                                  $18, $19, $20, $21, $22, $23, $24, $25)
+                            tool_id, tool_name, evaluation_type, agent_type, agent_component,
+                            department_name
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+                                  $17, $18, $19, $20, $21, $22, $23, $24, $25)
                         """,
-                        datetime.now(), agent_id, agent_name, model_name, session_id, user_id, request_id,
+                        agent_id, agent_name, model_name, session_id, user_id, request_id,
                         prompt_tokens, completion_tokens, total_tokens, cached_tokens,
                         prompt_cost, cached_cost, completion_cost, total_cost,
                         status, None,  # error_message
                         call_category, call_sub_category, call_operation,
-                        tool_id, tool_name, evaluation_type, agent_type, agent_component
+                        tool_id, tool_name, evaluation_type, agent_type, agent_component,
+                        department_name or "General"
                     )
                     log.info(
                         f"✅ Token usage logged: model={model_name}, category={call_category}, "
@@ -943,16 +1093,17 @@ class StandaloneTokenLogger:
                     await conn.execute(
                         """
                         INSERT INTO token_usage_logs (
-                            timestamp, agent_id, agent_name, model_name, session_id, user_id, request_id,
+                            agent_id, agent_name, model_name, session_id, user_id, request_id,
                             prompt_tokens, completion_tokens, total_tokens, cached_tokens,
                             prompt_tokens_cost, cached_tokens_cost, completion_tokens_cost, total_cost,
-                            status, error_message
+                            status, error_message, department_name
                         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
                         """,
-                        datetime.now(), agent_id, agent_name, model_name, session_id, user_id, request_id,
+                        agent_id, agent_name, model_name, session_id, user_id, request_id,
                         prompt_tokens, completion_tokens, total_tokens, cached_tokens,
                         prompt_cost, cached_cost, completion_cost, total_cost,
-                        status, None  # error_message
+                        status, None,  # error_message
+                        department_name or "General"
                     )
                     log.info(
                         f"✅ Token usage logged (legacy): model={model_name}, agent_id={agent_id}, "
@@ -1140,8 +1291,9 @@ class _ADKTokenTracker:
                 user_id = session_ctx[0] if session_ctx and session_ctx[0] != 'Unassigned' else None
                 session_id = session_ctx[1] if session_ctx and session_ctx[1] != 'Unassigned' else None
                 agent_id = session_ctx[3] if session_ctx and session_ctx[3] != 'Unassigned' else None
+                department_name = session_ctx[21] if session_ctx and len(session_ctx) > 21 and session_ctx[21] != 'Unassigned' else None
             except Exception:
-                user_id = session_id = agent_id = None
+                user_id = session_id = agent_id = department_name = None
 
             await log_token_usage(
                 model_name=model,
@@ -1153,6 +1305,7 @@ class _ADKTokenTracker:
                 user_id=user_id,
                 status="success",
                 call_category="agent_inference",
+                department_name=department_name,
             )
             log.info(
                 f"✅ [ADKTokenTracker] Logged ADK usage: model={model}, "
@@ -1193,13 +1346,16 @@ async def register_tracker_hooks():
     try:
         await initialize_tracker()
 
-        # Register the ADK callback with LiteLLM if not already present
-        existing_types = {type(c) for c in litellm.callbacks}
-        if _ADKTokenTracker not in existing_types:
-            litellm.callbacks.append(_ADKTokenTracker())
-            log.info("🪝 [ADKTokenTracker] LiteLLM callback registered for Google ADK path")
+        use_litellm = os.getenv("USE_LITELLM_PROXY_FLAG", "false").lower() == "true"
+        if use_litellm:
+            existing_types = {type(c) for c in litellm.callbacks}
+            if _ADKTokenTracker not in existing_types:
+                litellm.callbacks.append(_ADKTokenTracker())
+                log.info("🪝 [ADKTokenTracker] LiteLLM callback registered for Google ADK path")
+            else:
+                log.info("🪝 [ADKTokenTracker] LiteLLM callback already registered")
         else:
-            log.info("🪝 [ADKTokenTracker] LiteLLM callback already registered")
+            log.info("⏭️ LiteLLM proxy disabled - skipping LiteLLM callback registration")
 
         log.info("🪝 Standalone token tracking hooks registered successfully")
     except Exception as e:
@@ -1224,4 +1380,7 @@ __all__ = [
     "init_request_accumulator",
     "record_to_accumulator",
     "get_and_clear_accumulator",
+    "get_unconfigured_cost_models",
+    "scan_unconfigured_models",
+    "reload_cost_cache",
 ]

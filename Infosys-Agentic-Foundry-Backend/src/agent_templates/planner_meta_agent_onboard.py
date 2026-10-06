@@ -1,7 +1,7 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
 import asyncio
 from typing import TypedDict, Dict, Any, Optional, Union
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers.string import StrOutputParser
 from langgraph.graph import StateGraph, END, START
 
@@ -179,7 +179,7 @@ class PlannerMetaAgentOnboard(BaseMetaTypeAgentOnboard):
             db_connection_names: Optional list of database connection names to include in prompt.
         """
         from ..prompts.prompts import file_context_system_prompt_generator
-        from langchain.prompts import PromptTemplate
+        from langchain_core.prompts import PromptTemplate
         from langchain_core.output_parsers.string import StrOutputParser
         import os
         
@@ -236,5 +236,22 @@ class PlannerMetaAgentOnboard(BaseMetaTypeAgentOnboard):
             f.write(file_context_prompt)
         
         log.info("File-context prompt saved to: %s", file_context_path)
+        
+        # --- Fire-and-forget blob sync ---
+        try:
+            _sp = os.getenv('STORAGE_PROVIDER', '')
+            if _sp:
+                from src.utils.workspace_blob_sync import WorkspaceBlobSync
+                from src.storage import get_storage_client
+                _client = get_storage_client(_sp)
+                _syncer = WorkspaceBlobSync(
+                    storage_client=_client,
+                    workspace_root="./agent_workspaces",
+                    department=user_department,
+                )
+                _syncer.schedule_file_context_prompt_sync(agent_name)
+        except Exception:
+            pass  # Non-critical
+        # ---
 
 

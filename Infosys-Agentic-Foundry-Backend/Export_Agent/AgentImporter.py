@@ -242,6 +242,23 @@ class AgentImporter:
     #                    FILE CONFLICT RESOLUTION                           #
     # ===================================================================== #
 
+    @staticmethod
+    def _sync_user_upload(rel_path: str):
+        """Best-effort blob sync of a single user upload file."""
+        try:
+            _sp = os.getenv('STORAGE_PROVIDER', '')
+            if _sp:
+                from src.utils.workspace_blob_sync import WorkspaceBlobSync
+                from src.storage import get_storage_client
+                _client = get_storage_client(_sp)
+                _syncer = WorkspaceBlobSync(
+                    storage_client=_client,
+                    project_root=os.path.abspath("."),
+                )
+                _syncer.schedule_user_upload_sync(rel_path)
+        except Exception:
+            pass
+
     async def _resolve_and_import_files(
         self, uploads_dir: str, result: Dict
     ) -> Dict[str, str]:
@@ -275,6 +292,8 @@ class AgentImporter:
                             new_target = os.path.join(target_uploads, new_rel)
                             os.makedirs(os.path.dirname(new_target), exist_ok=True)
                             shutil.copy2(src_file, new_target)
+                            # --- Hyper-scale blob sync ---
+                            self._sync_user_upload(new_rel)
                             file_renames[rel_path] = new_rel
                             result["files"]["renamed"].append({
                                 "original": rel_path,
@@ -285,6 +304,8 @@ class AgentImporter:
                         # No conflict → copy
                         os.makedirs(os.path.dirname(target_file), exist_ok=True)
                         shutil.copy2(src_file, target_file)
+                        # --- Hyper-scale blob sync ---
+                        self._sync_user_upload(rel_path)
                         result["files"]["imported"].append({
                             "file": rel_path,
                             "message": "File imported successfully.",

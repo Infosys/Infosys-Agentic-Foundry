@@ -31,7 +31,9 @@ class BaseAIModelService(ABC):
         api_version: Optional[str] = None,
         model: Optional[str] = None,
         temperature: Optional[float] = None,
-        chat_history_manager: Optional[ChatStateHistoryManagerRepository] = None
+        chat_history_manager: Optional[ChatStateHistoryManagerRepository] = None,
+        extra_headers: Optional[Dict[str, str]] = None,
+        gateway_mode: bool = False
     ):
         """
         Initializes the BaseAIModelService.
@@ -41,7 +43,8 @@ class BaseAIModelService(ABC):
             model: The specific model identifier (e.g., 'gpt-4o', 'gemini-pro', 'azure/gpt-4o').
             api_base: Optional API base URL (e.g., for Azure).
             api_version: Optional API version (e.g., for Azure).
-            **llm_config_kwargs: Additional keyword arguments for the LLM client/completion method.
+            extra_headers: Optional dict of extra HTTP headers to include in every LLM call.
+            gateway_mode: If True, treat endpoint as OpenAI-compatible gateway (not Azure-native).
         """
         self._api_key = api_key
         self._api_base = api_base
@@ -49,12 +52,14 @@ class BaseAIModelService(ABC):
         self._model = model
         self._temperature = temperature
         self._chat_history_manager = chat_history_manager
+        self._gateway_mode = gateway_mode
 
         # Agent-specific state, to be set by create_agent
         self._system_prompt: Optional[str] = None
         self._tools_json_schema: List[Dict[str, Any]] = []
         self._tools_callable_instances: Dict[str, Callable] = {}
         self._agent_config_kwargs: Dict[str, Any] = {} # Stores agent-specific settings like max_tool_call_iterations
+        self._extra_headers: Optional[Dict[str, str]] = extra_headers  # Extra HTTP headers to forward on every LLM call
 
         # Additional keys
         self.first_tool_id_placeholder = "__first_tool_id__"
@@ -209,7 +214,9 @@ class BaseAIModelService(ABC):
                 api_version=self._api_version,
                 model=self._model,
                 temperature = self._temperature,
-                chat_history_manager=self._chat_history_manager
+                chat_history_manager=self._chat_history_manager,
+                extra_headers=dict(self._extra_headers) if self._extra_headers else None,
+                gateway_mode=self._gateway_mode
             )
         # Copy over mutable runtime state (shallow copy is enough)
         new_obj._system_prompt = self._system_prompt
@@ -229,6 +236,7 @@ class BaseAIModelService(ABC):
         tools: Optional[List[Union[Callable, MCPToolAdapter]]] = None,
         model: str = None,
         temperature: Optional[float] = None,
+        extra_headers: Optional[Dict[str, str]] = None,
         **agent_config_kwargs: Any
     ) -> "BaseAIModelService":
         """
@@ -239,6 +247,7 @@ class BaseAIModelService(ABC):
             system_prompt: The system prompt (initial instructions) for the agent.
             tools: A list of callable Python functions that the agent can use as tools.
             temperature: The sampling temperature for the LLM.
+            extra_headers: Optional dict of extra HTTP headers to include in every LLM call.
             **agent_config_kwargs: Additional agent-specific configuration (e.g., max_tool_call_iterations).
 
         Returns:
@@ -253,6 +262,8 @@ class BaseAIModelService(ABC):
         new_agent._system_prompt = system_prompt
         if temperature is not None:
             new_agent._temperature = temperature
+        if extra_headers is not None:
+            new_agent._extra_headers = extra_headers
         new_agent._agent_config_kwargs = agent_config_kwargs
 
         new_agent._tools_json_schema = []

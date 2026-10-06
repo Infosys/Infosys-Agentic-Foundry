@@ -7,6 +7,12 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import TextareaWithActions from "../commonComponents/TextareaWithActions";
 import { isAuthenticatedDownloadLink, handleAuthenticatedDownload } from "../../utils/downloadUtils";
+import { safeStringifyMessage, buildDebugExecutor, resolveBotMessageText, resolveResponseParts, normalizeInferenceResult, normalizeDebugExecutorSteps } from "../../utils/messageUtils";
+import {
+  hasStructuredToolCallDetails,
+  hasToolCallDetailsInMessage,
+  resolveToolCallAdditionalDetails,
+} from "../../utils/toolCallDetailsUtils";
 
 import {
   BOT,
@@ -25,18 +31,22 @@ import {
   APIs,
   PLANNER_META_AGENT,
   WORKFLOW_AGENT,
+  SKILL_AGENT,
 } from "../../constant";
 import LoadingChat from "./LoadingChat";
 import AccordionPlanSteps from "../commonComponents/Accordions/AccordionPlanSteps";
 import PlanVerifier from "./PlanVerifier";
 import parse from "html-react-parser";
 import ToolCallFinalResponse from "./ToolCallFinalResponse";
+import HookApprovalCard from "./HookApprovalCard";
+import SkillInterruptCard from "./SkillInterruptCard";
 import { useChatServices } from "../../services/chatService";
 import chatBubbleCss from "./ChatBubble.module.css";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faUser, faRobot, faChevronDown } from "@fortawesome/free-solid-svg-icons";
 import { formatResponseTimeSeconds, formatMessageTimestamp } from "../../utils/timeFormatter";
 import ExecutionStepsList from "./ExecutionStepsList";
+import SkillRoutingBanner from "./SkillRoutingBanner";
 
 const JSON_INDENT = 2;
 const FEEDBACK_TIMEOUT_MS = 5000;
@@ -135,6 +145,7 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
     isHuman,
     lastResponse,
     toolInterrupt,
+    skillVerifier,
     setLikeIcon,
     oldSessionId,
     session,
@@ -230,6 +241,7 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
             ? data.toolcallData.additional_details[0].additional_kwargs.tool_calls.map((tc) => (typeof tc === "string" ? tc : JSON.stringify(tc)))
             : [],
         tool_verifier_flag: Boolean(toolInterrupt),
+        skill_verifier_flag: Boolean(skillVerifier),
         response_formatting_flag: Boolean(isCanvasEnabled),
         context_flag: Boolean(isContextEnabled),
         file_context_management_flag: Boolean(isFileContextEnabled),
@@ -274,6 +286,7 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
             ? data.toolcallData.additional_details[0].additional_kwargs.tool_calls.map((tc) => (typeof tc === "string" ? tc : JSON.stringify(tc)))
             : [],
         tool_verifier_flag: Boolean(toolInterrupt),
+        skill_verifier_flag: Boolean(skillVerifier),
         response_formatting_flag: Boolean(isCanvasEnabled),
         context_flag: Boolean(isContextEnabled),
         file_context_management_flag: Boolean(isFileContextEnabled),
@@ -384,6 +397,8 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
     const chats = [];
     if (!chatHistory) return chats;
 
+    chatHistory = normalizeInferenceResult(chatHistory);
+
     // If this is an error response (e.g. LLM connection error), extract the error message
     // and present it cleanly instead of processing executor_messages normally
     if (chatHistory.error_type || chatHistory.error) {
@@ -408,6 +423,8 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
     const localPlanVerifierText =
       chatHistory?.raw?.plan_verifier || chatHistory?.plan_verifier || (typeof chatHistory?.plan_verifier === "string" ? chatHistory.plan_verifier : "") || planVerifierText || "";
 
+    const executorCount = chatHistory?.executor_messages?.length || 0;
+
     chatHistory?.executor_messages?.forEach((item, index) => {
       // Find existing USER message with matching query to preserve its timestamp
       const existingUserMsg = messageData.find((msg) => msg.type === USER && msg.message === item?.user_query && msg.start_timestamp);
@@ -426,44 +443,65 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
         end_timestamp: item?.end_timestamp || null,
       });
 
-      // Build bot message using existing fallbacks
-      let botMessage = item?.final_response || item?.response || item?.message || "";
+      // Build bot message — prefer canonical fields and strip parse-fallback wrappers.
+      let botMessage = resolveBotMessageText(item, chatHistory);
 
-      let synthesized = null;
-      if (item?.tools_used && !(Array.isArray(item?.additional_details) && item.additional_details.length > 0)) {
-        try {
-          const toolCalls = Object.entries(item.tools_used).map(([id, tu]) => {
-            const argsObj = tu?.arguments ?? tu?.args ?? {};
-            const serialized = typeof argsObj === "string" ? argsObj : JSON.stringify(argsObj || {});
-            return {
-              id,
-              function: { name: tu?.name || tu?.tool_name || id, arguments: serialized },
-              output: tu?.output ?? tu?.tool_output ?? null,
-            };
-          });
-          synthesized = [{ additional_kwargs: { tool_calls: toolCalls } }];
-        } catch (e) {
-          synthesized = null;
-        }
-      }
-
+      let synthesized = resolveToolCallAdditionalDetails(item, chatHistory);
       const toolcallData = { ...(item || {}), ...(synthesized ? { additional_details: synthesized } : {}) };
 
-      const _planArr = getPlanForMessage(item) || null;
+      // Extract plan: prefer from executor message, fallback to interrupt_metadata.plan, then top-level chatHistory.plan
+      const _planArr = getPlanForMessage(item)
+        || (Array.isArray(chatHistory?.interrupt_metadata?.plan) && chatHistory.interrupt_metadata.plan.length > 0 ? chatHistory.interrupt_metadata.plan : null)
+        || (Array.isArray(chatHistory?.plan) && chatHistory.plan.length > 0 ? chatHistory.plan : null);
 
-      // Tool interrupt case: suppress bot message if tool calls exist
-      if (toolInterrupt && Array.isArray(toolcallData.additional_details) && toolcallData.additional_details.length > 0) {
+      // Tool interrupt case: suppress bot message if tool calls exist.
+      // Also handle backend-driven HITL interrupt (approval_rules → is_tool_interrupted)
+      // and interrupt_metadata.interrupt_type === "tool_interrupt".
+      const backendInterrupted = Boolean(chatHistory?.is_tool_interrupted);
+      const hasInterruptMetadata = Boolean(chatHistory?.interrupt_metadata);
+      const isToolInterruptMeta = chatHistory?.interrupt_metadata?.interrupt_type === "tool_interrupt";
+      // When the backend explicitly signals interrupt we ALWAYS suppress botMessage
+      // and block the parts fallback — hybrid agents may return a non-empty wrapper
+      // { "response": "text" } as an intermediate value during the pending phase, and
+      // safeStringifyMessage would otherwise unwrap it and prevent the approve/reject
+      // card from rendering.
+      const backendSignalsInterrupt = backendInterrupted || isToolInterruptMeta;
+
+      const initialBotMessage = botMessage;
+      let interruptCleared = false;
+
+      // If the executor message has a real plain-string final_response, the interrupt was
+      // resolved by the user and the backend is returning the actual answer. In this case
+      // we must NOT blank the message — even when is_tool_interrupted is still true in the
+      // response (GoogleADK / LangGraph validator flows leave the flag set on the final
+      // response after approval). Hybrid agents that send an intermediate object-wrapper
+      // like { "response": "..." } are still safely handled because typeof object !== "string".
+      const hasFinalResponseString = typeof item?.final_response === "string" && item.final_response.trim() !== "";
+      const isActiveInterrupt = !hasFinalResponseString && (toolInterrupt || backendSignalsInterrupt);
+
+      if (isActiveInterrupt && hasStructuredToolCallDetails(toolcallData.additional_details)) {
         botMessage = "";
-      } else {
+        if (!initialBotMessage || backendSignalsInterrupt) interruptCleared = true;
+      }
+      // Also blank message for hook_approval interrupt — HookApprovalCard will render instead
+      if (hasInterruptMetadata && chatHistory.interrupt_metadata.interrupt_type === "hook_approval") {
+        botMessage = "";
+        interruptCleared = true;
+      }
+      // Also blank message for skill_interrupt — SkillInterruptCard will render instead
+      if (hasInterruptMetadata && chatHistory.interrupt_metadata.interrupt_type === "skill_interrupt") {
+        botMessage = "";
+        interruptCleared = true;
+      }
+      // Also blank message for plan_verification / plan_feedback — PlanVerifier will render instead
+      if (hasInterruptMetadata && (chatHistory.interrupt_metadata.interrupt_type === "plan_verification" || chatHistory.interrupt_metadata.interrupt_type === "plan_feedback")) {
+        botMessage = "";
+        interruptCleared = true;
+      }
+      if (!interruptCleared && (!hasInterruptMetadata || (chatHistory.interrupt_metadata.interrupt_type !== "hook_approval" && chatHistory.interrupt_metadata.interrupt_type !== "skill_interrupt" && chatHistory.interrupt_metadata.interrupt_type !== "plan_verification" && chatHistory.interrupt_metadata.interrupt_type !== "plan_feedback"))) {
         // Plan verifier fallback when empty and human verifier active
         if ((!botMessage || botMessage.trim() === "") && isHuman && localPlanVerifierText) {
           botMessage = localPlanVerifierText;
-        }
-
-        // Parts fallback
-        if ((!botMessage || botMessage.trim() === "") && Array.isArray(item?.parts) && item.parts.length > 0) {
-          const partsText = item.parts.map((p) => (p?.data?.content || p?.text || p?.content || "").trim()).filter((t) => t.length > 0);
-          if (partsText.length > 0) botMessage = partsText.join("\n\n");
         }
 
         // Tool output fallback (first tool)
@@ -481,15 +519,19 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
         userText: stableQuery,
         msgId: `plan-${stableQuery}-${index}`,
         steps: JSON.stringify(item?.agent_steps, null, JSON_INDENT),
-        debugExecutor: item?.additional_details,
+        debugExecutor: buildDebugExecutor(item, chatHistory),
         // Attach plan (if any) extracted from details or top-level
         ...(Array.isArray(_planArr) && _planArr.length > 0 ? { plan: _planArr } : {}),
-        parts: item?.parts || [],
+        parts: resolveResponseParts(item, chatHistory, index === executorCount - 1),
         show_canvas: item?.show_canvas || false,
         plan_verifier: Boolean(localPlanVerifierText),
         response_time: item?.response_time || chatHistory?.response_time || null,
         start_timestamp: item?.start_timestamp || null,
         end_timestamp: item?.end_timestamp || null,
+        // Propagate backend-driven HITL interrupt flag so downstream UI can show approve/reject
+        is_tool_interrupted: Boolean(chatHistory?.is_tool_interrupted),
+        // Propagate interrupt_metadata for hook_approval / tool_interrupt routing
+        ...(chatHistory?.interrupt_metadata ? { interrupt_metadata: chatHistory.interrupt_metadata } : {}),
       });
     });
 
@@ -528,6 +570,7 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
       prev_response: lastResponse || {},
       final_response_feedback: user_feedback,
       tool_verifier_flag: Boolean(toolInterrupt),
+      skill_verifier_flag: Boolean(skillVerifier),
       response_formatting_flag: Boolean(isCanvasEnabled),
       context_flag: Boolean(isContextEnabled),
       file_context_management_flag: Boolean(isFileContextEnabled),
@@ -681,6 +724,7 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
       model_name: model,
       reset_conversation: false,
       tool_verifier_flag: Boolean(toolInterrupt),
+      skill_verifier_flag: Boolean(skillVerifier),
       tool_feedback: JSON.stringify(argData),
       response_formatting_flag: Boolean(isCanvasEnabled),
       context_flag: Boolean(isContextEnabled),
@@ -768,6 +812,7 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
       model_name: model,
       reset_conversation: false,
       tool_verifier_flag: Boolean(toolInterrupt),
+      skill_verifier_flag: Boolean(skillVerifier),
       tool_feedback: "yes",
       response_formatting_flag: Boolean(isCanvasEnabled),
       context_flag: Boolean(isContextEnabled),
@@ -849,6 +894,158 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
     setGenerateButton(false);
     setFetching(false);
   };
+
+  /**
+   * submitFeedbackNo — Reject a tool call (hook_approval interrupt).
+   * Sends tool_feedback: "no" so the backend aborts the pending tool execution.
+   */
+  const submitFeedbackNo = async (data) => {
+    setIsEditable(false);
+    setLoadingText("Generating");
+    setGenerateButton(true);
+    setFetching(true);
+
+    props.setIsStreaming?.(true);
+    props.setCurrentNodeIndex?.(-1);
+
+    const payload = {
+      framework_type: framework,
+      agentic_application_id: agentSelectValue,
+      query: data?.userText || lastResponse?.query || "",
+      session_id: oldSessionId !== "" ? oldSessionId : session,
+      model_name: model,
+      reset_conversation: false,
+      tool_verifier_flag: Boolean(toolInterrupt),
+      skill_verifier_flag: Boolean(skillVerifier),
+      tool_feedback: "no",
+      response_formatting_flag: Boolean(isCanvasEnabled),
+      context_flag: Boolean(isContextEnabled),
+      file_context_management_flag: Boolean(isFileContextEnabled),
+      evaluation_flag: Boolean(onlineEvaluatorFlag),
+      plan_verifier_flag: Boolean(isHuman),
+      mentioned_agentic_application_id: mentionedAgent?.agentic_application_id || null,
+      validator_flag: useValidator,
+      enable_streaming_flag: true,
+      temperature: temperature,
+      message_queue: Boolean(isMessageQueueEnabled),
+      ...(toolInterrupt && { interrupt_items: selectedInterruptTools || [] }),
+    };
+
+    let nodeIndex = Array.isArray(nodes) ? nodes.length - 1 : -1;
+    const onStreamChunk = (obj) => {
+      if (!obj || typeof obj !== "object") return;
+      if (obj.event_type === "error" || obj.error || obj.error_type) return;
+
+      const nodeName = obj["Node Name"] || obj.node_name || obj.node || obj.name || null;
+      const statusVal = obj.Status || obj.status || obj.state || null;
+
+      let contentVal = null;
+      if (obj.content && typeof obj.content === "string") {
+        contentVal = obj.content;
+      } else if (obj["Tool Output"]) {
+        const toolOutput = obj["Tool Output"];
+        contentVal = typeof toolOutput === "string" ? toolOutput : JSON.stringify(toolOutput);
+      } else if (obj.raw) {
+        if (obj.raw.content) contentVal = typeof obj.raw.content === "string" ? obj.raw.content : JSON.stringify(obj.raw.content);
+        else if (obj.raw.executor_agent) contentVal = JSON.stringify(obj.raw.executor_agent);
+      }
+
+      if (nodeName || statusVal || contentVal) {
+        if (nodeIndex < 0) nodeIndex = 0;
+        else nodeIndex += 1;
+        props.setCurrentNodeIndex?.(nodeIndex);
+        props.setNodes?.((prev) => [...prev, { content: contentVal, raw: obj.raw || {} }]);
+      }
+    };
+
+    const response = await getChatQueryResponse(payload, APIs.CHAT_INFERENCE, onStreamChunk);
+    setMessageData(converToChatFormat(response) || []);
+    props.setIsStreaming?.(false);
+    props.setCurrentNodeIndex?.(-1);
+    setLoadingText("");
+    setGenerateButton(false);
+    setFetching(false);
+  };
+
+  /**
+   * submitSkillFeedback — Handle skill_interrupt approve/modify/reject.
+   * Sends skill_feedback with the appropriate value.
+   * @param {Object} data - The chat message object
+   * @param {string} feedbackValue - "approve" | "reject" | "<skill_name>"
+   */
+  const submitSkillFeedback = async (data, feedbackValue) => {
+    setIsEditable(false);
+    setLoadingText("Generating");
+    setGenerateButton(true);
+    setFetching(true);
+
+    props.setIsStreaming?.(true);
+    props.setCurrentNodeIndex?.(-1);
+
+    const payload = {
+      framework_type: framework,
+      agentic_application_id: agentSelectValue,
+      query: data?.userText || lastResponse?.query || "",
+      session_id: oldSessionId !== "" ? oldSessionId : session,
+      model_name: model,
+      reset_conversation: false,
+      tool_verifier_flag: Boolean(toolInterrupt),
+      skill_verifier_flag: Boolean(skillVerifier),
+      skill_feedback: feedbackValue,
+      response_formatting_flag: Boolean(isCanvasEnabled),
+      context_flag: Boolean(isContextEnabled),
+      file_context_management_flag: Boolean(isFileContextEnabled),
+      evaluation_flag: Boolean(onlineEvaluatorFlag),
+      plan_verifier_flag: Boolean(isHuman),
+      mentioned_agentic_application_id: mentionedAgent?.agentic_application_id || null,
+      validator_flag: useValidator,
+      enable_streaming_flag: true,
+      temperature: temperature,
+      message_queue: Boolean(isMessageQueueEnabled),
+    };
+
+    let nodeIndex = Array.isArray(nodes) ? nodes.length - 1 : -1;
+    const onStreamChunk = (obj) => {
+      if (!obj || typeof obj !== "object") return;
+      if (obj.event_type === "error" || obj.error || obj.error_type) return;
+
+      const nodeName = obj["Node Name"] || obj.node_name || obj.node || obj.name || null;
+      const statusVal = obj.Status || obj.status || obj.state || null;
+
+      let contentVal = null;
+      if (obj.content && typeof obj.content === "string") {
+        contentVal = obj.content;
+      } else if (obj["Tool Output"]) {
+        const toolOutput = obj["Tool Output"];
+        contentVal = typeof toolOutput === "string" ? toolOutput : JSON.stringify(toolOutput);
+      } else if (obj.raw) {
+        if (obj.raw.content) contentVal = typeof obj.raw.content === "string" ? obj.raw.content : JSON.stringify(obj.raw.content);
+        else if (obj.raw.executor_agent) contentVal = JSON.stringify(obj.raw.executor_agent);
+      }
+
+      if (nodeName && statusVal) {
+        nodeIndex++;
+        const newNode = {
+          "Node Name": nodeName,
+          Status: statusVal,
+          ...(contentVal && { content: contentVal }),
+        };
+        props.setNodes?.((prev) => [...prev, newNode]);
+        props.setCurrentNodeIndex?.(nodeIndex);
+      } else if (contentVal) {
+        props.setNodes?.((prev) => [...prev, { content: contentVal, raw: obj.raw || {} }]);
+      }
+    };
+
+    const response = await getChatQueryResponse(payload, APIs.CHAT_INFERENCE, onStreamChunk);
+    setMessageData(converToChatFormat(response) || []);
+    props.setIsStreaming?.(false);
+    props.setCurrentNodeIndex?.(-1);
+    setLoadingText("");
+    setGenerateButton(false);
+    setFetching(false);
+  };
+
   const handleDislikeFeedBack = async () => {
     setClose(true);
     setLoadingText("Re-generating");
@@ -867,14 +1064,16 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
     }
 
     // Automatically enter edit mode for the latest tool interrupt message
+    // Skip hook_approval / skill_interrupt — their own cards manage state
     const lastToolInterrupt = [...messageData]
       .slice()
       .reverse()
       .find((m) => {
         if (!m || m.type !== BOT) return false;
         if (m.message !== "") return false;
-        const details = m?.toolcallData?.additional_details;
-        return Array.isArray(details) && details.length > 0 && details[0]?.additional_kwargs && Object.keys(details[0].additional_kwargs || {}).length > 0;
+        if (m?.interrupt_metadata?.interrupt_type === "hook_approval") return false;
+        if (m?.interrupt_metadata?.interrupt_type === "skill_interrupt") return false;
+        return hasToolCallDetailsInMessage(m);
       });
 
     if (lastToolInterrupt) {
@@ -1024,32 +1223,60 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
           // EXCEPTION: Don't skip if the bubble has a plan that needs user approval (plan verifier case)
           // The plan should remain visible on screen while execution steps are loading
           const hasEmptyMessage = !hasMessageText && !hasMessageObject && !hasPartsContent;
-          const hasToolDetailsForVerifier = Array.isArray(data?.toolcallData?.additional_details)
-            ? data.toolcallData.additional_details.length > 0 && Object.keys(data.toolcallData.additional_details[0]?.additional_kwargs || {}).length > 0
-            : false;
-          const shouldKeepForPlanVerifier = hasPlanContent && hasEmptyMessage && isHuman;
-          const shouldKeepForToolVerifier = hasToolDetailsForVerifier && toolInterrupt && hasEmptyMessage;
+          const hasToolDetailsForVerifier = hasToolCallDetailsInMessage(data);
+          const shouldKeepForPlanVerifier = hasPlanContent && hasEmptyMessage && (isHuman || data?.interrupt_metadata?.interrupt_type === "plan_verification" || data?.interrupt_metadata?.interrupt_type === "plan_feedback");
+          const hasHookApproval = Boolean(data?.interrupt_metadata?.interrupt_type === "hook_approval");
+          const hasSkillInterrupt = Boolean(data?.interrupt_metadata?.interrupt_type === "skill_interrupt");
+          const hasToolInterruptMeta = Boolean(data?.interrupt_metadata?.interrupt_type === "tool_interrupt");
+          const hasAnyInterruptMeta = hasToolInterruptMeta || hasSkillInterrupt;
+
+          // Hybrid agents (and any agent) may carry non-empty `parts` during a
+          // tool-interrupt pending phase (before the user approves/rejects). In that
+          // state the parts content is intermediate streaming data, NOT the final
+          // response. We must treat the message as effectively empty so that:
+          //   • the approve/reject bubble is NOT skipped during streaming
+          //   • AccordionPlanSteps does NOT render the intermediate parts content
+          //   • input bar is correctly disabled while awaiting approval
+          const isInToolInterruptState =
+            !hasMessageText &&
+            !hasMessageObject &&
+            hasToolDetailsForVerifier &&
+            (toolInterrupt || data?.is_tool_interrupted || hasAnyInterruptMeta);
+
+          // For tool-interrupt and hook/skill interrupts: parts content is irrelevant —
+          // use a message-only empty check so the cards always render.
+          const isEffectivelyEmpty = isInToolInterruptState
+            ? !hasMessageText && !hasMessageObject   // ignore parts
+            : hasEmptyMessage;                       // normal check
+
+          const shouldKeepForToolVerifier =
+            (hasToolDetailsForVerifier && (toolInterrupt || data?.is_tool_interrupted || hasAnyInterruptMeta) && isEffectivelyEmpty) ||
+            (hasHookApproval && (!hasMessageText && !hasMessageObject)) ||
+            (hasSkillInterrupt && (!hasMessageText && !hasMessageObject));
           const shouldSkipBubble = props?.isStreaming && data?.type === BOT && index === currentArray.length - 1 && !shouldKeepForPlanVerifier && !shouldKeepForToolVerifier;
           if (shouldSkipBubble) {
             return null;
           }
-          const hasToolDetails = Array.isArray(data?.toolcallData?.additional_details)
-            ? data.toolcallData.additional_details.length > 0 && Object.keys(data.toolcallData.additional_details[0]?.additional_kwargs || {}).length > 0
-            : false;
-          const hasToolInterruptFallback = data?.message === "" && !isHuman && toolInterrupt && !("additional_details" in (data?.toolcallData || {}));
-          const shouldRenderAccordion = hasMessageText || hasMessageObject || hasPartsContent;
-          const shouldRenderBotMessage = shouldRenderAccordion || hasToolDetails || hasToolInterruptFallback;
+          const hasToolDetails = hasToolCallDetailsInMessage(data);
+          const hasToolInterruptFallback = data?.message === "" && !isHuman && (toolInterrupt || data?.is_tool_interrupted || hasAnyInterruptMeta) && !("additional_details" in (data?.toolcallData || {}));
+          // When in tool-interrupt state, suppress parts from triggering AccordionPlanSteps.
+          // The approve/reject card (ToolCallFinalResponse) is the only thing that should render.
+          const shouldRenderAccordion = hasMessageText || hasMessageObject || (isInToolInterruptState ? false : hasPartsContent);
+          const shouldRenderBotMessage = shouldRenderAccordion || hasToolDetails || hasToolInterruptFallback || hasHookApproval || hasAnyInterruptMeta;
 
           const willRenderInner = shouldRenderBotMessage || hasPlanContent;
           const hasVisibleBubbleContent = willRenderInner;
 
-          // Show plan only if Plan Verifier (isHuman) is enabled AND plan data exists
-          const shouldShowPlan = isHuman && Array.isArray(effectivePlan) && effectivePlan.length > 0;
+          // Show plan if Plan Verifier (isHuman) is enabled OR interrupt_metadata signals plan_verification/plan_feedback
+          const isPlanInterrupt = data?.interrupt_metadata?.interrupt_type === "plan_verification" || data?.interrupt_metadata?.interrupt_type === "plan_feedback";
+          const shouldShowPlan = (isHuman || isPlanInterrupt) && Array.isArray(effectivePlan) && effectivePlan.length > 0;
 
-          const hasPlanOnly = data.type === BOT && hasPlanContent && !hasMessageText && !hasMessageObject && !hasPartsContent && !hasToolDetails && !hasToolInterruptFallback;
+          // In tool-interrupt state parts are not real content — treat them as absent for hasPlanOnly/showAvatar
+          const effectivePartsContent = isInToolInterruptState ? false : hasPartsContent;
+          const hasPlanOnly = data.type === BOT && hasPlanContent && !hasMessageText && !hasMessageObject && !effectivePartsContent && !hasToolDetails && !hasToolInterruptFallback && !hasHookApproval && !hasAnyInterruptMeta;
 
           // Avatar should appear for substantive bot response OR plan-only bubbles per user request
-          const showAvatar = data.type === BOT && (hasMessageText || hasMessageObject || hasPartsContent || hasToolDetails || hasToolInterruptFallback || hasPlanOnly);
+          const showAvatar = data.type === BOT && (hasMessageText || hasMessageObject || effectivePartsContent || hasToolDetails || hasToolInterruptFallback || hasHookApproval || hasAnyInterruptMeta || hasPlanOnly);
 
           //Skip rendering entirely if bot and no inner content (removes empty chat bubble container)
           if (data?.type === BOT && !willRenderInner) {
@@ -1089,6 +1316,19 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                         </div>
                       )}
 
+                      {/* Skill Routing Banner - show for skill_agent responses */}
+                      {index === lastIndex &&
+                        !props.isStreaming &&
+                        !generating &&
+                        lastResponse?.skill_name && (
+                          <SkillRoutingBanner
+                            skillName={lastResponse.skill_name}
+                            skillDescription={lastResponse.skill_description}
+                            routingMethod={lastResponse.routing_method}
+                            routingConfidence={lastResponse.routing_confidence}
+                          />
+                        )}
+
                       {shouldShowPlan && (
                         <>
                           <PlanVerifier
@@ -1104,7 +1344,7 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                             }}
                             isProcessing={fetching || generating}
                             isApproved={approvedPlanQueries.has(data?.msgId) || hasMessageText || hasMessageObject || hasPartsContent}
-                            showButtons={isHuman}
+                            showButtons={isHuman || isPlanInterrupt}
                           />
                         </>
                       )}
@@ -1125,18 +1365,7 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                                 ? data.steps
                                 : ""
                           }
-                          debugExecutor={
-                            Array.isArray(data.debugExecutor)
-                              ? data.debugExecutor.map((item) =>
-                                typeof item === "object" && item !== null && !Array.isArray(item)
-                                  ? {
-                                    ...item,
-                                    content: typeof item.content === "object" ? JSON.stringify(item.content, null, 2) : item.content,
-                                  }
-                                  : item,
-                              )
-                              : []
-                          }
+                          debugExecutor={normalizeDebugExecutorSteps(data.debugExecutor)}
                           messageData={messageData}
                           isEditable={isEditable}
                           value={value}
@@ -1149,11 +1378,34 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                           agentType={agentType}
                         />
                       )}
+                      {/* ── Hook Approval Card (interrupt_metadata.interrupt_type === "hook_approval") ── */}
                       {data?.message === "" &&
-                        Array.isArray(data?.toolcallData?.additional_details) &&
-                        data.toolcallData.additional_details.length > 0 &&
-                        data.toolcallData.additional_details[0]?.additional_kwargs &&
-                        Object.keys(data.toolcallData.additional_details[0].additional_kwargs).length > 0 && (
+                        data?.interrupt_metadata?.interrupt_type === "hook_approval" && (
+                          <HookApprovalCard
+                            interruptMetadata={data.interrupt_metadata}
+                            messageData={data}
+                            onApprove={submitFeedbackYes}
+                            onReject={submitFeedbackNo}
+                            fetching={fetching}
+                            generating={generating}
+                          />
+                        )}
+                      {/* ── Skill Interrupt Card (interrupt_metadata.interrupt_type === "skill_interrupt") ── */}
+                      {data?.message === "" &&
+                        data?.interrupt_metadata?.interrupt_type === "skill_interrupt" && (
+                          <SkillInterruptCard
+                            interruptMetadata={data.interrupt_metadata}
+                            messageData={data}
+                            onSkillFeedback={submitSkillFeedback}
+                            fetching={fetching}
+                            generating={generating}
+                          />
+                        )}
+                      {/* ── Tool Call Final Response (tool_interrupt / tool_verifier — existing behavior) ── */}
+                      {data?.message === "" &&
+                        data?.interrupt_metadata?.interrupt_type !== "hook_approval" &&
+                        data?.interrupt_metadata?.interrupt_type !== "skill_interrupt" &&
+                        hasStructuredToolCallDetails(data?.toolcallData?.additional_details) && (
                           <>
                             <ToolCallFinalResponse
                               response={
@@ -1170,18 +1422,7 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                                     ? data.steps
                                     : ""
                               }
-                              debugExecutor={
-                                Array.isArray(data.debugExecutor)
-                                  ? data.debugExecutor.map((item) =>
-                                    typeof item === "object" && item !== null && !Array.isArray(item)
-                                      ? {
-                                        ...item,
-                                        content: typeof item.content === "object" ? JSON.stringify(item.content, null, JSON_INDENT) : item.content,
-                                      }
-                                      : item,
-                                  )
-                                  : []
-                              }
+                              debugExecutor={normalizeDebugExecutorSteps(data.debugExecutor)}
                               messageData={data}
                               isEditable={isEditable}
                               value={value}
@@ -1198,7 +1439,9 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                               generating={generating}
                               agentType={agentType}
                               submitFeedbackYes={submitFeedbackYes}
-                              canExecute={toolInterrupt}
+                              submitFeedbackNo={submitFeedbackNo}
+                              canExecute={toolInterrupt || data?.is_tool_interrupted || !!data?.interrupt_metadata?.interrupt_type}
+                              interruptMetadata={data?.interrupt_metadata}
                             />
                           </>
                         )}
@@ -1258,18 +1501,7 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                                 ? data.steps
                                 : ""
                           }
-                          debugExecutor={
-                            Array.isArray(data.debugExecutor)
-                              ? data.debugExecutor.map((item) =>
-                                typeof item === "object" && item !== null && !Array.isArray(item)
-                                  ? {
-                                    ...item,
-                                    content: typeof item.content === "object" ? JSON.stringify(item.content, null, 2) : item.content,
-                                  }
-                                  : item,
-                              )
-                              : []
-                          }
+                          debugExecutor={normalizeDebugExecutorSteps(data.debugExecutor)}
                           messageData={messageData}
                           isEditable={isEditable}
                           value={value}

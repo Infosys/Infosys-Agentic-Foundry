@@ -206,7 +206,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
     setSubmitting(true);
     try {
       const serverId = serverData?.tool_id || serverData?.id;
-      let url = `${APIs.RESTORE_SERVERS}${serverId}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
+      let url = `${APIs.RESTORE_SERVERS}/${serverId}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
       const nameToUse = overrideName || serverRestoreNewName.trim();
       if (nameToUse) url += `&new_name=${encodeURIComponent(nameToUse)}`;
       const response = await postData(url, undefined, { silent: true });
@@ -272,7 +272,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
     setSubmitting(true);
     try {
       const serverId = serverData?.tool_id || serverData?.id;
-      const url = `${APIs.DELETE_SERVERS_PERMANENTLY}${serverId}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
+      const url = `${APIs.DELETE_SERVERS_PERMANENTLY}/${serverId}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
       const response = await deleteData(url);
       if (response?.is_delete) {
         const statusMsg = response?.status_message || response?.message;

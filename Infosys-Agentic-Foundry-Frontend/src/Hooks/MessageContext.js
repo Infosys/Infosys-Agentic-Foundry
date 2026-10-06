@@ -19,16 +19,20 @@ export const MessageProvider = ({ children }) => {
     setShowPopup(false);
   }, []);
 
-  // Auto-hide success/error messages after 5 seconds
+  // Auto-hide success/error/warning messages after 5 seconds
   useEffect(() => {
-    if (showPopup && message && (message.type === "success" || message.type === "error")) {
+    if (
+      showPopup &&
+      message &&
+      (message.type === "success" || message.type === "error" || message.type === "warning")
+    ) {
       const timer = setTimeout(() => {
         removeMessage();
       }, 5000);
-      
+
       return () => clearTimeout(timer);
     }
-  }, [showPopup, message]);
+  }, [showPopup, message, removeMessage]);
 
   return (
     <MessageContext.Provider value={{ addMessage, removeMessage, message, setShowPopup, showPopup }}>

@@ -39,15 +39,16 @@ from src.tools.tool_export_import_service import ToolExportImportService
 from src.inference.workflow_inference import WorkflowInference
 
 from src.api.dependencies import ServiceProvider # The dependency provider
-from src.utils.secrets_handler import get_user_secrets, current_user_email, get_public_key, get_group_secrets, current_user_department, current_request_headers
+from src.api.async_response import supports_async
 from src.auth.dependencies import get_current_user, setup_tool_user_context
 from src.auth.models import User, UserRole
 from src.config.constants import DatabaseName
-from src.decorators.tool_access import resource_access, require_role, authorized_tool, current_tool_user, get_tool_user_context, ToolUserContext
+from src.decorators.tool_access import ToolUserContext
 
 
 from phoenix.otel import register
 from telemetry_wrapper import logger as log, update_session_context
+from src.utils.llm_request_tracker import with_request_tracking
 from src.utils.phoenix_manager import ensure_project_registered, traced_project_context_sync
 
 from src.auth.authorization_service import AuthorizationService
@@ -171,9 +172,14 @@ def _discover_tools(mcp_obj, exec_globals: Optional[dict] = None, debug: bool = 
         if hasattr(mcp_obj, 'get_tools') and callable(getattr(mcp_obj, 'get_tools')):
             raw = mcp_obj.get_tools()
             if inspect.iscoroutine(raw):
-                # Do not attempt asyncio.run inside existing loops; just skip async variant for now.
-                log('get_tools() returned coroutine - skipping await (sync context).')
-                raw = None
+                # get_tools() is async — run it in a new event loop (we're in a sync context here).
+                try:
+                    import asyncio
+                    raw = asyncio.get_event_loop().run_until_complete(raw) if not asyncio.get_event_loop().is_running() else None
+                except Exception:
+                    raw = None
+                if raw is None:
+                    log('get_tools() returned coroutine - skipping await (sync context).')
             if raw is not None:
                 tools = normalize_collection(raw)
                 log(f"strategy:get_tools count:{len(tools)}")
@@ -221,7 +227,11 @@ def _discover_tools(mcp_obj, exec_globals: Optional[dict] = None, debug: bool = 
                 continue
             attr = getattr(mcp_obj, name)
             if callable(attr) and hasattr(attr, '__code__'):
-                scanned[name] = attr
+                # Only include functions that come from the user's inline code,
+                # not methods from the MCP framework library itself.
+                filename = getattr(attr.__code__, 'co_filename', '')
+                if '<inline_mcp>' in filename:
+                    scanned[name] = attr
         if scanned:
             tools = scanned
             log(f"strategy:attribute_scan count:{len(tools)}")
@@ -578,6 +588,8 @@ async def _execute_tool_with_timeout(func, args: dict, timeout_sec: int) -> tupl
 
 # EXPORT:EXCLUDE:START
 @router.post("/add")
+@supports_async("tool_onboard")
+@with_request_tracking("tool_operation")
 async def add_tool_endpoint(
     request: Request,
     add_tool_request: AddToolRequest = Body(..., description="Tool details as JSON object."),
@@ -937,7 +949,7 @@ async def get_all_tools_endpoint(request: Request, tool_service: ToolService = D
     
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
 
     # If user is superadmin, do not pass department_name to service
     if user_data.role == UserRole.SUPER_ADMIN:
@@ -980,7 +992,7 @@ async def get_system_tools_endpoint(
 
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
 
     tools = await tool_service.get_system_tools(tool_name=tool_name)
 
@@ -988,45 +1000,6 @@ async def get_system_tools_endpoint(
         detail = f"No system tool found with name '{tool_name}'" if tool_name else "No system tools found"
         raise HTTPException(status_code=404, detail=detail)
     return tools
-
-
-@router.get("/get/{tool_id}")
-async def get_tool_by_id_endpoint(request: Request, tool_id: str, tool_service: ToolService = Depends(ServiceProvider.get_tool_service), authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service), user_data: User = Depends(get_current_user)):
-    """
-    Retrieves a tool by its ID.
-
-    Parameters:
-    ----------
-    id : str
-        The ID of the tool to be retrieved.
-
-    Returns:
-    -------
-    dict
-        A dictionary containing the tool's details.
-        If the tool is not found, raises an HTTPException with status code 404.
-    """
-    # Check permissions first
-    user_department = user_data.department_name 
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "tools", user_department):
-        raise HTTPException(status_code=403, detail="You don't have permission to view tools.")
-    
-    user_id = request.cookies.get("user_id")
-    user_session = request.cookies.get("user_session")
-    update_session_context(tool_id=tool_id, user_session=user_session, user_id=user_id)
-
-    # If user is superadmin, do not pass department_name to service
-    if user_data.role == UserRole.SUPER_ADMIN:
-        tool = await tool_service.get_tool(tool_id=tool_id)
-    else:
-        tool = await tool_service.get_tool(tool_id=tool_id, department_name=user_data.department_name)
-
-    if not tool:
-        raise HTTPException(status_code=404, detail="Tool not found")
-    update_session_context(tool_id='Unassigned')
-    
-    
-    return tool
 
 
 @router.get("/{tool_id}/versions")
@@ -1127,7 +1100,7 @@ async def get_tools_by_list_endpoint(request: Request, tool_ids: List[str], tool
     """Retrieves tools by a list of IDs."""
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
     
     # Check permissions first
     user_department = user_data.department_name 
@@ -1173,7 +1146,7 @@ async def get_tools_by_list_endpoint(request: Request, tool_ids: List[str], tool
     }
 
 
-@router.get("/get/search-paginated/")
+@router.get("/get/search-paginated")
 async def search_paginated_tools_endpoint(
         request: Request,
         search_value: Optional[str] = Query(None),
@@ -1193,7 +1166,7 @@ async def search_paginated_tools_endpoint(
     
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
     # If SUPER_ADMIN, do not restrict by department; otherwise include department_name
     if user_data.role == UserRole.SUPER_ADMIN:
         result = await tool_service.get_tools_by_search_or_page(
@@ -1217,7 +1190,7 @@ async def search_paginated_tools_endpoint(
     return result
 
 
-@router.get("/get/tools-and-validators-search-paginated/")
+@router.get("/get/tools-and-validators-search-paginated")
 async def search_paginated_tools_and_validators_endpoint(
         request: Request,
         search_value: Optional[str] = Query(None),
@@ -1248,7 +1221,7 @@ async def search_paginated_tools_and_validators_endpoint(
     
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
     
     if user_data.role == UserRole.SUPER_ADMIN:
         result = await tool_service.get_all_tools_and_validators_by_search_or_page(
@@ -1277,6 +1250,43 @@ async def search_paginated_tools_and_validators_endpoint(
     return result
 
 
+@router.get("/get/{tool_id}")
+async def get_tool_by_id_endpoint(request: Request, tool_id: str, tool_service: ToolService = Depends(ServiceProvider.get_tool_service), authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service), user_data: User = Depends(get_current_user)):
+    """
+    Retrieves a tool by its ID.
+
+    Parameters:
+    ----------
+    id : str
+        The ID of the tool to be retrieved.
+
+    Returns:
+    -------
+    dict
+        A dictionary containing the tool's details.
+        If the tool is not found, raises an HTTPException with status code 404.
+    """
+    # Check permissions first
+    user_department = user_data.department_name 
+    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "tools", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to view tools.")
+    
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+    update_session_context(tool_id=tool_id, user_session=user_session, user_id=user_id)
+
+    # If user is superadmin, do not pass department_name to service
+    if user_data.role == UserRole.SUPER_ADMIN:
+        tool = await tool_service.get_tool(tool_id=tool_id)
+    else:
+        tool = await tool_service.get_tool(tool_id=tool_id, department_name=user_data.department_name)
+
+    if not tool:
+        raise HTTPException(status_code=404, detail="Tool not found")
+    update_session_context(tool_id='Unassigned')
+    
+    
+    return tool
 
 
 @router.post("/get/by-tags")
@@ -1299,7 +1309,7 @@ async def get_tools_by_tag_endpoint(request: Request, tag_data: TagIdName, tool_
     
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
     
     if user_data.role == UserRole.SUPER_ADMIN:
         result = await tool_service.get_tools_by_tags(
@@ -1319,7 +1329,8 @@ async def get_tools_by_tag_endpoint(request: Request, tag_data: TagIdName, tool_
 
 
 # EXPORT:EXCLUDE:START
-@router.put("/update/{tool_id}")
+@with_request_tracking("tool_operation")
+@router.api_route("/update/{tool_id}", methods=["PUT", "POST"])
 async def update_tool_endpoint(request: Request, tool_id: str, update_request: UpdateToolRequest, tool_service: ToolService = Depends(ServiceProvider.get_tool_service),force_add:Optional[bool] = False, authorization_server: AuthorizationService = Depends(ServiceProvider.get_authorization_service), user_data: User = Depends(get_current_user)):
     """
     Updates a tool by its ID.
@@ -1439,7 +1450,7 @@ async def update_tool_endpoint(request: Request, tool_id: str, update_request: U
     return response
 
 
-@router.delete("/delete")
+@router.api_route("/delete", methods=["DELETE", "POST"])
 async def delete_tool_endpoint(request: Request, delete_request: DeleteToolRequest, tool_service: ToolService = Depends(ServiceProvider.get_tool_service), authorization_server: AuthorizationService = Depends(ServiceProvider.get_authorization_service), user_data: User = Depends(get_current_user)):
     """
     Deletes one or more tools by their IDs.
@@ -1570,7 +1581,7 @@ async def execute(request: Request, execute_request: ExecuteRequest, authorizati
     model_service = ServiceProvider.get_model_service()
     models = await model_service.get_all_available_model_names()
     model = models[0]
-    print("Model_name:",model)
+    log.debug(f"Model name for tool execution: {model}")
     initial_state = {
         "code": execute_request.code,
         "model": model,
@@ -1590,6 +1601,10 @@ async def execute(request: Request, execute_request: ExecuteRequest, authorizati
         "feedback_case8": None
     }
 
+    # ✅ Set context for tool operation categorization with explicit call_category
+    from telemetry_wrapper import set_context
+    set_context(tool_name="tool_validation", call_category="tool_operation")
+    
     # Await workflow validation results
     workflow_result = await graph.ainvoke(input=initial_state)
     e_cases = ["validation_case1","validation_case8","validation_case4"]
@@ -1614,18 +1629,6 @@ async def execute(request: Request, execute_request: ExecuteRequest, authorizati
         global_ns = {
             "__builtins__": get_sandbox_builtins(),
             **get_sandbox_extras(),
-            "get_user_secrets": get_user_secrets,
-            "current_user_email": current_user_email,
-            "current_user_department": current_user_department,
-            "get_public_secrets": get_public_key,
-            "get_group_secrets": get_group_secrets,
-            "current_request_headers": current_request_headers,
-            # Tool access control decorators - available for tool creators
-            "resource_access": resource_access,
-            "require_role": require_role,
-            "authorized_tool": authorized_tool,
-            "current_tool_user": current_tool_user,
-            "get_tool_user_context": get_tool_user_context
         }
         # storage_client=BaseAgentInference.storage_client
 
@@ -1853,7 +1856,7 @@ async def add_mcp_tool_endpoint(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=f"Invalid 'headers' field: {e}")
 
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
     try:
         status = await mcp_tool_service.create_mcp_tool(
             tool_name=tool_name.strip(),
@@ -1912,7 +1915,7 @@ async def get_all_mcp_tools_endpoint(request: Request, mcp_tool_service: McpTool
     
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
 
     try:
         if user_data.role == UserRole.SUPER_ADMIN:
@@ -1957,7 +1960,7 @@ async def get_system_mcp_tools_endpoint(
 
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
 
     mcp_tools = await mcp_tool_service.get_system_mcp_tools(tool_name=tool_name)
 
@@ -1967,45 +1970,7 @@ async def get_system_mcp_tools_endpoint(
     return mcp_tools
 
 
-@router.get("/mcp/get/{tool_id}")
-async def get_mcp_tool_by_id_endpoint(
-        request: Request,
-        tool_id: str,
-        mcp_tool_service: McpToolService = Depends(ServiceProvider.get_mcp_tool_service),
-        authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
-        user_data: User = Depends(get_current_user)
-    ):
-    """
-    Retrieves a single MCP tool (server definition) record by its ID.
-    """
-    # Check permissions first
-    user_department = user_data.department_name 
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "mcp_servers", user_department):
-        raise HTTPException(status_code=403, detail="You don't have permission to view MCP servers.")
-    
-    user_id = request.cookies.get("user_id")
-    user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id, tool_id=tool_id)
-
-    try:
-        if user_data.role == UserRole.SUPER_ADMIN:
-            tool = await mcp_tool_service.get_mcp_tool(tool_id=tool_id) 
-        else:
-            tool = await mcp_tool_service.get_mcp_tool(tool_id=tool_id, department_name=user_data.department_name)
-        if not tool:
-            raise HTTPException(status_code=404, detail=f"MCP tool with ID '{tool_id}' not found")
-        return tool
-    except HTTPException:
-        raise  # Re-raise HTTP exceptions (like 404) without wrapping them
-    except Exception as e:
-        log.error(f"Error retrieving MCP tool '{tool_id}': {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error retrieving MCP tool '{tool_id}': {str(e)}")
-
-    finally:
-        update_session_context(tool_id="Unassigned", user_session="Unassigned", user_id="Unassigned")
-
-
-@router.get("/mcp/get/search-paginated/")
+@router.get("/mcp/get/search-paginated")
 async def search_paginated_mcp_tools_endpoint(
         request: Request,
         search_value: Optional[str] = Query(None),
@@ -2028,7 +1993,7 @@ async def search_paginated_mcp_tools_endpoint(
     
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
 
     if mcp_type:
         allowed_mcp_types = set(["file", "url", "module"])
@@ -2074,8 +2039,46 @@ async def search_paginated_mcp_tools_endpoint(
     return result
 
 
+@router.get("/mcp/get/{tool_id}")
+async def get_mcp_tool_by_id_endpoint(
+        request: Request,
+        tool_id: str,
+        mcp_tool_service: McpToolService = Depends(ServiceProvider.get_mcp_tool_service),
+        authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+        user_data: User = Depends(get_current_user)
+    ):
+    """
+    Retrieves a single MCP tool (server definition) record by its ID.
+    """
+    # Check permissions first
+    user_department = user_data.department_name 
+    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "mcp_servers", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to view MCP servers.")
+    
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id, tool_id=tool_id)
+
+    try:
+        if user_data.role == UserRole.SUPER_ADMIN:
+            tool = await mcp_tool_service.get_mcp_tool(tool_id=tool_id) 
+        else:
+            tool = await mcp_tool_service.get_mcp_tool(tool_id=tool_id, department_name=user_data.department_name)
+        if not tool:
+            raise HTTPException(status_code=404, detail=f"MCP tool with ID '{tool_id}' not found")
+        return tool
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions (like 404) without wrapping them
+    except Exception as e:
+        log.error(f"Error retrieving MCP tool '{tool_id}': {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving MCP tool '{tool_id}': {str(e)}")
+
+    finally:
+        update_session_context(tool_id="Unassigned", user_session="Unassigned", user_id="Unassigned")
+
+
 # EXPORT:EXCLUDE:START
-@router.put("/mcp/update/{tool_id}")
+@router.api_route("/mcp/update/{tool_id}", methods=["PUT", "POST"])
 async def update_mcp_tool_endpoint(
         request: Request,
         tool_id: str,
@@ -2187,7 +2190,7 @@ async def update_mcp_tool_endpoint(
     return result
 
 
-@router.put("/mcp/update-remote-url/{tool_id}")
+@router.api_route("/mcp/update-remote-url/{tool_id}", methods=["PUT", "POST"])
 async def update_mcp_remote_url_endpoint(
     request: Request,
     tool_id: str,
@@ -2280,7 +2283,7 @@ async def update_mcp_remote_url_endpoint(
     return status
 
 
-@router.put("/mcp/update-module-config/{tool_id}")
+@router.api_route("/mcp/update-module-config/{tool_id}", methods=["PUT", "POST"])
 async def update_mcp_module_config_endpoint(
     request: Request,
     tool_id: str,
@@ -2373,7 +2376,7 @@ async def update_mcp_module_config_endpoint(
     return status
 
 
-@router.delete("/mcp/delete")
+@router.api_route("/mcp/delete", methods=["DELETE", "POST"])
 async def delete_mcp_tool_endpoint(
         request: Request,
         delete_request_data: DeleteToolRequest,
@@ -2516,18 +2519,21 @@ async def get_live_mcp_tool_details_endpoint(
         else:
             details = await mcp_tool_service.get_mcp_tool_details_for_display(tool_id=tool_id, department_name=user_data.department_name)
         if not details:
-            raise HTTPException(status_code=404, detail=f"No live tools found for MCP server '{tool_id}' or server is unreachable.")
+            raise HTTPException(status_code=404, detail="Server unreachable. Please check server status and try again.")
         
         # Check for error messages from the service layer
         if details and isinstance(details[0], dict) and "error" in details[0]:
-            raise HTTPException(status_code=500, detail=details[0]["error"])
+            # Return generic message to UI - detailed error already logged in service layer
+            raise HTTPException(status_code=502, detail=details[0]["error"])
             
         return details
     except HTTPException:
         raise # Re-raise HTTPExceptions directly
     except Exception as e:
-        log.error(f"Error getting live MCP tool details for '{tool_id}': {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error getting live MCP tool details for '{tool_id}': {str(e)}")
+        # Log detailed error for debugging
+        log.error(f"Error getting live MCP tool details for '{tool_id}': {str(e)}", exc_info=True)
+        # Return generic message to UI
+        raise HTTPException(status_code=502, detail="Server unreachable. Please check server status and try again.")
     finally:
         update_session_context(tool_id='Unassigned')
 
@@ -2596,14 +2602,17 @@ async def test_mcp_tools_endpoint(
         log.error(f"Permission error testing MCP tools for '{tool_id}': {str(e)}")
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
-        log.error(f"Error testing MCP tools for '{tool_id}': {str(e)}")
+        # Log detailed error for debugging
+        log.error(f"Error testing MCP tools for '{tool_id}': {str(e)}", exc_info=True)
         # Check for specific error types and return appropriate status codes
         if "not found" in str(e).lower():
             raise HTTPException(status_code=404, detail=str(e))
-        elif "connect" in str(e).lower() or "server" in str(e).lower():
-            raise HTTPException(status_code=502, detail=f"Failed to connect to MCP server: {str(e)}")
+        elif "connect" in str(e).lower() or "server" in str(e).lower() or "unreachable" in str(e).lower() or "timeout" in str(e).lower():
+            # Return generic message to UI for connection errors
+            raise HTTPException(status_code=502, detail="Server unreachable. Please check server status and try again.")
         else:
-            raise HTTPException(status_code=500, detail=f"Error testing MCP tools: {str(e)}")
+            # Return generic message for other errors
+            raise HTTPException(status_code=502, detail="Server unreachable. Please check server status and try again.")
     finally:
         update_session_context(tool_id='Unassigned')
 
@@ -2843,7 +2852,7 @@ async def get_all_tools_from_recycle_bin_endpoint(
     
     user_id = user_data.email
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
     
     if not await authorization_server.has_role(user_email=user_email_id, required_role=UserRole.ADMIN, department_name=user_data.department_name):
         log.warning(f"User {user_email_id} attempted to access tool recycle bin without admin privileges")
@@ -2882,7 +2891,7 @@ async def restore_tool_endpoint(
     
     user_id = user_data.email
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
     
     if not await authorization_server.has_role(user_email=user_email_id, required_role=UserRole.ADMIN, department_name=user_data.department_name):
         log.warning(f"User {user_email_id} attempted to restore tool without admin privileges")
@@ -2902,7 +2911,7 @@ async def restore_tool_endpoint(
     return result
 
 
-@router.delete("/recycle-bin/permanent-delete/{tool_id}")
+@router.api_route("/recycle-bin/permanent-delete/{tool_id}", methods=["DELETE", "POST"])
 async def delete_tool_from_recycle_bin_endpoint(
     request: Request, 
     tool_id: str, 
@@ -2922,7 +2931,7 @@ async def delete_tool_from_recycle_bin_endpoint(
     
     user_id = user_data.email
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
     if not await authorization_server.has_role(user_email=user_email_id, required_role=UserRole.ADMIN, department_name=user_data.department_name):
         log.warning(f"User {user_email_id} attempted to permanently delete tool without admin privileges")
         raise HTTPException(status_code=403, detail="Admin privileges required to permanently delete tools")
@@ -3037,7 +3046,7 @@ async def restore_deleted_version_endpoint(
     return result
 
 
-@router.delete("/recycle-bin/versions/permanent-delete/{tool_id}/{version}")
+@router.api_route("/recycle-bin/versions/permanent-delete/{tool_id}/{version}", methods=["DELETE", "POST"])
 async def permanently_delete_version_from_recycle_bin_endpoint(
     request: Request,
     tool_id: str,
@@ -3088,7 +3097,7 @@ async def get_all_mcp_tools_from_recycle_bin_endpoint(
     
     user_id = user_data.email
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
     
     if not await authorization_server.has_role(user_email=user_email_id, required_role=UserRole.ADMIN, department_name=user_data.department_name):
         log.warning(f"User {user_email_id} attempted to access MCP recycle bin without admin privileges")
@@ -3121,7 +3130,7 @@ async def restore_mcp_tool_endpoint(
     
     user_id = user_data.email
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
     
     if user_data.role == UserRole.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail="Superadmin is not allowed to restore MCP tools.")
@@ -3138,7 +3147,7 @@ async def restore_mcp_tool_endpoint(
     return result
 
 
-@router.delete("/mcp/recycle-bin/permanent-delete/{tool_id}")
+@router.api_route("/mcp/recycle-bin/permanent-delete/{tool_id}", methods=["DELETE", "POST"])
 async def delete_mcp_tool_from_recycle_bin_endpoint(
     request: Request,
     tool_id: str,
@@ -3204,7 +3213,7 @@ async def get_unused_tools_endpoint(
     
     user_id = user_data.email
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
     
     if not await authorization_server.has_role(user_email=user_id, required_role=UserRole.ADMIN, department_name=user_data.department_name):
         raise HTTPException(status_code=403, detail="Admin privileges required to get unused tools")
@@ -3289,7 +3298,7 @@ async def get_unused_mcp_tools_endpoint(
     
     user_id = user_data.email
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
     
     if not await authorization_server.has_role(user_email=user_id, required_role=UserRole.ADMIN, department_name=user_data.department_name):
         raise HTTPException(status_code=403, detail="Admin privileges required to get unused MCP tools")
@@ -3385,7 +3394,7 @@ async def get_all_validators_endpoint(request: Request, tool_service: ToolServic
     
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
 
     # If user is superadmin, do not pass department_name to service
     if user_data.role == UserRole.SUPER_ADMIN:
@@ -3398,7 +3407,7 @@ async def get_all_validators_endpoint(request: Request, tool_service: ToolServic
     return validators
 
 
-@router.get("/validators/get/search-paginated/")
+@router.get("/validators/get/search-paginated")
 async def search_paginated_validators_endpoint(
         request: Request,
         search_value: Optional[str] = Query(None),
@@ -3438,7 +3447,7 @@ async def search_paginated_validators_endpoint(
     
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
     
     # If SUPER_ADMIN, do not restrict by department; otherwise include department_name
     if user_data.role == UserRole.SUPER_ADMIN:
@@ -3463,6 +3472,7 @@ async def search_paginated_validators_endpoint(
         raise HTTPException(status_code=404, detail="No validator tools found matching criteria.")
     return result
 
+
 # EXPORT:EXCLUDE:START
 @router.get("/pending-modules")
 async def get_pending_modules_endpoint(
@@ -3478,7 +3488,7 @@ async def get_pending_modules_endpoint(
     """
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
     
     try:
         from src.database.repositories import get_all_pending_modules
@@ -3643,6 +3653,7 @@ def _find_latest_code_snippet_from_history(history: list) -> dict:
     return None
 
 
+@with_request_tracking("tool_generation_workflow")
 @router.post("/generate/workflow/chat")
 async def tool_generation_workflow_chat(
     request: Request,
@@ -4052,7 +4063,7 @@ async def switch_code_version(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.put("/generate/versions/label")
+@router.api_route("/generate/versions/label", methods=["PUT", "POST"])
 async def update_version_label(
     request: Request,
     payload: UpdateVersionLabelRequest,
@@ -4082,7 +4093,7 @@ async def update_version_label(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/generate/versions/delete")
+@router.api_route("/generate/versions/delete", methods=["DELETE", "POST"])
 async def delete_code_version(
     request: Request,
     payload: DeleteVersionRequest,
@@ -4113,7 +4124,7 @@ async def delete_code_version(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/generate/versions/clear/{session_id}")
+@router.api_route("/generate/versions/clear/{session_id}", methods=["DELETE", "POST"])
 async def clear_session_versions(
     request: Request,
     session_id: str,
@@ -4234,7 +4245,7 @@ async def get_latest_code(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/generate/conversation/clear/{session_id}")
+@router.api_route("/generate/conversation/clear/{session_id}", methods=["DELETE", "POST"])
 async def clear_conversation_history(
     request: Request,
     session_id: str,
@@ -4311,7 +4322,7 @@ class UpdateToolSharingRequest(BaseModel):
     shared_with_departments: List[str] = None
 
 
-@router.put("/{tool_id}/sharing")
+@router.api_route("/{tool_id}/sharing", methods=["PUT", "POST"])
 async def update_tool_sharing_endpoint(
     request: Request,
     tool_id: str,
@@ -4333,7 +4344,7 @@ async def update_tool_sharing_endpoint(
     """
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
 
     if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ADMIN]:
         raise HTTPException(status_code=403, detail="Only Admins can update tool sharing settings")
@@ -4376,7 +4387,7 @@ async def get_tool_sharing_info(
     """
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
     
     tool_records = await tool_service.get_tool(tool_id=tool_id)
     if not tool_records:
@@ -4409,7 +4420,7 @@ async def get_tools_shared_with_my_department(
     """
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
     
     department = current_user.department_name or 'General'
     
@@ -4449,7 +4460,7 @@ class UpdateMcpToolSharingRequest(BaseModel):
     shared_with_departments: List[str] = None
 
 
-@router.put("/mcp/{mcp_tool_id}/sharing")
+@router.api_route("/mcp/{mcp_tool_id}/sharing", methods=["PUT", "POST"])
 async def update_mcp_tool_sharing_endpoint(
     request: Request,
     mcp_tool_id: str,
@@ -4471,7 +4482,7 @@ async def update_mcp_tool_sharing_endpoint(
     """
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
 
     if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ADMIN]:
         raise HTTPException(status_code=403, detail="Only Admins can update MCP tool sharing settings")
@@ -4514,7 +4525,7 @@ async def get_mcp_tool_sharing_info(
     """
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
     
     tool_records = await mcp_tool_service.get_mcp_tool(tool_id=mcp_tool_id)
     if not tool_records:
@@ -4544,7 +4555,7 @@ async def get_mcp_tools_shared_with_department(
     """
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
     
     # Only allow users to see tools shared with their own department, or SuperAdmins to see any
     if current_user.role != UserRole.SUPER_ADMIN and current_user.department_name != department:
@@ -4575,7 +4586,7 @@ async def get_mcp_tools_shared_with_my_department(
     """
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="tool_operation")
     
     department = current_user.department_name or 'General'
     
@@ -4634,7 +4645,7 @@ async def export_tools_endpoint(
     StreamingResponse
         A .zip file download containing one .py file per tool.
     """
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "tools", user_data.department_name):
+    if not await authorization_service.check_export_tools_access(user_data.role, user_data.department_name):
         raise HTTPException(status_code=403, detail="You don't have permission to export tools.")
 
     try:
@@ -4697,7 +4708,7 @@ async def preview_import_tools_endpoint(
         - ready_count: Number of tools ready to import directly
         - skip_count: Number of tools that will be skipped (identical code)
     """
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "create", "tools", user_data.department_name):
+    if not await authorization_service.check_import_tools_access(user_data.role, user_data.department_name):
         raise HTTPException(status_code=403, detail="You don't have permission to import tools. Only admins and developers can perform this action.")
 
     if not zip_file.filename.endswith(".zip"):
@@ -4721,6 +4732,7 @@ async def preview_import_tools_endpoint(
     return {"status": "success", "result": result}
 
 
+@with_request_tracking("tool_operation")
 @router.post("/import")
 async def import_tools_endpoint(
     request: Request,
@@ -4768,7 +4780,7 @@ async def import_tools_endpoint(
         Summary with imported/failed/merged tool details.
         If validation_failed=true, contains validation_errors with per-name error details.
     """
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "create", "tools", user_data.department_name):
+    if not await authorization_service.check_import_tools_access(user_data.role, user_data.department_name):
         raise HTTPException(status_code=403, detail="You don't have permission to import tools. Only admins and developers can perform this action.")
 
     if not zip_file.filename.endswith(".zip"):
@@ -4842,7 +4854,7 @@ async def export_mcp_tools_endpoint(
     StreamingResponse
         A .zip file download containing one .json file per MCP tool.
     """
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "tools", user_data.department_name):
+    if not await authorization_service.check_export_servers_access(user_data.role, user_data.department_name):
         raise HTTPException(status_code=403, detail="You don't have permission to export MCP tools.")
 
     try:
@@ -4900,7 +4912,7 @@ async def import_mcp_tools_endpoint(
     dict
         Summary with imported/failed MCP tool details.
     """
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "create", "tools", user_data.department_name):
+    if not await authorization_service.check_import_servers_access(user_data.role, user_data.department_name):
         raise HTTPException(status_code=403, detail="You don't have permission to import MCP tools. Only admins and developers can perform this action.")
 
     if not zip_file.filename.endswith(".zip"):

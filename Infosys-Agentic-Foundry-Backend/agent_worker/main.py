@@ -37,7 +37,7 @@ from src.utils.secrets_handler import (
 
 from src.api.app_container import app_container
 from src.api.dependencies import ServiceProvider
-from agent_worker.kafka_agent_worker import AgentWorker
+from agent_worker.mq_agent_worker import AgentWorker
 from telemetry_wrapper import logger
 
 
@@ -80,7 +80,7 @@ async def lifespan(app: FastAPI):
     worker = AgentWorker(
         service_provider=service_provider,
     )
-    _worker_task = asyncio.create_task(worker.run_auto())
+    _worker_task = asyncio.create_task(worker.run())
     logger.info("Kafka agent worker started")
 
     yield  # ── app is running ──
@@ -92,6 +92,11 @@ async def lifespan(app: FastAPI):
             await _worker_task
         except asyncio.CancelledError:
             pass
+    if app_container.mq_manager:
+        try:
+            app_container.mq_manager.close()
+        except Exception as e:
+            logger.error(f"Error closing app_container MQ manager: {e}")
     if app_container.db_manager:
         await app_container.db_manager.close()
     logger.info("Agent worker service shut down")

@@ -45,7 +45,6 @@
 }
 
 .create-card:hover {
-  transform: translateY(-4px);
   border-color: rgba(0, 115, 207, 0.6);
   border-style: solid;
   background: rgba(255, 255, 255, 0.75);
@@ -234,7 +233,7 @@
 .card-container:nth-child(n+7) .card { animation-delay: 300ms; }
 
 .card:hover:not(.card-back) {
-  transform: var(--hover-lift, translateY(-4px));
+  transform: scale(1.02);
   background: rgba(255, 255, 255, 0.85);
   border-color: rgba(55, 172, 234, 0.55);
   box-shadow: 

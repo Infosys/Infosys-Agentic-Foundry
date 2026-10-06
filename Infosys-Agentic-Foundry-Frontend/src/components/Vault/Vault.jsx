@@ -5,6 +5,7 @@ import SVGIcons from "../../Icons/SVGIcons";
 import TextField from "../../iafComponents/GlobalComponents/TextField/TextField";
 import { APIs } from "../../constant";
 import { copyToClipboard } from "../../utils/clipboardUtils";
+import { extractErrorMessage } from "../../utils/errorUtils";
 import { getRoleFromToken, getEmailFromToken } from "../../utils/jwtUtils";
 import Loader from "../commonComponents/Loader";
 import SubHeader from "../commonComponents/SubHeader";
@@ -33,6 +34,9 @@ const LABELS = {
 const AUTO_MASK_TIMEOUT = 30000;
 const MAX_VALUE_LENGTH = 10000;
 const MAX_NAME_LENGTH = 255;
+
+const getVaultApiErrorMessage = (error, fallback) =>
+  extractErrorMessage(error)?.message || fallback;
 
 const Vault = () => {
   const { permissions, loading: permissionsLoading, hasPermission } = usePermissions();
@@ -387,7 +391,7 @@ print(fetch_weather("New York"))`;
 
     let response;
     try {
-      response = await postData(APIs.ADD_SECRET, res);
+      response = await postData(APIs.ADD_SECRET, res, { silent: true });
       await response;
       updatedRows[index].isSaved = true;
       updatedRows[index].isMasked = true;
@@ -397,7 +401,7 @@ print(fetch_weather("New York"))`;
       addMessage(response.message, "success");
     } catch (error) {
       console.error("Error saving secret:", error);
-      addMessage("Error saving secret", "error");
+      addMessage(getVaultApiErrorMessage(error, "Error saving secret."), "error");
     } finally {
       setLoading(false);
     }
@@ -421,7 +425,7 @@ print(fetch_weather("New York"))`;
 
     let response;
     try {
-      response = await postData(APIs.PUBLIC_ADD_SECRET, res);
+      response = await postData(APIs.PUBLIC_ADD_SECRET, res, { silent: true });
       await response;
       updatedRows[index].isSaved = true;
       updatedRows[index].isMasked = true;
@@ -431,7 +435,7 @@ print(fetch_weather("New York"))`;
       addMessage(response.message, "success");
     } catch (error) {
       console.error("Error saving public secret:", error);
-      addMessage("Error saving secret.", "error");
+      addMessage(getVaultApiErrorMessage(error, "Error saving public secret."), "error");
     } finally {
       setLoading(false);
     }
@@ -462,7 +466,7 @@ print(fetch_weather("New York"))`;
     try {
       // Use the group-specific vault items endpoint
       const apiUrl = APIs.GROUP_ADD_SECRET.replace("{group_name}", encodeURIComponent(selectedGroup));
-      const response = await postData(apiUrl, payload);
+      const response = await postData(apiUrl, payload, { silent: true });
 
       // 201 status means "Created" - this is successful for POST requests
       if (response) {
@@ -475,8 +479,7 @@ print(fetch_weather("New York"))`;
       }
     } catch (error) {
       console.error("Error creating group secret:", error);
-      const errorMessage = error?.response?.details || error?.details || error?.message || "Error creating group secret.";
-      addMessage(errorMessage, "error");
+      addMessage(getVaultApiErrorMessage(error, "Error creating group secret."), "error");
     } finally {
       setLoading(false);
     }
@@ -1132,7 +1135,7 @@ print(fetch_weather("New York"))`;
 
       const apiUrl = isSuperAdmin
         ? `${APIs.GET_GROUPS}`
-        : `${APIs.GET_GROUPS_BY_USER}${encodeURIComponent(userEmail)}`;
+        : `${APIs.GET_GROUPS_BY_USER}/${encodeURIComponent(userEmail)}`;
 
       const response = await fetchData(apiUrl);
 
@@ -1374,7 +1377,6 @@ print(fetch_weather("New York"))`;
         key_names: deletableSecrets,
       };
       let response = null;
-      const groupDeleteResults = [];
       if (activeTab === LABELS.PRIVATE) {
         response = await deleteData(APIs.DELETE_SECRET, res);
         if (response?.status_message || response?.message) {
@@ -1386,38 +1388,29 @@ print(fetch_weather("New York"))`;
           addMessage(response.status_message || response.message, response?.success === false ? "error" : "success");
         }
       } else if (activeTab === LABELS.GROUP && selectedGroupObj) {
-        // Group secrets delete - one by one as they use path-based API
-        for (const secretName of deletableSecrets) {
-          const apiUrl = APIs.GROUP_DELETE_SECRET
-            ?.replace("{group_name}", encodeURIComponent(selectedGroup))
-            ?.replace("{key_name}", encodeURIComponent(secretName));
-          if (apiUrl) {
-            const groupResp = await deleteData(apiUrl);
-            groupDeleteResults.push({ name: secretName, ...groupResp });
-            if (groupResp?.status_message || groupResp?.message) {
-              addMessage(`${secretName}: ${groupResp.status_message || groupResp.message}`, groupResp?.success === false ? "error" : "success");
-            }
-          }
+        response = await deleteGroupSecret(selectedGroup, deletableSecrets);
+        if (response?.status_message || response?.message) {
+          addMessage(response.status_message || response.message, response?.success === false ? "error" : "success");
         }
+        await loadGroupData(selectedGroup);
       }
 
       // Fallback generic message if no status_message was shown
-      if (
-        (!response || (!response?.status_message && !response?.message)) &&
-        (groupDeleteResults.length === 0 || !groupDeleteResults.some(r => r.status_message || r.message))
-      ) {
+      if (!response || (!response?.status_message && !response?.message)) {
         addMessage(`${deletableSecrets.length} secret(s) deleted successfully`, "success");
       }
       setSelectedPwd([]);
-      // Refresh data by removing deleted rows from state
-      setRows((prevRows) => {
-        const remaining = prevRows.filter((r) => !deletableSecrets.includes(r.name));
-        return remaining.length > 0
-          ? remaining
-          : role?.toUpperCase() !== "GUEST"
-            ? [{ name: "", value: "", isSaved: false, isMasked: false, isUpdated: false, originalName: "", originalValue: "" }]
-            : [];
-      });
+      if (activeTab !== LABELS.GROUP) {
+        // Refresh data by removing deleted rows from state
+        setRows((prevRows) => {
+          const remaining = prevRows.filter((r) => !deletableSecrets.includes(r.name));
+          return remaining.length > 0
+            ? remaining
+            : role?.toUpperCase() !== "GUEST"
+              ? [{ name: "", value: "", isSaved: false, isMasked: false, isUpdated: false, originalName: "", originalValue: "" }]
+              : [];
+        });
+      }
     } catch (error) {
       console.error("Error bulk deleting secrets:", error);
       addMessage("Error deleting secrets.", "error");
@@ -1628,21 +1621,24 @@ print(fetch_weather("New York"))`;
                                   onChange={(checked) => handleSecretSelectChange(row.name, checked)}
                                 />
                               )}
-                              <span className={styles.savedSctName} title={row.name}>{row.name}</span>
-                              <button
-                                className={styles.copyNameBtn}
-                                title="Copy secret name"
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  const success = await copyToClipboard(row.name);
-                                  if (success) addMessage("Secret name copied", "success");
-                                }}>
-                                <SVGIcons icon="copy" width={14} height={14} color="currentColor" />
-                              </button>
-                              <span className={styles.savedSctDivider}></span>
-                              <span className={styles.savedSctValue} title="Click the eye icon to reveal the value">
-                                ••••••••••••••••••
-                              </span>
+                              <div className={styles.savedSctInfo}>
+                                <div className={styles.savedSctNameRow}>
+                                  <span className={styles.savedSctName} title={row.name}>{row.name}</span>
+                                  <button
+                                    className={styles.copyNameBtn}
+                                    title="Copy secret name"
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      const success = await copyToClipboard(row.name);
+                                      if (success) addMessage("Secret name copied", "success");
+                                    }}>
+                                    <SVGIcons icon="copy" width={14} height={14} color="currentColor" />
+                                  </button>
+                                </div>
+                                <span className={styles.savedSctValue} title="Click the eye icon to reveal the value">
+                                  ••••••••••••••••••
+                                </span>
+                              </div>
                               <div className={styles.sctCardActions}>
                                 {/* View Button */}
                                 <button
@@ -1686,41 +1682,46 @@ print(fetch_weather("New York"))`;
                         return (
                           <div className={`${styles.savedSctCard} ${styles.revealedCard}`} key={originalIndex} ref={isLast ? lastRowRef : null}>
                             <div className={styles.savedSctRow}>
-                              <span className={styles.savedSctName} title={row.name}>{row.name}</span>
-                              <button
-                                className={styles.copyNameBtn}
-                                title="Copy secret name"
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  const success = await copyToClipboard(row.name);
-                                  if (success) addMessage("Secret name copied", "success");
-                                }}>
-                                <SVGIcons icon="copy" width={14} height={14} color="currentColor" />
-                              </button>
-                              <span className={styles.savedSctDivider}></span>
-                              <input
-                                type="text"
-                                value={row.isUpdated ? row.value : (row.value || revealedValue)}
-                                onChange={(e) => {
-                                  const newValue = e.target.value.substring(0, MAX_VALUE_LENGTH);
-                                  handleInputChange(originalIndex, "value", newValue);
-                                }}
-                                className={`${styles.inlineInput} ${styles.valueInput}`}
-                                placeholder="Secret value"
-                                title={row.isUpdated ? row.value : (row.value || revealedValue)}
-                                disabled={role?.toUpperCase() === "GUEST"}
-                              />
-                              <button
-                                className={styles.copyNameBtn}
-                                title="Copy secret value"
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  const val = row.isUpdated ? row.value : (row.value || revealedValue);
-                                  const success = await copyToClipboard(val);
-                                  if (success) addMessage("Secret value copied", "success");
-                                }}>
-                                <SVGIcons icon="copy" width={14} height={14} color="currentColor" />
-                              </button>
+                              <div className={styles.savedSctInfo}>
+                                <div className={styles.savedSctNameRow}>
+                                  <span className={styles.savedSctName} title={row.name}>{row.name}</span>
+                                  <button
+                                    className={styles.copyNameBtn}
+                                    title="Copy secret name"
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      const success = await copyToClipboard(row.name);
+                                      if (success) addMessage("Secret name copied", "success");
+                                    }}>
+                                    <SVGIcons icon="copy" width={14} height={14} color="currentColor" />
+                                  </button>
+                                </div>
+                                <div className={styles.savedSctNameRow}>
+                                  <input
+                                    type="text"
+                                    value={row.isUpdated ? row.value : (row.value || revealedValue)}
+                                    onChange={(e) => {
+                                      const newValue = e.target.value.substring(0, MAX_VALUE_LENGTH);
+                                      handleInputChange(originalIndex, "value", newValue);
+                                    }}
+                                    className={`${styles.inlineInput} ${styles.valueInput}`}
+                                    placeholder="Secret value"
+                                    title={row.isUpdated ? row.value : (row.value || revealedValue)}
+                                    disabled={role?.toUpperCase() === "GUEST"}
+                                  />
+                                  <button
+                                    className={styles.copyNameBtn}
+                                    title="Copy secret value"
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      const val = row.isUpdated ? row.value : (row.value || revealedValue);
+                                      const success = await copyToClipboard(val);
+                                      if (success) addMessage("Secret value copied", "success");
+                                    }}>
+                                    <SVGIcons icon="copy" width={14} height={14} color="currentColor" />
+                                  </button>
+                                </div>
+                              </div>
                               <div className={styles.sctCardActions}>
                                 {row.isUpdated ? (
                                   <>
@@ -1780,24 +1781,25 @@ print(fetch_weather("New York"))`;
                       return (
                         <div className={`${styles.savedSctCard} ${styles.newSecretCard}`} key={originalIndex} ref={isLast ? lastRowRef : null}>
                           <div className={styles.savedSctRow}>
-                            <input
-                              type="text"
-                              value={row.name}
-                              placeholder="Secret name"
-                              onChange={(e) => handleInputChange(originalIndex, "name", e.target.value)}
-                              className={styles.inlineInput}
-                            />
-                            <span className={styles.savedSctDivider}></span>
-                            <input
-                              type="text"
-                              value={row.value}
-                              placeholder="Secret value"
-                              onChange={(e) => {
-                                const newValue = e.target.value.substring(0, MAX_VALUE_LENGTH);
-                                handleInputChange(originalIndex, "value", newValue);
-                              }}
-                              className={`${styles.inlineInput} ${styles.valueInput}`}
-                            />
+                            <div className={styles.savedSctInfo}>
+                              <input
+                                type="text"
+                                value={row.name}
+                                placeholder="Secret name"
+                                onChange={(e) => handleInputChange(originalIndex, "name", e.target.value)}
+                                className={styles.inlineInput}
+                              />
+                              <input
+                                type="text"
+                                value={row.value}
+                                placeholder="Secret value"
+                                onChange={(e) => {
+                                  const newValue = e.target.value.substring(0, MAX_VALUE_LENGTH);
+                                  handleInputChange(originalIndex, "value", newValue);
+                                }}
+                                className={`${styles.inlineInput} ${styles.valueInput}`}
+                              />
+                            </div>
                             <div className={styles.sctCardActions}>
                               {/* Save Button */}
                               {role?.toUpperCase() !== "GUEST" && (

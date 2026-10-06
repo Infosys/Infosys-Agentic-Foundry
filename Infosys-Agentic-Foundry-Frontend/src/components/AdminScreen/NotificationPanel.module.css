@@ -375,6 +375,28 @@
   text-overflow: ellipsis;
 }
 
+/* Badge group — SSO + status on the same line */
+.badgeGroup {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* SSO registration badge */
+.ssoBadge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 4px 8px;
+  border-radius: 20px;
+  color: var(--app-primary-color, #0073cf);
+  background: color-mix(in srgb, var(--app-primary-color, #0073cf) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--app-primary-color, #0073cf) 25%, transparent);
+}
+
 /* Status Badge — pill style */
 .statusBadge {
   font-size: 11px;

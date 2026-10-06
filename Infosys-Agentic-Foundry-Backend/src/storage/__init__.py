@@ -39,5 +39,5 @@ def get_storage_client(provider_name: str) -> StorageInterface:
         return obj
     except Exception as e:
         log.error(f"Error initializing storage provider {provider_name}: {e}")
-        return None
+        raise RuntimeError(f"Failed to initialize storage provider '{provider_name}': {e}") from e
     

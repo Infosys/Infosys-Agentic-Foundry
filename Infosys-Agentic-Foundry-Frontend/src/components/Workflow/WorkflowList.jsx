@@ -8,7 +8,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import DisplayCard1 from "../../iafComponents/GlobalComponents/DisplayCard/DisplayCard1.jsx";
 import Button from "../../iafComponents/GlobalComponents/Buttons/Button.jsx";
-import { useWorkflowService } from "../../services/workflowService";
+import { useWorkflowService, parseWorkflowDeleteResponse } from "../../services/workflowService";
 import { useMessage } from "../../Hooks/MessageContext";
 import { useErrorHandler } from "../../Hooks/useErrorHandler";
 import { usePermissions } from "../../context/PermissionsContext";
@@ -58,10 +58,9 @@ const WorkflowList = ({ onCreateNew, onEditWorkflow }) => {
         user_email_id: loggedInUserEmail,
       });
       if (response && typeof response !== "string") {
-        const statusMsg = response.status_message || response.message;
-        if (statusMsg) {
-          const hasAnyFailure = Array.isArray(response.results) && response.results.some((r) => r.is_delete === false);
-          addMessage(statusMsg, hasAnyFailure ? "error" : "success");
+        const { ok, message } = parseWorkflowDeleteResponse(response);
+        if (message) {
+          addMessage(message, ok ? "success" : "error");
         }
       }
     } catch (error) {
@@ -230,10 +229,9 @@ const WorkflowList = ({ onCreateNew, onEditWorkflow }) => {
           user_email_id: loggedInUserEmail,
         });
         if (response && typeof response !== "string") {
-          const statusMsg = response.status_message || response.message;
-          if (statusMsg) {
-            const hasAnyFailure = Array.isArray(response.results) && response.results.some((r) => r.is_delete === false);
-            addMessage(statusMsg, hasAnyFailure ? "error" : "success");
+          const { ok, message } = parseWorkflowDeleteResponse(response);
+          if (message) {
+            addMessage(message, ok ? "success" : "error");
           }
         }
         fetchWorkflows(1, searchTerm, createdBy);
@@ -329,7 +327,7 @@ const WorkflowList = ({ onCreateNew, onEditWorkflow }) => {
               filters={[`Search: ${searchTerm}`]}
               onClearFilters={clearSearch}
               onCreateClick={canAddWorkflows ? onCreateNew : null}
-              createButtonLabel={canAddWorkflows ? "Create Workflow" : null}
+              createButtonLabel={canAddWorkflows ? "New Workflow" : null}
               showCreateButton={canAddWorkflows}
             />
           )}
@@ -339,7 +337,7 @@ const WorkflowList = ({ onCreateNew, onEditWorkflow }) => {
               message="No workflows found"
               subMessage={canAddWorkflows ? "Get started by creating your first workflow to orchestrate your agents" : "No workflows available"}
               onCreateClick={canAddWorkflows ? onCreateNew : null}
-              createButtonLabel={canAddWorkflows ? "Create Workflow" : null}
+              createButtonLabel={canAddWorkflows ? "New Workflow" : null}
               showClearFilter={false}
               showCreateButton={canAddWorkflows}
             />

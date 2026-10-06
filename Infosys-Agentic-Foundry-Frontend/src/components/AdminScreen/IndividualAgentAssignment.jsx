@@ -324,7 +324,7 @@ const IndividualAgentAssignment = () => {
     // Load the first page of assignments using the paginated endpoint
     try {
       await fetchPaginatedAssignments(1, itemsPerPage);
-    } catch (_) {}
+    } catch (_) { }
   };
 
   // Fetch paginated assignments from backend endpoint
@@ -414,7 +414,7 @@ const IndividualAgentAssignment = () => {
   // Function to refresh assignments for a specific user
   const refreshUserAssignments = async (userEmail) => {
     try {
-      const userAgentAccess = await fetchData(`${APIs.GET_USER_AGENT_ACCESS}${encodeURIComponent(userEmail)}`);
+      const userAgentAccess = await fetchData(`${APIs.GET_USER_AGENT_ACCESS}/${encodeURIComponent(userEmail)}`);
       if (userAgentAccess) {
         // Find user object to get name
         const userObj = users.find((u) => u.email === userEmail);
@@ -865,9 +865,9 @@ const IndividualAgentAssignment = () => {
             .trim();
           const displayedAssignments = s
             ? assignments.filter((a) => {
-                const combined = `${a.userName || a.name || a.user_email || a.userEmail || ""} ${a.agentName || a.agent_name || ""}`;
-                return combined.toLowerCase().includes(s);
-              })
+              const combined = `${a.userName || a.name || a.user_email || a.userEmail || ""} ${a.agentName || a.agent_name || ""}`;
+              return combined.toLowerCase().includes(s);
+            })
             : assignments;
 
           if (displayedAssignments.length === 0) {

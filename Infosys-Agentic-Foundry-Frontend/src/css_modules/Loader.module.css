@@ -10,7 +10,7 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 50;
+  z-index: 9999;
   border-radius: inherit;
   animation: iafFadeIn var(--transition-fast, 150ms) ease;
 }

@@ -1,7 +1,7 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
 from fastapi import APIRouter, Depends, HTTPException, status
 from src.schemas.admin_config_schemas import AdminConfigResponse, AdminConfigUpdateResponse, UpdateAdminConfigRequest
-from src.database.admin_config_service import AdminConfigService
+from src.database.services.admin_config_service import AdminConfigService
 from src.auth.dependencies import get_current_user
 from src.auth.models import User, UserRole
 from src.api.dependencies import ServiceProvider
@@ -35,7 +35,7 @@ async def get_admin_config(
         )
 
 
-@router.put("/limits", response_model=AdminConfigUpdateResponse, summary="Update admin configuration")
+@router.api_route("/limits", methods=["PUT", "POST"], response_model=AdminConfigUpdateResponse, summary="Update admin configuration")
 async def update_admin_config(
     update_request: UpdateAdminConfigRequest,
     user_data: User = Depends(get_current_user),
@@ -43,6 +43,16 @@ async def update_admin_config(
 ):
     """Update the admin configuration. Requires Admin or SuperAdmin role."""
     _require_admin_role(user_data)
+
+    # Validate guardrail_type against the proxy-synced registry
+    if update_request.guardrail_type is not None:
+        from src.utils.guardrail_helpers import guardrail_registry
+        if not guardrail_registry.is_valid(update_request.guardrail_type):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid guardrail_type '{update_request.guardrail_type}'. "
+                       f"Valid options: {[t['key'] for t in guardrail_registry.get_available_types()]}"
+            )
 
     try:
         updated_config = await admin_config_service.update_config(

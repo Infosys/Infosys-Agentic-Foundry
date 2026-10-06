@@ -1,0 +1,605 @@
+﻿/* ═══════════════════════════════════════════════════════
+   LLM Tracker — CSS Module (IAF design-system aligned)
+   Uses CSS variables from index.css / theme system
+   ═══════════════════════════════════════════════════════ */
+
+/* ── listWrapper override: column layout for table pages ── */
+.listWrapper {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-content: stretch;
+  gap: 0;
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+  padding: 8px 0 16px 0;
+}
+
+/* ── Stat strip row ─────────────────────────────────────── */
+.statStrip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-shrink: 0;
+}
+
+.statCard {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 0.2s ease;
+}
+
+.statCard:hover {
+  box-shadow: var(--shadow-card-hover);
+}
+
+.statCard.success {
+  border-left: 3px solid var(--success);
+}
+
+.statCard.danger {
+  border-left: 3px solid var(--danger);
+}
+
+.statValue {
+  font-size: 22px;
+  font-weight: var(--font-weight-bold);
+  color: var(--header-color);
+  line-height: 1.1;
+  font-family: var(--font-secondary);
+}
+
+.statCard.success .statValue { color: var(--success); }
+.statCard.danger  .statValue { color: var(--danger);  }
+
+.statLabel {
+  font-size: var(--font-size-xs);
+  color: var(--content-color);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: var(--font-weight-medium);
+}
+
+/* ── Badge ──────────────────────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.badgeSuccess {
+  background: rgba(22, 163, 74, 0.12);
+  color: var(--success);
+}
+
+.badgeDanger {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--danger);
+}
+
+/* ── Error banner ───────────────────────────────────────── */
+.errorWrap {
+  width: 100%;
+  padding: 8px 0;
+}
+
+.errorBanner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: rgba(239, 68, 68, 0.07);
+  border: 1px solid rgba(239, 68, 68, 0.22);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  color: var(--danger);
+  font-size: var(--font-size-sm);
+}
+
+/* 403 Access Denied — uses warning amber instead of red */
+.errorBanner403 {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.25);
+  color: var(--warning, #f59e0b);
+}
+
+.errorBannerText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.errorBannerText strong {
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-sm);
+}
+
+.errorBannerText span {
+  font-size: var(--font-size-xs);
+  opacity: 0.85;
+}
+
+/* ── Role scope badge (shown in SubHeader search-left slot) ── */
+.roleBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px 3px 8px;
+  border-radius: 999px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+  flex-shrink: 0;
+  border: 1px solid;
+}
+
+.roleBadgeSuperAdmin {
+  background: rgba(99, 102, 241, 0.1);
+  color: #6366f1;
+  border-color: rgba(99, 102, 241, 0.25);
+}
+
+.roleBadgeAdmin {
+  background: rgba(2, 93, 138, 0.1);
+  color: var(--app-primary-color);
+  border-color: rgba(2, 93, 138, 0.2);
+}
+
+.roleBadgeUser {
+  background: rgba(22, 163, 74, 0.08);
+  color: var(--success);
+  border-color: rgba(22, 163, 74, 0.2);
+}
+
+/* ── Table container (scrollable) ───────────────────────── */
+.tableContainer {
+  flex: 1;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: auto;
+  border-radius: var(--radius-lg);
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+.tableContainer::-webkit-scrollbar { width: 6px; height: 6px; }
+.tableContainer::-webkit-scrollbar-track { background: transparent; }
+.tableContainer::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+
+/* ── Data table ─────────────────────────────────────────── */
+.dataTable {
+  width: 100%;
+  min-width: 700px;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.dataTable thead {
+  background: var(--hover-background);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.dataTable th {
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: var(--font-weight-semibold);
+  color: var(--header-color);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+.dataTable tbody tr {
+  border-bottom: 1px solid var(--border);
+  transition: background-color 0.15s ease;
+}
+
+.dataTable tbody tr:last-child { border-bottom: none; }
+
+.dataTable td {
+  padding: 12px 16px;
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+
+/* Column helpers */
+.thNum, .tdNum { text-align: center; width: 120px; }
+.thChev, .tdChev { width: 36px; text-align: center; padding-left: 4px; padding-right: 8px; }
+.thId { min-width: 200px; }
+.tdDate { color: var(--content-color); font-size: var(--font-size-xs); white-space: nowrap; }
+
+/* Clickable row */
+.clickableRow { cursor: pointer; }
+.clickableRow:hover { background: var(--hover-background); }
+
+/* ID chip — monospace identifier */
+.idChip {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent-color);
+  background: var(--accent-light);
+  border-radius: 4px;
+  padding: 2px 8px;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* Sources cell — ellipsis with tooltip */
+.sourcesText {
+  display: inline-block;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--content-color);
+  font-size: var(--font-size-xs);
+  vertical-align: middle;
+}
+
+/* ── Level 4 — Calls view layout ───────────────── */
+
+/* Single direct flex child of listWrapper for the calls page */
+.callsView {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Stat strip + back button — fixed, never shrinks */
+.callsViewTop {
+  flex-shrink: 0;
+}
+
+/* Back navigation row */
+.callsBackRow {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+/* Back icon button */
+.backBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--content-color);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.backBtn:hover {
+  background: var(--hover-background);
+  color: var(--accent-color);
+  border-color: var(--accent-color);
+}
+
+/* Scrollable cards list */
+.callsContainer {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 16px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.callsContainer::-webkit-scrollbar { width: 6px; }
+.callsContainer::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+
+/* ── Call card ──────────────────────────────────────────── */
+.callCard {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;     /* clips border-radius; required for proper block rendering */
+  flex-shrink: 0;       /* cards never compress — outer container scrolls */
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 0.2s ease;
+}
+
+.callCard:hover {
+  box-shadow: var(--shadow-card-hover);
+}
+
+.callCardSuccess { border-left: 4px solid var(--success); }
+.callCardFailed  { border-left: 4px solid var(--danger);  }
+
+/* Card header bar */
+.callCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--hover-background);
+  border-bottom: 1px solid var(--border);
+}
+
+.callCardHeaderClickable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.callCardHeaderClickable:hover {
+  background: var(--card-bg);
+}
+
+.callCardLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.callIndex {
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-sm);
+  color: var(--header-color);
+  white-space: nowrap;
+}
+
+.callIdCode {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--content-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 300px;
+}
+
+.callTimestamp {
+  font-size: var(--font-size-xs);
+  color: var(--content-color);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Right slot of card header: timestamp + expand chevron */
+.callCardRight {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* Expand/collapse chevron — rotates 180° when open */
+.expandChevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  transition: transform 0.2s ease, background 0.15s ease;
+  flex-shrink: 0;
+}
+
+.expandChevronOpen {
+  transform: rotate(180deg);
+  background: var(--hover-background);
+}
+
+/* Status pill */
+.statusPill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.statusPillSuccess {
+  background: rgba(22, 163, 74, 0.12);
+  color: var(--success);
+}
+
+.statusPillFailed {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--danger);
+}
+
+/* Token summary row */
+.tokenRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-bottom: 1px solid var(--border);
+}
+
+.tokenCell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 8px;
+  gap: 3px;
+  border-right: 1px solid var(--border);
+}
+
+.tokenCell:last-child { border-right: none; }
+
+.tokenValue {
+  font-size: 18px;
+  font-weight: var(--font-weight-bold);
+  color: var(--header-color);
+  font-family: var(--font-secondary);
+}
+
+.tokenLabel {
+  font-size: var(--font-size-xs);
+  color: var(--content-color);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Call detail key-value grid */
+.callDetails {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Expandable details section — collapsed by default */
+.callDetailsExpandable {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Open state: combined selector (0-2-0 specificity) wins cleanly over base (0-1-0) */
+.callDetailsExpandable.callDetailsExpandableOpen {
+  max-height: 320px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.callDetailsExpandable.callDetailsExpandableOpen::-webkit-scrollbar { width: 5px; }
+.callDetailsExpandable.callDetailsExpandableOpen::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+.kvRow {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 12px;
+  align-items: start;
+  font-size: var(--font-size-sm);
+}
+
+.kvLabel {
+  color: var(--content-color);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+  font-size: var(--font-size-xs);
+  padding-top: 2px;
+}
+
+.kvValueWrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.kvValue {
+  color: var(--text-primary);
+  word-break: break-all;
+  flex: 1;
+  min-width: 0;
+}
+
+.kvMono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent-color);
+  word-break: break-all;
+}
+
+.kvCopyBtn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 4px;
+  margin-top: 1px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs, 3px);
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s, border-color 0.15s;
+}
+
+.kvCopyBtn:hover {
+  opacity: 1;
+  border-color: var(--accent-color);
+}
+
+.kvBold {
+  font-weight: var(--font-weight-bold);
+}
+
+.kvError {
+  color: var(--danger);
+  font-weight: var(--font-weight-medium);
+}
+
+/* Code / stack blocks */
+.codeBlock {
+  background: var(--code-bg, #f8f9fa);
+  border: 1px solid var(--code-border, var(--border-color));
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+  overflow-x: auto;
+  white-space: pre;
+  margin: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.stackBlock {
+  background: #1e1e2e;
+  color: #cdd6f4;
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  max-height: 200px;
+  overflow-y: auto;
+  overflow-x: auto;
+  white-space: pre;
+  margin: 0;
+}
+
+/* ── Responsive ─────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .statStrip { grid-template-columns: repeat(2, 1fr); }
+  .kvRow { grid-template-columns: 1fr; gap: 2px; }
+  .kvLabel { font-size: 11px; }
+  .callCardHeader { flex-direction: column; align-items: flex-start; }
+  .tokenRow { grid-template-columns: repeat(3, 1fr); }
+}

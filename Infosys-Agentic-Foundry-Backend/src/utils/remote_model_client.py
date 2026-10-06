@@ -4,9 +4,8 @@ Model Client for communicating with the FastAPI model server
 import os
 import requests
 from typing import List, Union, Any
-import logging
-
-logger = logging.getLogger(__name__)
+from telemetry_wrapper import logger
+from src.utils.helper_functions import get_requests_verify
 
 class ModelServerClient:
     """Client for communicating with the model server"""
@@ -21,7 +20,14 @@ class ModelServerClient:
                 self.base_url = None
         
         self.session = requests.Session()
+        # Scope the internal/corporate CA bundle to this session only (for https
+        # model servers). This never touches the global REQUESTS_CA_BUNDLE /
+        # SSL_CERT_FILE env, so the Azure OpenAI / GPT path keeps using the default
+        # trust store.
+        if self.base_url:
+            self.session.verify = get_requests_verify(self.base_url)
         self.server_available = False
+
         
         if not self.base_url:
             if not ModelServerClient._warning_logged:

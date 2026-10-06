@@ -54,17 +54,126 @@ def convert_value_type_of_candidate_as_given_in_reference(reference: dict, candi
     return result
 
 
+async def resolve_pending_user_department(agentic_application_id: str):
+    """
+    Resolve the working department for an unregistered (PENDING_APPROVAL) Azure AD user
+    from the agent's department, mirroring the chat inference flow.
+
+    Sets the department into the request ContextVars so downstream file/blob logic
+    (which reads current_user_department) operates within the agent's department.
+
+    Returns the resolved department name, or None if it could not be resolved.
+    """
+    from src.api.dependencies import ServiceProvider
+    from src.utils.secrets_handler import current_user_department, current_request_headers
+    from telemetry_wrapper import logger as log
+
+    if not agentic_application_id:
+        return None
+    try:
+        agent_service = ServiceProvider.get_agent_service()
+        agent_records = await agent_service.agent_repo.get_agent_record(agentic_application_id=agentic_application_id)
+        if agent_records:
+            department = agent_records[0].get("department_name")
+            if department:
+                current_user_department.set(department)
+                _headers = current_request_headers.get() or {}
+                _headers["x-user-department"] = department
+                current_request_headers.set(_headers)
+                log.info(f"PENDING_APPROVAL user: resolved agent department '{department}' from agent '{agentic_application_id}'")
+            return department
+        log.warning(f"PENDING_APPROVAL user: agent '{agentic_application_id}' not found while resolving department")
+    except Exception as e:
+        log.warning(f"PENDING_APPROVAL user: failed to resolve agent department for '{agentic_application_id}': {e}")
+    return None
+
+
 def resolve_and_get_additional_no_proxys():
-    no_proxy = os.environ.get("NO_PROXY", "")
-    additional_no_proxys = os.getenv("ADDITIONAL_NO_PROXYS", "")
-    if not additional_no_proxys:
-        return no_proxy
-    if not no_proxy:
-        return additional_no_proxys
-    no_proxy = no_proxy.split(",")
-    additional_no_proxys = additional_no_proxys.split(",")
-    combined_no_proxy = list(set(no_proxy + additional_no_proxys))
-    return ",".join(combined_no_proxy)
+    """
+    Merge NO_PROXY, ADDITIONAL_NO_PROXYS, and NO_PROXY_HOSTS from env into a single
+    NO_PROXY value. Used at startup so httpx (trust_env=True) bypasses proxy for these hosts.
+    All three are comma-separated host lists; same meaning as standard no_proxy/NO_PROXY.
+    """
+    def _parse(s: str) -> list:
+        return [x.strip() for x in (s or "").split(",") if x.strip()]
+
+    no_proxy = _parse(os.environ.get("NO_PROXY", "") or os.environ.get("no_proxy", ""))
+    additional = _parse(os.getenv("ADDITIONAL_NO_PROXYS", ""))
+    hosts = _parse(os.getenv("NO_PROXY_HOSTS", ""))
+    combined = list(dict.fromkeys(no_proxy + additional + hosts))  # order preserved, no duplicates
+    return ",".join(combined)
+
+
+def resolve_ssl_cert_file() -> str | None:
+    """
+    Resolve the CA bundle path used to verify HTTPS connections to *internal*
+    services (MCP servers, the model server, the knowledge-base server).
+
+    This bundle is applied PER-CONNECTION by the callers (via httpx `verify=` /
+    requests `verify=`), NOT by setting SSL_CERT_FILE / REQUESTS_CA_BUNDLE globally.
+    Setting those env vars globally would force every HTTPS client in the process
+    (including the Azure OpenAI / GPT SDK) to use this bundle, which breaks GPT
+    calls when the bundle does not contain the public CA that signs the GPT
+    endpoint. Keeping it per-connection lets GPT keep using the default trust
+    store while internal services use this corporate/internal bundle.
+
+    Priority order:
+    1. INTERNAL_CA_BUNDLE env var (dedicated, preferred)
+    2. MCP_SSL_CERT_FILE env var (backward-compatible alias)
+    3. Default paths: ./certs/infosys_ca_bundle_mcp.pem, ./certs/combined-ca-bundle.pem,
+       ./combined-ca-bundle.pem, ./certs/ca-bundle.pem
+    4. SSL_CERT_FILE / REQUESTS_CA_BUNDLE env vars (last resort)
+
+    Returns:
+        Path to the CA bundle if found, None otherwise (callers then fall back to
+        the default system/certifi trust store).
+    """
+    # 1 & 2: dedicated env vars for the internal bundle
+    for env_name in ("INTERNAL_CA_BUNDLE", "MCP_SSL_CERT_FILE"):
+        candidate = os.getenv(env_name, "")
+        if candidate and os.path.isfile(candidate):
+            return candidate
+
+    # 3: Check default paths relative to project root
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    default_paths = [
+        os.path.join(base_dir, "certs", "infosys_ca_bundle_mcp.pem"),
+        os.path.join(base_dir, "certs", "combined-ca-bundle.pem"),
+        os.path.join(base_dir, "combined-ca-bundle.pem"),
+        os.path.join(base_dir, "certs", "ca-bundle.pem"),
+    ]
+    for cert_path in default_paths:
+        if os.path.isfile(cert_path):
+            return cert_path
+
+    # 4: last resort - honor globally-set bundle vars if present
+    for env_name in ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE"):
+        candidate = os.environ.get(env_name, "")
+        if candidate and os.path.isfile(candidate):
+            return candidate
+
+    # No custom bundle found - callers use system/certifi defaults
+    return None
+
+
+def get_requests_verify(url: str):
+    """
+    Return the value to pass as `verify=` to a `requests` call for an internal
+    service, scoping the corporate/internal CA bundle to that connection only.
+
+    - For https:// URLs, returns the internal CA bundle path when one is found,
+      otherwise True (default trust store).
+    - For non-https URLs, returns True (verification is irrelevant for http).
+
+    This keeps the internal bundle off the global `REQUESTS_CA_BUNDLE`/`SSL_CERT_FILE`
+    env vars so it never affects the Azure OpenAI / GPT path.
+    """
+    if isinstance(url, str) and url.lower().startswith("https://"):
+        bundle = resolve_ssl_cert_file()
+        if bundle:
+            return bundle
+    return True
+
 
 
 def build_effective_query_with_user_updates(original_query: str, user_update_events: list, current_query: str = None, for_validation: bool = False) -> str:

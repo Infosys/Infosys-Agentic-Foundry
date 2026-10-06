@@ -2,8 +2,8 @@ import { useState, useEffect } from "react";
 import { FullModal } from "../../iafComponents/GlobalComponents/FullModal";
 import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
 import SVGIcons from "../../Icons/SVGIcons.js";
-import TextareaWithActions from "../commonComponents/TextareaWithActions";
 import Toggle from "../commonComponents/Toggle";
+import ConfirmationModal from "../commonComponents/ToastMessages/ConfirmationPopup";
 import styles from "./EditAccessKeyModal.module.css";
 
 /**
@@ -16,6 +16,8 @@ import styles from "./EditAccessKeyModal.module.css";
 export default function EditAccessKeyModal({
   onClose,
   onSubmit,
+  onDelete,
+  canDelete = false,
   loading,
   accessKeyData,
   detailsLoading = false
@@ -36,6 +38,7 @@ export default function EditAccessKeyModal({
   const [showExclusions, setShowExclusions] = useState(false);
   // Preserve values before enabling "Include All Values" toggle
   const [preservedValues, setPreservedValues] = useState([]);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Initialize values from accessKeyData
   useEffect(() => {
@@ -184,6 +187,15 @@ export default function EditAccessKeyModal({
         >
           Cancel
         </IAFButton>
+        {canDelete && onDelete && (
+          <IAFButton
+            type="primary"
+            onClick={() => setShowDeleteConfirm(true)}
+            disabled={loading}
+          >
+            Delete
+          </IAFButton>
+        )}
         <IAFButton
           type="primary"
           onClick={handleSubmit}
@@ -196,6 +208,7 @@ export default function EditAccessKeyModal({
   );
 
   return (
+    <>
     <FullModal
       isOpen={true}
       onClose={onClose}
@@ -207,35 +220,6 @@ export default function EditAccessKeyModal({
       <form onSubmit={handleSubmit} className="form-section">
         <div className="formContent">
           <div className={`form ${styles.compactForm}`}>
-            {/* Department - Read Only */}
-            {accessKeyData?.department_name && (
-              <div className="formGroup">
-                <label className="label-desc">Department</label>
-                <input
-                  type="text"
-                  value={accessKeyData.department_name}
-                  className={`input ${styles.readOnlyInput}`}
-                  disabled={true}
-                  readOnly={true}
-                />
-              </div>
-            )}
-
-            {/* Description - Using TextareaWithActions like ToolOnBoarding */}
-            <div className="formGroup">
-              <TextareaWithActions
-                name="description"
-                value={accessKeyData?.description || ""}
-                label="Description"
-                required={false}
-                disabled={true}
-                readOnly={true}
-                placeholder="No description provided"
-                rows={2}
-                showCopy={true}
-                showExpand={true}
-              />
-            </div>
 
             {/* Include Values Section */}
             <div className="formGroup">
@@ -351,5 +335,17 @@ export default function EditAccessKeyModal({
         </div>
       </form>
     </FullModal>
+
+    {showDeleteConfirm && (
+      <ConfirmationModal
+        message={`Are you sure you want to delete access key "${accessKeyName}"? This action cannot be undone.`}
+        onConfirm={async () => {
+          await onDelete();
+          setShowDeleteConfirm(false);
+        }}
+        setShowConfirmation={setShowDeleteConfirm}
+      />
+    )}
+  </>
   );
 }

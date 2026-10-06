@@ -43,11 +43,17 @@ class DatabaseManager:
         required databases. This function should be called once during application startup
         before attempting to create connection pools to these specific databases.
 
+        Controlled by the ENABLE_CHECK_AND_CREATE_DATABASES env var (default: false).
+
         Args:
             required_db_names (List[str]): A list of database names that must exist.
                                            This list should include the main database name
                                            (from the DATABASE env var) if it's required.
         """
+        if not self.db_config.enable_check_and_create_databases:
+            log.debug("check_and_create_databases is disabled (ENABLE_CHECK_AND_CREATE_DATABASES=false). Skipping.")
+            return
+
         if not self.db_url_prefix:
             log.error("Database URL prefix is not configured. Cannot check/create databases.")
             raise ValueError("Database URL prefix is not configured.")
@@ -56,6 +62,12 @@ class DatabaseManager:
         # This connection is temporary and closed immediately after use.
         conn = None
         try:
+            if self.db_config.enable_db_debug_logs:
+                log.info(f"Connecting to 'postgres' database for initial setup...")
+                log.info(f"INFO: Connecting to 'postgres' database with URL prefix: {self.db_url_prefix}{self.db_config.admin_database_name}")
+                log.info(f"INFO: password {os.getenv('POSTGRESQL_PASSWORD')}")
+
+            
             conn = await asyncpg.connect(f"{self.db_url_prefix}{self.db_config.admin_database_name}")
             log.info(f"Connected to 'postgres' database for initial setup.")
 
@@ -135,6 +147,12 @@ class DatabaseManager:
             current_max_size = max(current_min_size, current_max_size)
 
             try:
+                if self.db_config.enable_db_debug_logs:
+                    log.info(f"Creating connection pool for database '{db_name_actual}'...")
+                    log.info(f"INFO: DSN prefix: {self.db_url_prefix}{db_name_actual}")
+                    log.info(f"INFO: password {os.getenv('POSTGRESQL_PASSWORD')}")
+                    log.info(f"INFO: pool size min={current_min_size}, max={current_max_size}")
+
                 pool = await asyncpg.create_pool(
                     dsn=f"{self.db_url_prefix}{db_name_actual}",
                     min_size=current_min_size,

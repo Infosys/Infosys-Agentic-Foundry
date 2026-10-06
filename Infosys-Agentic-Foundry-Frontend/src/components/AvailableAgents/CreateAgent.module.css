@@ -837,13 +837,12 @@
 .collapsibleSectionContent {
   max-height: 0;
   overflow: hidden;
-  transition: max-height 0.3s ease, padding 0.3s ease;
 }
 
 .collapsibleSectionContent.expanded {
-  max-height: 800px;
+  max-height: none;
   padding: 0 16px 16px 16px;
-  overflow-y: auto;
+  overflow: visible;
 }
 
 .collapsibleSectionInner {
@@ -958,4 +957,1335 @@
   transform: scale(1.1);
 }
 
+/* Skill Tabs for Skill Agent */
+.skillTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
 
+.skillTab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.skillTab:hover {
+  border-color: var(--app-primary-color);
+  color: var(--text-primary);
+}
+
+.skillTab.active {
+  background: rgba(55, 172, 234, 0.1);
+  border-color: var(--app-primary-color);
+  color: var(--app-primary-color);
+  font-weight: 500;
+}
+
+.removeSkillBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  color: var(--text-tertiary);
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.removeSkillBtn:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+.skillEditor {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Structured form row for inline fields */
+.skillFormRow {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.skillFormField {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Input validation error state */
+.inputError {
+  border-color: #ef4444 !important;
+  background: rgba(239, 68, 68, 0.04);
+}
+
+/* Keyword Chip / Tag Input */
+.keywordChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px;
+  min-height: 42px;
+  background: var(--input-bg, var(--card-bg));
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  align-items: center;
+  transition: border-color 0.2s ease;
+}
+
+.keywordChips:focus-within {
+  border-color: var(--app-primary-color);
+}
+
+.keywordChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px 3px 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--app-primary-color);
+  background: rgba(55, 172, 234, 0.1);
+  border: 1px solid rgba(55, 172, 234, 0.25);
+  border-radius: 14px;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.keywordChipRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(55, 172, 234, 0.6);
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  line-height: 1;
+  transition: all 0.15s ease;
+}
+
+.keywordChipRemove:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.keywordInput {
+  flex: 1;
+  min-width: 100px;
+  padding: 2px 4px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+.keywordInput::placeholder {
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+}
+
+.fieldHint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+/* Additional Files for Skill Agent */
+.additionalFilesHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.additionalFilesHeader .inlineAddBtn {
+  flex-shrink: 0;
+}
+
+/* File upload section inside compact section */
+.filesBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.additionalFileRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.additionalFileRow:hover {
+  border-color: var(--app-primary-color);
+}
+
+.additionalFileInputs {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Label with inline upload button */
+.labelWithUpload {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.uploadFileBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--app-primary-color);
+  background: rgba(55, 172, 234, 0.08);
+  border: 1px solid rgba(55, 172, 234, 0.25);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.uploadFileBtn:hover {
+  background: rgba(55, 172, 234, 0.18);
+  border-color: var(--app-primary-color);
+}
+
+/* Drop highlight for drag-over state */
+.dropHighlight {
+  outline: 2px dashed var(--app-primary-color) !important;
+  outline-offset: -2px;
+  background: rgba(55, 172, 234, 0.04) !important;
+  border-radius: 8px;
+}
+
+/* Drop zone for additional files */
+.additionalDropZone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  margin-top: 8px;
+  margin-bottom: 4px;
+  border: 2px dashed var(--border-color);
+  border-radius: 8px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: transparent;
+}
+
+.additionalDropZone:hover {
+  border-color: var(--app-primary-color);
+  color: var(--text-secondary);
+  background: rgba(55, 172, 234, 0.03);
+}
+
+.additionalDropZone strong {
+  color: var(--app-primary-color);
+}
+
+/* ============ Additional File Cards ============ */
+.fileCardsList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.fileCard {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card-bg);
+  overflow: hidden;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.fileCard:hover {
+  border-color: var(--app-primary-color);
+  box-shadow: 0 1px 4px rgba(55, 172, 234, 0.08);
+}
+
+.fileCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease;
+}
+
+.fileCardHeader:hover {
+  background: rgba(55, 172, 234, 0.04);
+}
+
+.fileCardInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.fileCardChevron {
+  display: inline-flex;
+  transition: transform 0.2s ease;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.fileCardChevron.expanded {
+  transform: rotate(0deg);
+}
+
+.fileCardChevron:not(.expanded) {
+  transform: rotate(-90deg);
+}
+
+.fileCardName {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileCardNameInput {
+  font-size: 13px !important;
+  padding: 3px 8px !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  max-width: 240px;
+}
+
+.fileCardActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.fileCardSize {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+  white-space: nowrap;
+  background: rgba(128, 128, 128, 0.08);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.fileCardDeleteBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.fileCardDeleteBtn:hover {
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+}
+
+.fileCardContent {
+  padding: 0 12px 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+/* ============ Database Connections (per-skill) — Redesigned ============ */
+/* ── Shared optional tag ── */
+.optionalTag {
+  font-weight: 400;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-style: normal;
+}
+
+/* ── Compact section wrapper (Data Connectors / Additional Files) ── */
+.compactSection {
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: rgba(128, 128, 128, 0.02);
+  transition: border-color 0.15s ease;
+}
+
+.compactSection:hover {
+  border-color: rgba(55, 172, 234, 0.3);
+}
+
+.compactSectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.compactSectionLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.compactSectionTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.compactSectionCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--app-primary-color);
+  border-radius: 9px;
+}
+
+.compactSectionAddBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--app-primary-color);
+  background: rgba(55, 172, 234, 0.06);
+  border: 1px solid rgba(55, 172, 234, 0.2);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.compactSectionAddBtn:hover {
+  background: rgba(55, 172, 234, 0.15);
+  border-color: var(--app-primary-color);
+}
+
+.compactSectionBody {
+  margin-top: 10px;
+}
+
+/* ── DB Connection Cards ── */
+.dbEmptyState {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+  background: rgba(128, 128, 128, 0.03);
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+}
+
+.dbCardsList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dbCard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card-bg, var(--bg-secondary));
+  transition: border-color 0.15s ease;
+}
+
+.dbCard:hover {
+  border-color: rgba(55, 172, 234, 0.35);
+}
+
+.dbCardDuplicate {
+  border-color: var(--danger-color, #d32f2f) !important;
+  background: rgba(211, 47, 47, 0.02);
+}
+
+.dbCardConnectionField {
+  flex: 2;
+  min-width: 0;
+}
+
+.dbCardModeField {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.sqlModeRadio {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sqlModeRadio input[type="radio"] {
+  accent-color: var(--app-primary-color);
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+  margin: 0;
+}
+
+.sqlModeRadio input[type="radio"]:disabled {
+  cursor: not-allowed;
+}
+
+.dbCardDeleteBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.dbCardDeleteBtn:hover {
+  background: rgba(211, 47, 47, 0.08);
+  color: var(--danger-color, #d32f2f);
+}
+
+.dbDuplicateWarning {
+  font-size: 11px;
+  color: var(--danger-color, #d32f2f);
+  margin-left: 4px;
+}
+
+/* ============ Enterprise Context Tabs ============ */
+.contextTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 16px;
+  padding: 4px;
+  background: rgba(128, 128, 128, 0.06);
+  border-radius: 10px;
+}
+
+.contextTab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.contextTab:hover {
+  background: rgba(128, 128, 128, 0.08);
+  color: var(--text-primary);
+}
+
+.contextTab.active {
+  background: var(--card-bg);
+  border-color: var(--border-color);
+  color: var(--app-primary-color);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.contextTabBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 9px;
+  background: rgba(55, 172, 234, 0.12);
+  color: var(--app-primary-color);
+}
+
+.contextTabPanel {
+  animation: contextFadeIn 0.15s ease;
+}
+
+@keyframes contextFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Auto-generated skills table banner */
+.autoGenBanner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  background: rgba(55, 172, 234, 0.06);
+  border: 1px solid rgba(55, 172, 234, 0.15);
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.autoGenBanner svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--app-primary-color);
+}
+
+.autoGenBanner strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* Context tab panel header (for skill contexts & policies) */
+.contextTabPanelHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.contextTabPanelTitle {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+/* Empty state for skill contexts / policies */
+.contextEmptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px 16px;
+  border: 2px dashed var(--border-color);
+  border-radius: 10px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+  text-align: center;
+}
+
+.contextEmptyBtn {
+  margin-top: 4px;
+  padding: 6px 16px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--app-primary-color);
+  background: rgba(55, 172, 234, 0.08);
+  border: 1px solid rgba(55, 172, 234, 0.25);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.contextEmptyBtn:hover {
+  background: rgba(55, 172, 234, 0.18);
+  border-color: var(--app-primary-color);
+}
+
+/* Context cards list (for skill contexts & policies) */
+.contextCardsList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.contextCard {
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--card-bg);
+  overflow: hidden;
+  transition: border-color 0.2s ease;
+}
+
+.contextCard:hover {
+  border-color: rgba(55, 172, 234, 0.3);
+}
+
+.contextCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(128, 128, 128, 0.03);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.contextCardLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.contextCardName {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contextCardNameInput {
+  font-size: 13px !important;
+  padding: 4px 10px !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  max-width: 280px;
+  border-radius: 6px !important;
+}
+
+.contextCardBody {
+  padding: 12px 14px;
+}
+
+/* ============ Additional Folder Mounts ============ */
+
+.additionalPathsHint {
+  font-size: 13px;
+  color: var(--text-secondary, #6b7280);
+  margin: 0 0 12px 0;
+  line-height: 1.5;
+}
+
+.additionalPathsHint code {
+  background: var(--hover-background, #f3f4f6);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: var(--font-mono, "Fira Code", "Consolas", monospace);
+  color: var(--text-primary);
+}
+
+.additionalPathRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.additionalPathInputGroup {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.additionalPathInput {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: var(--radius-lg, 6px);
+  font-size: var(--font-size-base, 14px);
+  font-family: var(--font-primary);
+  color: var(--text-primary);
+  background: var(--card-bg, #fff);
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.additionalPathInput:focus {
+  border-color: var(--app-primary-color, #3b82f6);
+  box-shadow: var(--focus-ring, 0 0 0 2px rgba(59, 130, 246, 0.15));
+}
+
+.additionalPathInput::placeholder {
+  color: var(--muted, #9ca3af);
+}
+
+.additionalPathInput:disabled {
+  opacity: var(--disabled-opacity, 0.5);
+  cursor: not-allowed;
+  background: var(--disabled-bg, #f1f1f1);
+  color: var(--muted);
+}
+
+.additionalPathInputError {
+  border-color: var(--danger-color, #ef4444) !important;
+}
+
+.additionalPathInputError:focus {
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.15) !important;
+}
+
+.additionalPathErrorText {
+  font-size: 12px;
+  color: var(--danger-color, #ef4444);
+  margin-top: 3px;
+  line-height: 1.3;
+}
+
+.additionalPathPermission {
+  width: 140px;
+  padding: 8px 12px;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: var(--radius-lg, 6px);
+  font-size: var(--font-size-base, 14px);
+  font-family: var(--font-primary);
+  color: var(--text-primary);
+  background: var(--card-bg, #fff);
+  cursor: pointer;
+  outline: none;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.additionalPathPermission:focus {
+  border-color: var(--app-primary-color, #3b82f6);
+  box-shadow: var(--focus-ring, 0 0 0 2px rgba(59, 130, 246, 0.15));
+}
+
+.additionalPathPermission:disabled {
+  opacity: var(--disabled-opacity, 0.5);
+  cursor: not-allowed;
+  background: var(--disabled-bg, #f1f1f1);
+  color: var(--muted);
+}
+
+.additionalPathRemoveBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid var(--danger-color, #ef4444);
+  color: var(--danger-color, #ef4444);
+  border-radius: 6px;
+  padding: 7px 10px;
+  cursor: pointer;
+  font-size: 14px;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+
+.additionalPathRemoveBtn:hover {
+  background: var(--danger-color, #ef4444);
+  color: white;
+}
+
+.additionalPathAddBtn {
+  background: none;
+  border: 1px dashed var(--app-primary-color, #3b82f6);
+  color: var(--app-primary-color, #3b82f6);
+  border-radius: 6px;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  width: 100%;
+  margin-top: 4px;
+  transition: all 0.15s ease;
+}
+
+.additionalPathAddBtn:hover {
+  background: var(--accent-light, #eff6ff);
+}
+
+/* Dark mode overrides for Additional Folder Mounts */
+:global(:root[data-theme="dark"]) .additionalPathInput {
+  background: rgba(4, 28, 41, 0.7);
+  border-color: rgba(55, 172, 234, 0.25);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2),
+              0 0 10px rgba(55, 172, 234, 0.03);
+}
+
+:global(:root[data-theme="dark"]) .additionalPathInput:hover:not(:disabled):not(:focus) {
+  border-color: rgba(55, 172, 234, 0.4);
+}
+
+:global(:root[data-theme="dark"]) .additionalPathInput:focus {
+  border-color: #37acea;
+  box-shadow: 0 0 0 3px rgba(55, 172, 234, 0.15),
+              0 0 20px rgba(55, 172, 234, 0.1);
+}
+
+:global(:root[data-theme="dark"]) .additionalPathInput:disabled {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.55);
+  -webkit-text-fill-color: rgba(255, 255, 255, 0.55);
+}
+
+:global(:root[data-theme="dark"]) .additionalPathPermission {
+  background: rgba(4, 28, 41, 0.7);
+  border-color: rgba(55, 172, 234, 0.25);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2),
+              0 0 10px rgba(55, 172, 234, 0.03);
+}
+
+:global(:root[data-theme="dark"]) .additionalPathPermission:hover:not(:disabled):not(:focus) {
+  border-color: rgba(55, 172, 234, 0.4);
+}
+
+:global(:root[data-theme="dark"]) .additionalPathPermission:focus {
+  border-color: #37acea;
+  box-shadow: 0 0 0 3px rgba(55, 172, 234, 0.15),
+              0 0 20px rgba(55, 172, 234, 0.1);
+}
+
+:global(:root[data-theme="dark"]) .additionalPathPermission:disabled {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.55);
+}
+
+:global(:root[data-theme="dark"]) .additionalPathsHint code {
+  background: rgba(55, 172, 234, 0.1);
+  color: #37acea;
+}
+
+:global(:root[data-theme="dark"]) .additionalPathAddBtn:hover {
+  background: rgba(55, 172, 234, 0.1);
+}
+
+/* ============ Section 2: Absolute Path Mounts (Admin Only) ============ */
+
+.adminOnlyBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #d97706;
+  background: rgba(217, 119, 6, 0.12);
+  border: 1px solid rgba(217, 119, 6, 0.3);
+  border-radius: 4px;
+  line-height: 1.6;
+}
+
+:global(:root[data-theme="dark"]) .adminOnlyBadge {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+  border-color: rgba(251, 191, 36, 0.3);
+}
+
+/* ============ Lifecycle Hooks Section ============ */
+
+.hookEventBlock {
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: rgba(128, 128, 128, 0.03);
+}
+
+.hookEventHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.hookEventLabel {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+  padding: 2px 8px;
+  background: rgba(55, 172, 234, 0.08);
+  border-radius: 4px;
+}
+
+.hookAddBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--app-primary-color);
+  background: transparent;
+  border: 1px solid rgba(55, 172, 234, 0.3);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.hookAddBtn:hover {
+  background: rgba(55, 172, 234, 0.08);
+  border-color: var(--app-primary-color);
+}
+
+.hookEntryRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 10px 14px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  width: 100%;
+}
+
+.hookEntryFields {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  overflow-x: auto;
+}
+
+.hookField {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.hookFieldLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--app-primary-color, #37acea);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.hookToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.hookToggle input[type="checkbox"] {
+  accent-color: var(--app-primary-color);
+  width: 15px;
+  height: 15px;
+}
+
+.hookRemoveBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.hookRemoveBtn:hover {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+}
+
+/* ============ Approval Rules Section ============ */
+
+.approvalSubSection {
+  margin-bottom: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.approvalSubSection:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.approvalSubHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.approvalSubLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.approvalSubHeader .fieldHint {
+  flex: 1;
+  min-width: 150px;
+}
+
+/* Chip input row for always_require / never_require */
+.chipInputRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 10px;
+  min-height: 40px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card-bg);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+  color: var(--app-primary-color);
+  background: rgba(55, 172, 234, 0.1);
+  border: 1px solid rgba(55, 172, 234, 0.25);
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.chipGreen {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.25);
+}
+
+.chipRemove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  width: 16px;
+  height: 16px;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.chipRemove:hover {
+  opacity: 1;
+}
+
+.chipInput {
+  flex: 1;
+  min-width: 140px;
+  padding: 4px 6px;
+  font-size: 12.5px;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.chipInput::placeholder {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+/* Threshold / Condition row */
+.thresholdRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.thresholdRow .input,
+.thresholdRow input,
+.thresholdRow select {
+  font-size: 12.5px;
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+
+/* Dark theme adjustments */
+:global(:root[data-theme="dark"]) .hookEventBlock {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+:global(:root[data-theme="dark"]) .hookEventLabel {
+  background: rgba(55, 172, 234, 0.12);
+  color: #37acea;
+}
+
+:global(:root[data-theme="dark"]) .hookEntryRow {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* ── Matcher Tool Chips ──────────────────────────────── */
+.matcherChipList {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.matcherChip {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 14px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  height: 26px;
+  line-height: 1;
+}
+
+.matcherChip:hover:not(:disabled) {
+  border-color: var(--app-primary-color);
+  color: var(--app-primary-color);
+}
+
+.matcherChipActive {
+  background: var(--app-primary-color);
+  border-color: var(--app-primary-color);
+  color: #fff;
+}
+
+.matcherChipActive:hover:not(:disabled) {
+  background: var(--app-primary-color);
+  border-color: var(--app-primary-color);
+  color: #fff;
+  opacity: 0.9;
+}
+
+.matcherChip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+:global(:root[data-theme="dark"]) .matcherChip {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: var(--text-secondary);
+}
+
+:global(:root[data-theme="dark"]) .matcherChipActive {
+  background: var(--app-primary-color);
+  border-color: var(--app-primary-color);
+  color: #fff;
+}
+
+:global(:root[data-theme="dark"]) .chipInputRow {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+:global(:root[data-theme="dark"]) .thresholdRow {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+:global(:root[data-theme="dark"]) .chip {
+  background: rgba(55, 172, 234, 0.15);
+  border-color: rgba(55, 172, 234, 0.3);
+}
+
+:global(:root[data-theme="dark"]) .chipGreen {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.3);
+}

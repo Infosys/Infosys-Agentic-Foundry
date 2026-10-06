@@ -1,0 +1,106 @@
+/* ---- Layout ---- */
+.centeredWrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 120px);
+}
+
+.card {
+  width: 460px;
+  max-width: calc(100vw - 48px);
+  background: var(--card-bg, #1e293b);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  border-radius: var(--radius-xl, 16px);
+  padding: 40px 32px 32px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+/* ---- Icon ---- */
+.iconCircle {
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(234, 179, 8, 0.12);
+  border-radius: 50%;
+  color: #f59e0b;
+  margin-bottom: 20px;
+}
+
+/* ---- Text ---- */
+.title {
+  font-size: var(--font-size-md, 18px);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--text-primary, #ffffff);
+  margin: 0 0 12px 0;
+}
+
+.body {
+  font-size: var(--font-size-sm, 14px);
+  color: var(--muted, #94a3b8);
+  line-height: 1.6;
+  margin: 0 0 20px 0;
+}
+
+/* ---- Email badge ---- */
+.emailBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  border-radius: 999px;
+  color: var(--muted, #94a3b8);
+  font-size: var(--font-size-xs, 12px);
+  margin-bottom: 24px;
+}
+
+/* ---- Info box ---- */
+.infoBox {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 16px;
+  background: rgba(234, 179, 8, 0.06);
+  border: 1px solid rgba(234, 179, 8, 0.2);
+  border-radius: var(--radius-lg, 12px);
+  color: #f59e0b;
+  font-size: var(--font-size-sm, 14px);
+  margin-bottom: 28px;
+  text-align: left;
+}
+
+.infoBox p {
+  margin: 0;
+  color: var(--muted, #94a3b8);
+  line-height: 1.5;
+}
+
+/* ---- Submit button (matches SelectDepartment) ---- */
+.submitBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 20px;
+  background: var(--app-primary-color, #0073cf);
+  border: none;
+  border-radius: var(--radius-lg, 12px);
+  color: #ffffff;
+  font-size: var(--font-size-sm, 14px);
+  font-weight: var(--font-weight-medium, 500);
+  cursor: pointer;
+  transition: opacity 0.2s, background 0.2s;
+}
+
+.submitBtn:hover {
+  background: #005fa3;
+}

@@ -7,6 +7,51 @@
  */
 import useFetch from "../Hooks/useAxios";
 import { APIs } from "../constant";
+import { getEmailFromToken, getRoleFromToken } from "../utils/jwtUtils";
+
+export const isWorkflowAdminUser = () => {
+  const role = (getRoleFromToken() || "").toLowerCase().replace(/[\s_-]/g, "");
+  return role === "admin" || role === "superadmin";
+};
+
+export const resolveWorkflowId = (workflow, fallbackId = "") =>
+  workflow?.workflow_id || workflow?.pipeline_id || workflow?.id || fallbackId || "";
+
+export const buildWorkflowDeletePayload = (workflowIds, overrides = {}) => ({
+  workflow_ids: Array.isArray(workflowIds) ? workflowIds : [workflowIds],
+  is_admin: overrides.is_admin ?? isWorkflowAdminUser(),
+  user_email_id: overrides.user_email_id ?? getEmailFromToken(),
+});
+
+export const normalizeWorkflowRecord = (raw, fallbackId = "") => {
+  const workflow = raw?.workflow || raw || {};
+  return {
+    ...workflow,
+    workflow_id: resolveWorkflowId(workflow, fallbackId),
+  };
+};
+
+const isWorkflowDeleteSuccess = (item) =>
+  item?.is_deleted === true || item?.is_delete === true;
+
+const isWorkflowDeleteFailure = (item) =>
+  item?.is_deleted === false || item?.is_delete === false;
+
+export const parseWorkflowDeleteResponse = (response) => {
+  if (!response || typeof response === "string") {
+    return { ok: false, message: "Failed to delete workflow" };
+  }
+
+  const message = response.status_message || response.message || "Workflow deleted successfully";
+  const results = Array.isArray(response.results) ? response.results : [];
+  const hasExplicitFailure = results.some(isWorkflowDeleteFailure);
+  const hasExplicitSuccess = results.some(isWorkflowDeleteSuccess);
+  const statusSuccess = String(response.status || "").toLowerCase() === "success";
+
+  const ok = hasExplicitFailure ? false : hasExplicitSuccess || statusSuccess || results.length === 0;
+
+  return { ok, message };
+};
 
 /**
  * Custom hook for workflow-related API operations
@@ -21,10 +66,12 @@ export const useWorkflowService = () => {
    * @returns {Promise<Object>} Bulk deletion response
    */
   const deleteWorkflowsBulk = async (payload) => {
-    if (!payload || !Array.isArray(payload.workflow_ids) || payload.workflow_ids.length === 0) {
+    const workflowIds = payload?.workflow_ids;
+    if (!Array.isArray(workflowIds) || workflowIds.length === 0) {
       throw new Error("At least one workflow ID is required");
     }
-    return await deleteData(APIs.WORKFLOW_DELETE, payload);
+    const requestPayload = buildWorkflowDeletePayload(workflowIds, payload);
+    return await postData(APIs.WORKFLOW_DELETE, requestPayload);
   };
 
   /**
@@ -74,7 +121,7 @@ export const useWorkflowService = () => {
    */
   const getWorkflowById = async (workflowId) => {
     if (!workflowId) throw new Error("Workflow ID is required");
-    const url = `${APIs.WORKFLOW_GET_BY_ID}${encodeURIComponent(workflowId)}`;
+    const url = `${APIs.WORKFLOW_GET_BY_ID}/${encodeURIComponent(workflowId)}`;
     return await fetchData(url);
   };
 
@@ -99,7 +146,7 @@ export const useWorkflowService = () => {
    */
   const updateWorkflow = async (workflowId, updateData) => {
     if (!workflowId) throw new Error("Workflow ID is required");
-    const url = `${APIs.WORKFLOW_UPDATE}${encodeURIComponent(workflowId)}`;
+    const url = `${APIs.WORKFLOW_UPDATE}/${encodeURIComponent(workflowId)}`;
     return await putData(url, updateData);
   };
 
@@ -110,9 +157,7 @@ export const useWorkflowService = () => {
    */
   const deleteWorkflow = async (workflowId) => {
     if (!workflowId) throw new Error("Workflow ID is required");
-    // Use the bulk delete endpoint with a single workflow_id in the array
-    const payload = { workflow_ids: [workflowId] };
-    return await deleteData(APIs.WORKFLOW_DELETE, payload);
+    return await deleteWorkflowsBulk({ workflow_ids: [workflowId] });
   };
 
   /**

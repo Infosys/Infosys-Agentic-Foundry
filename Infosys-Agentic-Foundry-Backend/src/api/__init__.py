@@ -12,3 +12,4 @@ from src.api.group_endpoints import router as group_router
 from src.api.group_keys_endpoints import router as group_keys_router
 from src.api.workflow_endpoints import router as workflow_router
 from src.api.mcp_conversion_endpoints import router as mcp_conversion_router
+from src.api.scheduler_endpoints import router as scheduler_router

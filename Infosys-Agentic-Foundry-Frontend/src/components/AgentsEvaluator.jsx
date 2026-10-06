@@ -6,11 +6,15 @@ import styles from "../css_modules/AgentsEvaluator.module.css";
 import useFetch from "../Hooks/useAxios";
 import NewCommonDropdown from "./commonComponents/NewCommonDropdown";
 import Button from "../iafComponents/GlobalComponents/Buttons/Button";
+import { getUnconfiguredCostModels } from "../utils/modelUtils";
+import UnconfiguredModelCostWarning from "./commonComponents/UnconfiguredModelCostWarning";
+import { extractErrorMessage } from "../utils/errorUtils";
 
 const AgentsEvaluator = ({ onResponse }) => {
   const [modelOptions, setModelOptions] = useState([]);
   const [model1, setModel1] = useState("");
   const [model2, setModel2] = useState("");
+  const [unconfiguredCostModels, setUnconfiguredCostModels] = useState([]);
   const [response, setResponse] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modelsLoading, setModelsLoading] = useState(false);
@@ -30,6 +34,7 @@ const AgentsEvaluator = ({ onResponse }) => {
     setModelsLoading(true);
     try {
       const res = await fetchData(APIs.GET_MODELS);
+      setUnconfiguredCostModels(getUnconfiguredCostModels(res));
       if (res.models && Array.isArray(res.models)) {
         const formattedModels = res.models.map((m) => ({ label: m, value: m }));
         setModelOptions(formattedModels);
@@ -66,27 +71,32 @@ const AgentsEvaluator = ({ onResponse }) => {
 
     const apiUrl = `${APIs.PROCESS_UNPROCESSED}?evaluating_model1=${encodeURIComponent(model1)}&evaluating_model2=${encodeURIComponent(model2)}`;
 
+    let latestFormatted = null;
+    let hasError = false;
+
+    const onStreamChunk = (obj) => {
+      if (obj?.error) {
+        const errorText = typeof obj.error === "string" ? obj.error : JSON.stringify(obj.error);
+        addMessage(errorText, "error");
+        hasError = true;
+        return;
+      }
+
+      const formatted = JSON.stringify(obj, null, 2);
+      setResponse((prev) => {
+        const updated = [...prev, formatted];
+        if (onResponse) onResponse(formatted);
+        return updated;
+      });
+      latestFormatted = formatted;
+    };
+
     try {
-      let latestFormatted = null;
-
-      // Stream chunk handler
-      const onStreamChunk = (obj) => {
-        const formatted = JSON.stringify(obj, null, 2);
-        setResponse((prev) => {
-          const updated = [...prev, formatted];
-          if (onResponse) onResponse(formatted);
-          return updated;
-        });
-        latestFormatted = formatted;
-      };
-
-      // Use postDataStream from useAxios for consistent streaming (null body = no request payload)
       await postDataStream(apiUrl, null, {}, onStreamChunk);
-
-      if (onResponse && latestFormatted) onResponse(latestFormatted);
-      setIsStreaming(false);
+      if (!hasError && onResponse && latestFormatted) onResponse(latestFormatted);
     } catch (error) {
-      addMessage("Failed to start evaluation (stream)", "error");
+      addMessage(extractErrorMessage(error).message || "Failed to start evaluation", "error");
+    } finally {
       setIsStreaming(false);
     }
   };
@@ -114,6 +124,10 @@ const AgentsEvaluator = ({ onResponse }) => {
                     width="100%"
                     disabled={isStreaming || modelsLoading}
                   />
+                  <UnconfiguredModelCostWarning
+                    selectedModel={model1}
+                    unconfiguredCostModels={unconfiguredCostModels}
+                  />
                 </div>
                 <div className={styles.modelField}>
                   <NewCommonDropdown
@@ -125,6 +139,10 @@ const AgentsEvaluator = ({ onResponse }) => {
                     showSearch={true}
                     width="100%"
                     disabled={isStreaming || modelsLoading}
+                  />
+                  <UnconfiguredModelCostWarning
+                    selectedModel={model2}
+                    unconfiguredCostModels={unconfiguredCostModels}
                   />
                 </div>
               </div>

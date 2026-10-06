@@ -8,6 +8,8 @@ import useFetch from "../../Hooks/useAxios";
 import { useMessage } from "../../Hooks/MessageContext";
 import { useChatServices } from "../../services/chatService";
 import SVGIcons from "../../Icons/SVGIcons";
+import ConfirmationModal from "../commonComponents/ToastMessages/ConfirmationPopup";
+import FileConflictModal from "../commonComponents/FileConflictModal/FileConflictModal";
 import styles from "./FloatingChatBot.module.css";
 
 /**
@@ -41,6 +43,7 @@ const FloatingChatBot = () => {
   // File upload state
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
+  const [chatUploadOverwrite, setChatUploadOverwrite] = useState(null);
 
   // Drag state
   const [position, setPosition] = useState(() => ({
@@ -577,24 +580,29 @@ const FloatingChatBot = () => {
     }
   };
 
+  const emailToFolderName = (email) => (email || "").replace(/@/g, "_at_").replace(/\./g, "_");
+
   // Handle file upload
-  const handleFileUpload = async (files) => {
+  const handleFileUpload = async (files, overwrite = false, subdirectory = null) => {
     if (!files || files.length === 0) return;
 
     setIsUploadingFiles(true);
     const originalFileNames = files.map((file) => file.name);
 
     try {
-      const response = await uploadChatFiles(files, sessionId);
-      if (response && response.uploaded_files) {
-        const newFiles = response.uploaded_files.map((filePath, index) => ({
-          name: originalFileNames[index] || filePath.split("/").pop() || filePath,
-          path: filePath,
+      const response = await uploadChatFiles(files, sessionId, overwrite, subdirectory);
+      if (!overwrite && response?.warnings?.files?.length > 0) {
+        addMessage(response.message, response.success ? "success" : "error");
+        setChatUploadOverwrite({ warnings: response.warnings, pendingFiles: files });
+      } else if (response?.uploaded_files?.length > 0) {
+        const newFiles = response.uploaded_files.map((file, index) => ({
+          name: file.original_name || originalFileNames[index] || file.saved_path?.split("/").pop() || file.saved_path,
+          path: file.saved_path,
         }));
         setUploadedFiles((prev) => [...prev, ...newFiles]);
         addMessage(response.message || "Files uploaded successfully", "success");
-      } else if (response && response.message) {
-        addMessage(response.message, "success");
+      } else if (response?.message) {
+        addMessage(response.message, response.success === false ? "error" : "success");
       }
     } catch (error) {
       console.error("Error uploading files:", error);
@@ -893,6 +901,28 @@ const FloatingChatBot = () => {
             </div>
           </div>
         </>
+      )}
+      {chatUploadOverwrite && (
+        <FileConflictModal
+          warnings={chatUploadOverwrite.warnings}
+          loading={isUploadingFiles}
+          onOverwrite={() => {
+            const pending = chatUploadOverwrite.pendingFiles;
+            setChatUploadOverwrite(null);
+            if (pending) handleFileUpload(pending, true);
+          }}
+          onDefaultFolder={() => {
+            const pending = chatUploadOverwrite.pendingFiles;
+            setChatUploadOverwrite(null);
+            if (pending) handleFileUpload(pending, false, emailToFolderName(userEmail));
+          }}
+          onCustomFolder={(folder) => {
+            const pending = chatUploadOverwrite.pendingFiles;
+            setChatUploadOverwrite(null);
+            if (pending) handleFileUpload(pending, false, folder);
+          }}
+          onClose={() => setChatUploadOverwrite(null)}
+        />
       )}
     </div>
   );

@@ -183,7 +183,12 @@ def traced_project_context_sync(project_name: str):
         log.debug(f"[Phoenix] Completed traced context (sync) for project: '{project_name}'")
     
     except Exception as e:
-        log.error(f"[Phoenix] Error in traced context (sync) for project '{project_name}': {e}", exc_info=True)
+        # Avoid noisy ERROR+traceback for expected guardrail violations
+        from src.utils.guardrail_helpers import is_guardrail_exception
+        if type(e).__name__ == 'HTTPException' or is_guardrail_exception(e):
+            log.warning(f"[Phoenix] Guardrail/HTTP exception in traced context (sync) for project '{project_name}': {type(e).__name__}")
+        else:
+            log.error(f"[Phoenix] Error in traced context (sync) for project '{project_name}': {e}", exc_info=True)
         raise
     
     finally:

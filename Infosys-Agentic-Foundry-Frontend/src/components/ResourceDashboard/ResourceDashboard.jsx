@@ -32,11 +32,12 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
   const isGuest = role.toLowerCase() === "guest" || getUserNameFromToken() === "Guest";
   const isAdmin = role.toLowerCase() === "admin";
   const canDeleteResources = !isGuest;
+  const loggedInUserEmail = getEmailFromToken();
 
-  const [accessKeys, setAccessKeys] = useState([]);
   const [visibleData, setVisibleData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [createdBy, setCreatedBy] = useState("All");
   const [totalCount, setTotalCount] = useState(0);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -57,50 +58,61 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
   const listContainerRef = useRef(null);
   const pageRef = useRef(1);
   const isLoadingRef = useRef(false);
+  const prevExternalSearchTerm = useRef(externalSearchTerm);
   const { fetchData, postData, deleteData, putData } = useFetch();
   const { addMessage } = useMessage();
 
   const PAGE_SIZE = 20;
 
-  // Fetch access keys from the API
-  const fetchAccessKeys = useCallback(async (pageNumber = 1, search = "") => {
+  const transformAccessKeyItem = (item, index) => ({
+    id: item.id || item.key_id || item.access_key || `key-${index}`,
+    name: item.access_key || item.name || item.key_name || "Unnamed Key",
+    access_key: item.access_key || item.name || "",
+    description: item.description || item.key_description || "No description available",
+    created_by: item.created_by || item.owner || "Unknown",
+    type: item.type || item.key_type || "Access Key",
+    status: item.status || "Active",
+    department_name: item.department_name || "",
+    created_at: item.created_at || "",
+    ...item,
+  });
+
+  // Fetch access keys from the paginated search API
+  const fetchAccessKeys = useCallback(async (pageNumber = 1, search = "", createdByFilter = "All") => {
     if (isLoadingRef.current) return;
     isLoadingRef.current = true;
     setLoading(true);
 
     try {
-      // Hit the endpoint without pagination params
-      const apiUrl = APIs.RD_GET_ACCESS_KEYS;
+      const params = [];
+      params.push(`page_number=${pageNumber}`);
+      params.push(`page_size=${PAGE_SIZE}`);
+      if (search && search.trim()) {
+        params.push(`search_value=${encodeURIComponent(search.trim())}`);
+      }
+      const createdByParam =
+        createdByFilter === "Me"
+          ? loggedInUserEmail
+          : createdByFilter === "System"
+            ? "system"
+            : null;
+      if (createdByParam) {
+        params.push(`created_by=${encodeURIComponent(createdByParam)}`);
+      }
+
+      const apiUrl = `${APIs.RD_GET_ACCESS_KEYS}?${params.join("&")}`;
       const response = await fetchData(apiUrl);
 
-      // Debug: Log the API response to see its structure
-      console.log("Resource Dashboard API Response:", response);
+      const data = response?.access_keys || response?.details || response?.data || [];
+      const total = response?.total_count ?? response?.total ?? (Array.isArray(data) ? data.length : 0);
 
-      // Handle response - the API returns { access_keys: [...], total_count: n, department_name: "..." }
-      const data = response?.access_keys || response?.details || response?.data || response || [];
-      console.log("Extracted data:", data);
-
-      const total = response?.total_count || data.length || 0;
-
-      // Transform data for DisplayCard1 component
-      const transformedData = Array.isArray(data) ? data.map((item, index) => ({
-        id: item.id || item.key_id || item.access_key || `key-${index}`,
-        name: item.access_key || item.name || item.key_name || "Unnamed Key",
-        access_key: item.access_key || item.name || "",
-        description: item.description || item.key_description || "No description available",
-        created_by: item.created_by || item.owner || "Unknown",
-        type: item.type || item.key_type || "Access Key",
-        status: item.status || "Active",
-        department_name: item.department_name || "",
-        created_at: item.created_at || "",
-        ...item
-      })) : [];
+      const transformedData = Array.isArray(data)
+        ? data.map((item, index) => transformAccessKeyItem(item, index))
+        : [];
 
       if (pageNumber === 1) {
-        setAccessKeys(transformedData);
         setVisibleData(transformedData);
-      } else {
-        setAccessKeys((prev) => [...prev, ...transformedData]);
+      } else if (transformedData.length > 0) {
         setVisibleData((prev) => [...prev, ...transformedData]);
       }
 
@@ -111,7 +123,6 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
       const errorMessage = extractErrorMessage(error).message || "Failed to fetch access keys";
       addMessage(errorMessage, "error");
       if (pageNumber === 1) {
-        setAccessKeys([]);
         setVisibleData([]);
       }
       setHasMore(false);
@@ -119,71 +130,71 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
       setLoading(false);
       isLoadingRef.current = false;
     }
-  }, [fetchData, addMessage]);
+  }, [fetchData, addMessage, loggedInUserEmail]);
 
   // Initial data load
   useEffect(() => {
-    fetchAccessKeys(1, "");
+    fetchAccessKeys(1, "", createdBy);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Handle external search term from parent (Admin screen)
+  // Sync with external search term from parent (Admin screen)
   useEffect(() => {
-    if (externalSearchTerm !== undefined) {
-      setSearchTerm(externalSearchTerm);
-      setPage(1);
-      pageRef.current = 1;
-      // Filter existing data based on external search term
-      if (externalSearchTerm.trim()) {
-        const filtered = accessKeys.filter(
-          (item) =>
-            (item.name && item.name.toLowerCase().includes(externalSearchTerm.toLowerCase())) ||
-            (item.description && item.description.toLowerCase().includes(externalSearchTerm.toLowerCase())) ||
-            (item.created_by && item.created_by.toLowerCase().includes(externalSearchTerm.toLowerCase())) ||
-            (item.type && item.type.toLowerCase().includes(externalSearchTerm.toLowerCase()))
-        );
-        setVisibleData(filtered);
-      } else {
-        setVisibleData(accessKeys);
-      }
-    }
-  }, [externalSearchTerm, accessKeys]);
+    if (prevExternalSearchTerm.current === externalSearchTerm) return;
+    prevExternalSearchTerm.current = externalSearchTerm;
 
-  // Handle search - filter locally from already fetched data
-  const handleSearch = useCallback((searchValue) => {
-    setSearchTerm(searchValue);
-    setPage(1);
-    pageRef.current = 1;
-    if (searchValue.trim()) {
-      const filtered = accessKeys.filter(
-        (item) =>
-          (item.name && item.name.toLowerCase().includes(searchValue.toLowerCase())) ||
-          (item.description && item.description.toLowerCase().includes(searchValue.toLowerCase())) ||
-          (item.created_by && item.created_by.toLowerCase().includes(searchValue.toLowerCase())) ||
-          (item.type && item.type.toLowerCase().includes(searchValue.toLowerCase()))
-      );
-      setVisibleData(filtered);
-    } else {
-      setVisibleData(accessKeys);
-    }
-  }, [accessKeys]);
-
-  // Handle refresh
-  const handleRefresh = useCallback(() => {
-    setSearchTerm("");
+    setSearchTerm(externalSearchTerm);
     setPage(1);
     pageRef.current = 1;
     setVisibleData([]);
     setHasMore(true);
-    fetchAccessKeys(1, "");
-  }, [fetchAccessKeys]);
+    isLoadingRef.current = false;
+    fetchAccessKeys(1, externalSearchTerm, createdBy);
+  }, [externalSearchTerm, fetchAccessKeys, createdBy]);
 
-  // Clear search - reset to full data
-  const clearSearch = useCallback(() => {
-    setSearchTerm("");
+  // Handle search via server-side paginated API
+  const handleSearch = useCallback((searchValue) => {
+    setSearchTerm(searchValue);
     setPage(1);
     pageRef.current = 1;
-    setVisibleData(accessKeys);
-  }, [accessKeys]);
+    setVisibleData([]);
+    setHasMore(true);
+    isLoadingRef.current = false;
+    fetchAccessKeys(1, searchValue, createdBy);
+  }, [fetchAccessKeys, createdBy]);
+
+  const handleCreatedByChange = useCallback((value) => {
+    setCreatedBy(value);
+    setPage(1);
+    pageRef.current = 1;
+    setVisibleData([]);
+    setHasMore(true);
+    isLoadingRef.current = false;
+    fetchAccessKeys(1, searchTerm, value);
+  }, [fetchAccessKeys, searchTerm]);
+
+  // Handle refresh
+  const handleRefresh = useCallback(() => {
+    setSearchTerm("");
+    setCreatedBy("All");
+    setPage(1);
+    pageRef.current = 1;
+    setVisibleData([]);
+    setHasMore(true);
+    fetchAccessKeys(1, "", "All");
+  }, [fetchAccessKeys]);
+
+  // Clear search and filters - reset and fetch first page
+  const clearSearch = useCallback(() => {
+    setSearchTerm("");
+    setCreatedBy("All");
+    setPage(1);
+    pageRef.current = 1;
+    setVisibleData([]);
+    setHasMore(true);
+    isLoadingRef.current = false;
+    fetchAccessKeys(1, "", "All");
+  }, [fetchAccessKeys]);
 
   // Handle scroll for pagination
   useEffect(() => {
@@ -197,7 +208,7 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
         const nextPage = pageRef.current + 1;
         pageRef.current = nextPage;
         setPage(nextPage);
-        await fetchAccessKeys(nextPage, searchTerm);
+        await fetchAccessKeys(nextPage, searchTerm, createdBy);
       }
     };
 
@@ -208,11 +219,10 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
       debouncedScroll.cancel && debouncedScroll.cancel();
       container.removeEventListener("scroll", debouncedScroll);
     };
-  }, [hasMore, searchTerm, fetchAccessKeys]);
+  }, [hasMore, searchTerm, createdBy, fetchAccessKeys]);
 
   // Handle card click - fetch full access details (allowed and excluded values)
   const handleCardClick = async (cardName, item) => {
-    console.log("Card clicked:", cardName, item);
     const accessKey = item.access_key || item.name || cardName;
 
     if (!accessKey) {
@@ -227,9 +237,8 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
 
     try {
       // Use the my-access/full endpoint to get both allowed and excluded values
-      const apiUrl = `${APIs.RD_GET_MY_FULL_ACCESS}${encodeURIComponent(accessKey)}/my-access/full`;
+      const apiUrl = `${APIs.RD_GET_MY_FULL_ACCESS}/${encodeURIComponent(accessKey)}/my-access/full`;
       const response = await fetchData(apiUrl);
-      console.log("Access Key Full Access Response:", response);
       // Merge response with original item data
       setAccessKeyToEdit({ ...item, ...response });
     } catch (error) {
@@ -246,45 +255,58 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
     if (!Array.isArray(accessKeys) || accessKeys.length === 0) {
       throw new Error("At least one access key is required");
     }
-    const apiUrl = APIs.RD_DELETE_ACCESS_KEY.replace(/\/$/, "");
+    const apiUrl = APIs.RD_DELETE_ACCESS_KEY;
     const payload = { access_keys: accessKeys };
     return await deleteData(apiUrl, payload);
   };
 
-  // Handle delete click - directly delete without confirmation (Card component has built-in confirmation)
-  const handleDeleteClick = async (cardName, item) => {
-    const accessKey = item.access_key || item.name || cardName;
-    if (!accessKey) {
-      return;
-    }
-    // Creator cannot delete their own access key
-    const creatorEmail = (item.created_by || "").trim().toLowerCase();
+  // Handle delete from edit modal
+  const handleDeleteFromEdit = async () => {
+    if (!accessKeyToEdit) return;
+
+    const accessKey = accessKeyToEdit.access_key || accessKeyToEdit.name;
+    if (!accessKey) return;
+
+    const creatorEmail = (accessKeyToEdit.created_by || "").trim().toLowerCase();
     const currentUserEmail = getEmailFromToken().trim().toLowerCase();
     if (creatorEmail && currentUserEmail && creatorEmail === currentUserEmail) {
       addMessage("You cannot delete an access key that you created.", "error");
       return;
     }
+
+    setEditLoading(true);
     try {
-      // Use the bulk endpoint for single or multiple deletes
       const response = await deleteAccessKeys([accessKey]);
       if (response && typeof response !== "string") {
         const statusMsg = response.status_message || response.message;
         if (statusMsg) {
           const hasAnyFailure = Array.isArray(response.results) && response.results.some((r) => r.is_delete === false);
           addMessage(statusMsg, hasAnyFailure ? "error" : "success");
+          if (hasAnyFailure) return;
         }
       }
-      // Refresh the list
+      setShowEditModal(false);
+      setAccessKeyToEdit(null);
       isLoadingRef.current = false;
-      fetchAccessKeys(1, "");
-    } catch (error) {
+      fetchAccessKeys(1, searchTerm, createdBy);
+    } catch {
       // silent catch
+    } finally {
+      setEditLoading(false);
     }
   };
 
+  const canDeleteCurrentKey =
+    canDeleteResources &&
+    accessKeyToEdit &&
+    (() => {
+      const creatorEmail = (accessKeyToEdit.created_by || "").trim().toLowerCase();
+      const currentUserEmail = getEmailFromToken().trim().toLowerCase();
+      return !(creatorEmail && currentUserEmail && creatorEmail === currentUserEmail);
+    })();
+
   // Handle eye icon click - fetch tools that use this access key
   const handleViewTools = async (cardName, item) => {
-    console.log("View tools clicked:", cardName, item);
     const accessKey = item?.access_key || item?.name || cardName;
 
     if (!accessKey) {
@@ -298,9 +320,8 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
 
     try {
       // Use GET /resource-dashboard/access-keys/{access_key}/tools endpoint
-      const apiUrl = `${APIs.RD_GET_ACCESS_KEY_TOOLS}${encodeURIComponent(accessKey)}/tools`;
+      const apiUrl = `${APIs.RD_GET_ACCESS_KEY_TOOLS}/${encodeURIComponent(accessKey)}/tools`;
       const response = await fetchData(apiUrl);
-      console.log("Access Key Tools Response:", response);
       // Handle response - could be array or object with tools array
       const tools = response?.tools || response || [];
       setAccessKeyUsers(Array.isArray(tools) ? tools : []);
@@ -336,20 +357,19 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
     try {
       // Use PUT /resource-dashboard/access-keys/{access_key}/my-access endpoint
       // API expects: add_values, remove_values, add_exclusions, remove_exclusions
-      const apiUrl = `${APIs.RD_UPDATE_MY_ACCESS}${encodeURIComponent(accessKey)}/my-access`;
+      const apiUrl = `${APIs.RD_UPDATE_MY_ACCESS}/${encodeURIComponent(accessKey)}/my-access`;
       const requestBody = {};
       if (add_values.length > 0) requestBody.add_values = add_values;
       if (remove_values.length > 0) requestBody.remove_values = remove_values;
       if (add_exclusions.length > 0) requestBody.add_exclusions = add_exclusions;
       if (remove_exclusions.length > 0) requestBody.remove_exclusions = remove_exclusions;
       const response = await putData(apiUrl, requestBody);
-      console.log("Update Access Key Response:", response);
       addMessage("Access key updated successfully", "success");
       setShowEditModal(false);
       setAccessKeyToEdit(null);
       // Refresh the list
       isLoadingRef.current = false;
-      fetchAccessKeys(1, "");
+      fetchAccessKeys(1, searchTerm, createdBy);
     } catch (error) {
       console.error("Error updating access key:", error);
       const errorMessage = extractErrorMessage(error).message || "Failed to update access key";
@@ -381,14 +401,10 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
     setBulkDeleteLoading(true);
 
     try {
-      const loggedInUserEmail = getEmailFromToken();
-      const departmentName = getDepartmentFromToken();
       const payload = {
         access_keys: multiSelectIds,
-        department_name: departmentName,
-        created_by: loggedInUserEmail,
       };
-      const response = await deleteData(APIs.RD_DELETE_ACCESS_KEY.replace(/\/$/, ""), payload);
+      const response = await deleteData(APIs.RD_DELETE_ACCESS_KEY, payload);
 
       if (response && typeof response !== "string") {
         const statusMsg = response.status_message || response.message;
@@ -404,7 +420,7 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
     setShowBulkDeleteModal(false);
     setBulkDeleteLoading(false);
     isLoadingRef.current = false;
-    fetchAccessKeys(1, "");
+    fetchAccessKeys(1, searchTerm, createdBy);
   };
 
   // Handle create access key submission
@@ -412,18 +428,17 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
     setCreateLoading(true);
     try {
       const response = await postData(APIs.RD_CREATE_ACCESS_KEY, formData);
-      console.log("Create Access Key Response:", response);
       addMessage("Access key created successfully", "success");
       setShowCreateModal(false);
       // Reset loading ref and refresh the list
       isLoadingRef.current = false;
       setSearchTerm("");
+      setCreatedBy("All");
       setPage(1);
       pageRef.current = 1;
       setVisibleData([]);
       setHasMore(true);
-      // Fetch fresh data
-      fetchAccessKeys(1, "");
+      fetchAccessKeys(1, "", "All");
     } catch (error) {
       console.error("Error creating access key:", error);
       const errorMessage = extractErrorMessage(error).message || "Failed to create access key";
@@ -454,6 +469,8 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
             setAccessKeyToEdit(null);
           }}
           onSubmit={handleUpdateAccessKey}
+          onDelete={handleDeleteFromEdit}
+          canDelete={canDeleteCurrentKey}
           loading={editLoading}
           detailsLoading={detailsLoading}
           accessKeyData={accessKeyToEdit}
@@ -514,7 +531,6 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
               <DisplayCard1
                 data={visibleData}
                 onCardClick={handleCardClick}
-                onDeleteClick={handleDeleteClick}
                 onButtonClick={handleViewTools}
                 showButton={true}
                 buttonIcon={<SVGIcons icon="eye" width={16} height={16} />}
@@ -525,30 +541,36 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
                 contextType="resource"
                 showCreateCard={false}
                 onCreateClick={handleCreateClick}
+                showDeleteButton={false}
                 showCheckbox={canDeleteResources && isAdmin}
                 onSelectionChange={handleMultiSelectChange}
                 selectedIds={multiSelectIds}
-                showDeleteButton={canDeleteResources}
+                idKey="access_key"
                 className="resource-cards"
               />
             )}
 
             {/* Empty state when search returns no results */}
-            {searchTerm.trim() && visibleData.length === 0 && !loading && (
+            {(searchTerm.trim() || (createdBy && createdBy !== "All")) && visibleData.length === 0 && !loading && (
               <EmptyState
-                filters={[`Search: ${searchTerm}`]}
+                filters={[
+                  ...(searchTerm.trim() ? [`Search: ${searchTerm}`] : []),
+                  ...(createdBy === "Me" ? ["Created By: Me"] : createdBy === "System" ? ["Created By: System"] : []),
+                ]}
                 onClearFilters={clearSearch}
+                onCreateClick={handleCreateClick}
+                createButtonLabel="New Access Key"
               />
             )}
 
             {/* Empty state when no data exists */}
-            {!searchTerm.trim() && visibleData.length === 0 && !loading && (
+            {!searchTerm.trim() && createdBy === "All" && visibleData.length === 0 && !loading && (
               <EmptyState
                 message="No access keys found"
                 subMessage="Get started by creating your first access key"
                 showClearFilter={false}
                 onCreateClick={handleCreateClick}
-                createButtonLabel="Create Access Key"
+                createButtonLabel="New Access Key"
               />
             )}
           </div>
@@ -565,6 +587,9 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
             showPlusButton={true}
             onPlusClick={handleCreateClick}
             plusButtonLabel="New Access Key"
+            showCreatedByDropdown={true}
+            createdBy={createdBy}
+            onCreatedByChange={handleCreatedByChange}
             showSelectAll={canDeleteResources && isAdmin && visibleData.length > 1}
             isAllSelected={isAllSelected}
             isPartiallySelected={isPartiallySelected}
@@ -580,7 +605,6 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
               <DisplayCard1
                 data={visibleData}
                 onCardClick={handleCardClick}
-                onDeleteClick={handleDeleteClick}
                 onButtonClick={handleViewTools}
                 showButton={true}
                 buttonIcon={<SVGIcons icon="eye" width={16} height={16} />}
@@ -591,31 +615,36 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
                 contextType="resource"
                 showCreateCard={false}
                 onCreateClick={handleCreateClick}
+                showDeleteButton={false}
                 showCheckbox={canDeleteResources && isAdmin}
                 onSelectionChange={handleMultiSelectChange}
                 selectedIds={multiSelectIds}
                 idKey="access_key"
-                showDeleteButton={canDeleteResources}
                 className="resource-cards"
               />
             )}
 
             {/* Empty state when search returns no results */}
-            {searchTerm.trim() && visibleData.length === 0 && !loading && (
+            {(searchTerm.trim() || (createdBy && createdBy !== "All")) && visibleData.length === 0 && !loading && (
               <EmptyState
-                filters={[`Search: ${searchTerm}`]}
+                filters={[
+                  ...(searchTerm.trim() ? [`Search: ${searchTerm}`] : []),
+                  ...(createdBy === "Me" ? ["Created By: Me"] : createdBy === "System" ? ["Created By: System"] : []),
+                ]}
                 onClearFilters={clearSearch}
+                onCreateClick={handleCreateClick}
+                createButtonLabel="New Access Key"
               />
             )}
 
             {/* Empty state when no data exists */}
-            {!searchTerm.trim() && visibleData.length === 0 && !loading && (
+            {!searchTerm.trim() && createdBy === "All" && visibleData.length === 0 && !loading && (
               <EmptyState
                 message="No access keys found"
                 subMessage="Get started by creating your first access key"
                 showClearFilter={false}
                 onCreateClick={handleCreateClick}
-                createButtonLabel="Create Access Key"
+                createButtonLabel="New Access Key"
               />
             )}
           </div>

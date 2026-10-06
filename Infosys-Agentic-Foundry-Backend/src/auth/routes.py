@@ -1,13 +1,19 @@
-from fastapi import APIRouter, Depends, Request, HTTPException, status, Query
+from fastapi import APIRouter, Body, Depends, Request, HTTPException, status, Query, Response
+from fastapi.responses import RedirectResponse, HTMLResponse
 from src.auth.models import (
     User, LoginRequest, LoginResponse, RegisterRequest, RegisterResponse, SuperAdminRegisterRequest,
     UpdatePasswordRequest, GrantApprovalPermissionRequest, ApprovalPermissionResponse,
     RevokeApprovalPermissionRequest, UserRole, Permission, RefreshTokenRequest, RefreshTokenResponse,
+    OAuthLoginInitResponse, OAuthCallbackRequest, OAuthCallbackResponse, OAuthLogoutResponse,
     RoleListResponse, AssignRoleDepartmentRequest, AssignRoleDepartmentResponse, UpdateUserRoleRequest,
+    RemoveRoleDepartmentRequest, RemoveRoleDepartmentResponse,
     SetUserActiveStatusRequest, UserActiveStatusResponse,
     AdminResetPasswordRequest, AdminResetPasswordResponse, ChangePasswordRequest, ChangePasswordResponse,
     RegistrationApproveRequest, RegistrationRejectRequest, RegistrationRequestResponse,
-    DepartmentAccessRequest
+    DepartmentAccessRequest, GetUserDepartmentsResponse, SwitchDepartmentRequest, SwitchDepartmentResponse,
+    SwitchRoleRequest, SwitchRoleResponse,
+    UserDepartmentInfo, ExchangeCodeRequest, ExchangeCodeResponse,
+    SSORegisterRequest, SSORegisterResponse
 )
 from src.auth.auth_service import AuthService
 from src.auth.authorization_service import AuthorizationService
@@ -17,14 +23,158 @@ from src.auth.dependencies import (
 )
 from src.api.dependencies import ServiceProvider
 from src.database.services import RoleAccessService
+from src.config.settings import (
+    FRONTEND_REDIRECT_URI, ALLOWED_FRONTEND_URLS, SESSION_COOKIE_NAME, SESSION_COOKIE_SECURE,
+    SESSION_COOKIE_HTTPONLY, SESSION_COOKIE_SAMESITE, KEYCLOAK_ALLOW_DIRECT_LOGIN,
+    OAUTH_TOKEN_DELIVERY_METHOD, ACCESS_TOKEN_EXPIRE_SECONDS, KEYCLOAK_ENABLED,
+    AZURE_AD_ENABLED
+)
 from telemetry_wrapper import logger as log
 from typing import Optional, List, Dict
 from collections import defaultdict
+from urllib.parse import urlencode
 
 
 
 
 router = APIRouter(tags=["Authentication"], prefix="/auth")
+
+
+# ==================== Secure Token Delivery Helpers ====================
+
+def _generate_post_form_response(callback_response: OAuthCallbackResponse, redirect_url: str) -> HTMLResponse:
+    """
+    Generate HTML with auto-submitting POST form to securely deliver tokens.
+
+    This is the MOST SECURE method for SPAs because:
+    - Tokens sent in POST body (not visible in URL)
+    - No browser history/logs
+    - No referer leakage
+    - Works cross-domain
+    """
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Redirecting...</title>
+        <style>
+            body {{
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                margin: 0;
+                background-color: #f5f5f5;
+            }}
+            .loader {{
+                text-align: center;
+            }}
+            .spinner {{
+                border: 4px solid #f3f3f3;
+                border-top: 4px solid #3498db;
+                border-radius: 50%;
+                width: 40px;
+                height: 40px;
+                animation: spin 1s linear infinite;
+                margin: 0 auto 20px;
+            }}
+            @keyframes spin {{
+                0% {{ transform: rotate(0deg); }}
+                100% {{ transform: rotate(360deg); }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="loader">
+            <div class="spinner"></div>
+            <p>Authentication successful. Redirecting...</p>
+        </div>
+        <form id="tokenForm" method="POST" action="{redirect_url}">
+            <input type="hidden" name="token" value="{callback_response.token or ''}" />
+            <input type="hidden" name="refresh_token" value="{callback_response.refresh_token or ''}" />
+            <input type="hidden" name="id_token" value="{callback_response.id_token or ''}" />
+            <input type="hidden" name="email" value="{callback_response.email or ''}" />
+            <input type="hidden" name="username" value="{callback_response.username or ''}" />
+            <input type="hidden" name="role" value="{callback_response.role or ''}" />
+            <input type="hidden" name="department_name" value="{callback_response.department_name or ''}" />
+            <input type="hidden" name="expires_in" value="{callback_response.expires_in or ACCESS_TOKEN_EXPIRE_SECONDS}" />
+        </form>
+        <script>
+            // Auto-submit form immediately
+            document.getElementById('tokenForm').submit();
+        </script>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content, status_code=200)
+
+
+def _set_token_cookies(response: Response, callback_response: OAuthCallbackResponse):
+    """
+    Set tokens in HTTP-Only cookies (MOST SECURE for same-domain deployments).
+
+    Security features:
+    - HTTP-Only: JavaScript cannot access (XSS protection)
+    - Secure: Only sent over HTTPS (production)
+    - SameSite: CSRF protection
+    """
+    cookie_max_age = callback_response.expires_in or ACCESS_TOKEN_EXPIRE_SECONDS
+
+    # Set access token cookie
+    if callback_response.token:
+        response.set_cookie(
+            key="access_token",
+            value=callback_response.token,
+            max_age=cookie_max_age,
+            httponly=SESSION_COOKIE_HTTPONLY,  # Prevent JavaScript access
+            secure=SESSION_COOKIE_SECURE,      # HTTPS only in production
+            samesite=SESSION_COOKIE_SAMESITE   # CSRF protection
+        )
+
+    # Set refresh token cookie (longer expiry)
+    if callback_response.refresh_token:
+        response.set_cookie(
+            key="refresh_token",
+            value=callback_response.refresh_token,
+            max_age=86400 * 14,  # 14 days
+            httponly=True,       # Always HTTP-Only for refresh tokens
+            secure=SESSION_COOKIE_SECURE,
+            samesite=SESSION_COOKIE_SAMESITE
+        )
+
+    # Set ID token cookie
+    if callback_response.id_token:
+        response.set_cookie(
+            key="id_token",
+            value=callback_response.id_token,
+            max_age=cookie_max_age,
+            httponly=SESSION_COOKIE_HTTPONLY,
+            secure=SESSION_COOKIE_SECURE,
+            samesite=SESSION_COOKIE_SAMESITE
+        )
+
+    # Set user info in non-HTTP-Only cookies (safe to expose)
+    if callback_response.email:
+        response.set_cookie(
+            key="user_email",
+            value=callback_response.email,
+            max_age=cookie_max_age,
+            httponly=False,  # Frontend needs to read this
+            secure=SESSION_COOKIE_SECURE,
+            samesite=SESSION_COOKIE_SAMESITE
+        )
+
+    if callback_response.role:
+        response.set_cookie(
+            key="user_role",
+            value=callback_response.role,
+            max_age=cookie_max_age,
+            httponly=False,
+            secure=SESSION_COOKIE_SECURE,
+            samesite=SESSION_COOKIE_SAMESITE
+        )
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -33,15 +183,632 @@ async def login(
     login_data: LoginRequest,
     auth_service: AuthService = Depends(get_auth_service)
 ):
-    """Login endpoint"""
+    """
+    Direct login endpoint (username/pwd).
+    
+    ⚠️ WARNING: This endpoint does NOT support MFA/OTP.
+    If MFA is enabled in Keycloak, use the OAuth flow endpoints instead:
+    - GET /auth/oauth/login - Start OAuth login
+    - GET /auth/callback - OAuth callback handler
+    
+    This endpoint can be disabled by setting KEYCLOAK_ALLOW_DIRECT_LOGIN=false
+    """
     ip_address = get_client_ip(request)
     user_agent = get_user_agent(request)
-    log.info("Login attempt with data: %s")
     login_response = await auth_service.login(login_data, ip_address, user_agent)
-    log.info("login attempted")
-    log.info("completed login")
     # Return response directly; caller handles refresh token storage (no cookies set server-side)
     return login_response
+
+
+# ==================== OAuth Authorization Code Flow Routes (MFA Compatible) ====================
+
+@router.get("/oauth/login", response_model=OAuthLoginInitResponse)
+async def oauth_login_init(
+    request: Request,
+    role: str = Query(None, description="Requested role (will be validated after login)"),
+    redirect_uri: str = Query(None, description="Custom redirect URI (optional)"),
+    frontend_origin: str = Query(None, description="The origin URL of the UI initiating login (for multi-UI support, e.g. http://localhost:4000)"),
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    """
+    Initialize OAuth Authorization Code Flow with PKCE.
+    
+    This is the MFA-compatible login endpoint. It returns a URL that the client
+    should redirect to for Keycloak authentication. Keycloak will handle:
+    - Username/pwd entry
+    - MFA/OTP enrollment (first time if required)
+    - MFA/OTP prompt on subsequent logins
+    
+    Flow:
+    1. Client calls this endpoint (pass `frontend_origin` to support multiple UIs)
+    2. Client redirects user to the returned redirect_url
+    3. User authenticates on Keycloak (including MFA)
+    4. Keycloak redirects to /auth/callback with authorization code
+    5. Backend exchanges code for tokens and redirects browser back to the originating UI
+    
+    Returns:
+        OAuthLoginInitResponse with:
+        - redirect_url: URL to redirect the user to for Keycloak login
+        - state: CSRF protection token (frontend should verify this in callback)
+    """
+    # Guard: SSO is only available when Keycloak is enabled
+    if not KEYCLOAK_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="SSO / OAuth login is disabled. Set KEYCLOAK_ENABLED=true in your .env to enable it."
+        )
+    # Validate frontend_origin against allowlist to prevent open-redirect attacks
+    if frontend_origin is not None:
+        if frontend_origin not in ALLOWED_FRONTEND_URLS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"frontend_origin '{frontend_origin}' is not in the list of allowed frontend URLs. "
+                       f"Add it to ALLOWED_FRONTEND_URLS in your .env file."
+            )
+    log.info(f"OAuth login init requested with role: {role}, frontend_origin: {frontend_origin}")
+    return auth_service.init_oauth_login(requested_role=role, custom_redirect_uri=redirect_uri, frontend_origin=frontend_origin)
+
+
+@router.get("/callback")
+async def oauth_callback(
+    request: Request,
+    response: Response,
+    code: str = Query(..., description="Authorization code from Keycloak"),
+    state: str = Query(..., description="State parameter for CSRF validation"),
+    session_state: str = Query(None, description="Keycloak session state"),
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    """
+    Handle OAuth callback from Keycloak after user completes authentication.
+
+    This endpoint is called by Keycloak after the user successfully authenticates
+    (including completing MFA if enabled). It exchanges the authorization code
+    for access/refresh tokens and securely delivers them to the frontend.
+
+    Security: Token delivery method configured via OAUTH_TOKEN_DELIVERY_METHOD:
+    - "post" (recommended): Auto-submit POST form - tokens in body, not URL
+    - "cookie": HTTP-Only cookies - most secure for same-domain
+    - "fragment": URL fragment - legacy method, not recommended
+
+    Query Parameters:
+        code: Authorization code from Keycloak
+        state: State parameter (must match the one from /oauth/login)
+        session_state: Optional Keycloak session identifier
+
+    Returns:
+        - Browser (text/html): Secure token delivery based on config
+        - API clients: JSON response with tokens
+    """
+    ip_address = get_client_ip(request)
+    user_agent = get_user_agent(request)
+
+    try:
+        callback_response = await auth_service.handle_oauth_callback(
+            code=code,
+            state=state,
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+    except Exception as e:
+        log.exception(f"Unexpected error in handle_oauth_callback: {e}")
+        return RedirectResponse(url=f"{FRONTEND_REDIRECT_URI or ''}/auth/callback?success=false&error=Authentication+error")
+
+    # Check if this is a browser request that expects a redirect
+    accept_header = request.headers.get("Accept", "")
+    is_browser = "text/html" in accept_header
+
+    # Resolve which frontend to redirect to: use the UI that initiated the login,
+    # or fall back to the default FRONTEND_REDIRECT_URI for backwards compatibility.
+    _origin = callback_response.frontend_origin
+    if _origin and _origin in ALLOWED_FRONTEND_URLS:
+        _frontend_base = _origin
+    else:
+        _frontend_base = FRONTEND_REDIRECT_URI or ""
+
+    # Handle error cases
+    if is_browser and not callback_response.approval:
+        error_msg = urlencode({"error": callback_response.message or "Authentication failed"})
+        redirect_url = f"{_frontend_base}/auth/callback?success=false&{error_msg}"
+        return RedirectResponse(url=redirect_url)
+
+    # JIT Provisioning: Check if this is a new SSO user that needs admin approval
+    if callback_response.approval and callback_response.email:
+        try:
+            jit_result = await auth_service.handle_sso_user_jit_provisioning(
+                email=callback_response.email,
+                username=callback_response.username or callback_response.email,
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
+        except Exception as e:
+            log.exception(f"Unexpected error in JIT provisioning for {callback_response.email}: {e}")
+            if is_browser:
+                return RedirectResponse(url=f"{_frontend_base}/auth/callback?success=false&error=Provisioning+error")
+            callback_response.approval = False
+            callback_response.message = "An error occurred during user provisioning"
+            return callback_response
+
+        if jit_result.get("status") == "NEEDS_DEPARTMENT_SELECTION":
+            # Brand-new SSO user - redirect to department selection page
+            log.info(f"New SSO user {callback_response.email} redirected to department selection")
+            if is_browser:
+                try:
+                    _email_val = str(callback_response.email or "")
+                    _user_val = str(jit_result.get("username") or callback_response.email or "")
+                    _encoded = urlencode({"email": _email_val, "username": _user_val})
+                    redirect_url = f"{_frontend_base}/select-department?{_encoded}"
+                    return RedirectResponse(url=redirect_url)
+                except BaseException as _redir_exc:
+                    _is_base = not isinstance(_redir_exc, Exception)
+                    log.exception(
+                        f"{'BASE' if _is_base else ''}EXCEPTION in dept-selection redirect "
+                        f"(type={type(_redir_exc).__name__}, is_base_only={_is_base}, "
+                        f"frontend_base={_frontend_base!r}, "
+                        f"email={callback_response.email!r}, "
+                        f"username_from_jit={jit_result.get('username')!r}): {_redir_exc}"
+                    )
+                    if _is_base:
+                        raise  # let CancelledError / BaseExceptionGroup propagate
+                    return RedirectResponse(
+                        url=f"{_frontend_base or FRONTEND_REDIRECT_URI or ''}"
+                            f"/auth/callback?success=false&error=Internal+error"
+                    )
+            else:
+                callback_response.approval = False
+                callback_response.status = "NEEDS_DEPARTMENT_SELECTION"
+                callback_response.message = jit_result.get("message", "Please select your department")
+                callback_response.token = None
+                callback_response.refresh_token = None
+                callback_response.id_token = None
+                return callback_response
+
+        if jit_result.get("status") == "PENDING_APPROVAL":
+            # Already submitted department selection, waiting for admin approval
+            log.info(f"SSO user {callback_response.email} already pending approval")
+
+            if is_browser:
+                redirect_url = (
+                    f"{_frontend_base}/pending-approval?"
+                    + urlencode({
+                        "email": callback_response.email or "",
+                        "username": callback_response.username or callback_response.email or "",
+                    })
+                )
+                return RedirectResponse(url=redirect_url)
+            else:
+                callback_response.approval = False
+                callback_response.status = "PENDING_APPROVAL"
+                callback_response.message = jit_result.get("message", "Your account is awaiting administrator approval")
+                callback_response.token = None
+                callback_response.refresh_token = None
+                callback_response.id_token = None
+                return callback_response
+
+        elif jit_result.get("status") == "ACCOUNT_DEACTIVATED":
+            # Account or all department access has been deactivated by admin
+            log.warning(f"Blocked SSO login for deactivated account: {callback_response.email}")
+            if is_browser:
+                redirect_url = (
+                    f"{_frontend_base}/auth/callback?success=false&"
+                    + urlencode({"error": jit_result.get("message", "Your account has been deactivated")})
+                )
+                return RedirectResponse(url=redirect_url)
+            else:
+                callback_response.approval = False
+                callback_response.message = jit_result.get("message", "Your account has been deactivated")
+                callback_response.token = None
+                callback_response.refresh_token = None
+                callback_response.id_token = None
+                return callback_response
+
+        elif jit_result.get("status") == "ERROR":
+            # Error during JIT provisioning
+            log.error(f"JIT provisioning error for {callback_response.email}: {jit_result.get('message')}")
+            if is_browser:
+                return RedirectResponse(url=f"{_frontend_base}/auth/callback?success=false&error=Provisioning+error")
+            else:
+                callback_response.approval = False
+                callback_response.message = "An error occurred during user provisioning"
+                return callback_response
+
+        # If status is "USER_EXISTS", continue with normal flow
+
+    # Handle successful authentication for browser
+    if is_browser and callback_response.approval:
+        redirect_url = f"{_frontend_base}/auth/callback"
+
+        # Choose token delivery method based on configuration
+        if OAUTH_TOKEN_DELIVERY_METHOD == "code":
+            # MOST SECURE: One-time authorization code exchange
+            # Generate and store one-time code in database
+            auth_code = await auth_service.generate_and_store_authorization_code(
+                access_token=callback_response.token,
+                refresh_token=callback_response.refresh_token,
+                id_token=callback_response.id_token,
+                email=callback_response.email,
+                username=callback_response.username,
+                role=callback_response.role,
+                department_name=callback_response.department_name,
+                expires_in=callback_response.expires_in or ACCESS_TOKEN_EXPIRE_SECONDS,
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
+
+            if auth_code:
+                # Redirect with one-time code (NOT tokens!)
+                return RedirectResponse(url=f"{redirect_url}?code={auth_code}")
+            else:
+                log.error("Failed to generate authorization code")
+                return RedirectResponse(url=f"{redirect_url}?success=false&error=Failed to generate authorization code")
+
+        elif OAUTH_TOKEN_DELIVERY_METHOD == "post":
+            # SECURE (cross-domain): POST with auto-submit form
+            return _generate_post_form_response(callback_response, redirect_url)
+
+        elif OAUTH_TOKEN_DELIVERY_METHOD == "cookie":
+            # SECURE (same-domain): HTTP-Only cookies
+            _set_token_cookies(response, callback_response)
+            return RedirectResponse(url=f"{redirect_url}?success=true")
+
+        elif OAUTH_TOKEN_DELIVERY_METHOD == "fragment":
+            # LEGACY METHOD (NOT RECOMMENDED): URL fragment
+            log.warning("Using URL fragment for token delivery - NOT RECOMMENDED for production. "
+                       "Set OAUTH_TOKEN_DELIVERY_METHOD=code for best security")
+            redirect_params = {
+                "success": "true",
+                "token": callback_response.token or "",
+                "refresh_token": callback_response.refresh_token or "",
+                "id_token": callback_response.id_token or "",
+                "email": callback_response.email or "",
+                "role": callback_response.role or "",
+                "username": callback_response.username or "",
+                "department_name": callback_response.department_name or "",
+                "expires_in": str(callback_response.expires_in or ACCESS_TOKEN_EXPIRE_SECONDS)
+            }
+            return RedirectResponse(url=f"{redirect_url}#{urlencode(redirect_params)}")
+
+    # API flow: return JSON response (same as /auth/login)
+    return callback_response
+
+
+@router.post("/callback", response_model=OAuthCallbackResponse)
+async def oauth_callback_post(
+    request: Request,
+    callback_data: OAuthCallbackRequest,
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    """
+    Handle OAuth callback via POST (for SPA flows).
+    
+    This is an alternative to the GET callback for SPAs that intercept the
+    redirect and extract the code/state themselves.
+    """
+    ip_address = get_client_ip(request)
+    user_agent = get_user_agent(request)
+    
+    return await auth_service.handle_oauth_callback(
+        code=callback_data.code,
+        state=callback_data.state,
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+
+@router.post("/exchange-code", response_model=ExchangeCodeResponse)
+async def exchange_authorization_code(
+    request: Request,
+    exchange_request: ExchangeCodeRequest,
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    """
+    Exchange one-time authorization code for tokens.
+
+    This is the MOST SECURE token delivery method for OAuth/SSO:
+
+    Flow:
+    1. User authenticates via SSO
+    2. Backend generates one-time authorization code
+    3. Backend redirects to: http://frontend/auth/callback?code=abc123xyz
+    4. Frontend calls this endpoint to exchange code for tokens
+    5. Backend returns tokens in JSON response body
+    6. Code is marked as used (can only be used once)
+
+    Security features:
+    - Code expires after 60 seconds
+    - Code can only be used once
+    - Tokens never appear in URL
+    - All exchanges logged in audit trail
+    - Works in distributed/pods architecture (stored in PostgreSQL)
+
+    Query Parameters:
+        code: One-time authorization code from URL parameter
+
+    Returns:
+        ExchangeCodeResponse with JWT tokens and user info
+    """
+    ip_address = get_client_ip(request)
+    user_agent = get_user_agent(request)
+
+    result = await auth_service.exchange_authorization_code(
+        code=exchange_request.code,
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+    if not result["approval"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result["message"]
+        )
+
+    return ExchangeCodeResponse(
+        approval=True,
+        token=result.get("token"),
+        refresh_token=result.get("refresh_token"),
+        id_token=result.get("id_token"),
+        email=result.get("email"),
+        username=result.get("username"),
+        role=result.get("role"),
+        department_name=result.get("department_name"),
+        expires_in=result.get("expires_in"),
+        message=result["message"]
+    )
+
+
+# ==================== SSO Self-Registration ====================
+
+@router.post("/sso/register", response_model=SSORegisterResponse)
+async def sso_register_with_departments(
+    request: Request,
+    register_request: SSORegisterRequest,
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    """
+    New SSO user self-registration with department selection.
+
+    Called after a brand-new SSO user is redirected to /select-department.
+    The user picks their department(s) and submits this form. A pending
+    registration request is created for each department; an admin must
+    approve them before they can log in.
+
+    This endpoint is intentionally public (no auth required) because the
+    SSO user has no token yet.
+    """
+    ip_address = get_client_ip(request)
+    user_agent = get_user_agent(request)
+
+    result = await auth_service.register_sso_user_with_departments(
+        email=register_request.email,
+        username=register_request.username,
+        department_names=register_request.department_names,
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+    if not result["success"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result["message"]
+        )
+
+    return SSORegisterResponse(success=True, message=result["message"])
+
+
+@router.get("/oauth/logout", response_model=OAuthLogoutResponse)
+async def oauth_logout_url(
+    request: Request,
+    id_token: str = Query(None, description="ID token hint for Keycloak"),
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    """
+    Get Keycloak logout URL for OAuth end-session.
+    
+    This returns the URL that the client should redirect to for a complete
+    logout from Keycloak. This will:
+    - End the Keycloak session (including SSO sessions)
+    - Redirect back to the configured post-logout URI
+    
+    The client should:
+    1. Call this endpoint to get the logout URL
+    2. Clear local tokens/session
+    3. Redirect user to the logout URL
+    """
+    # Also try to get id_token from cookie if not provided
+    if not id_token:
+        id_token = request.cookies.get("id_token")
+    
+    return auth_service.get_oauth_logout_url(id_token=id_token)
+
+
+@router.post("/oauth/logout")
+async def oauth_logout_action(
+    request: Request,
+    response: Response,
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    """
+    Perform logout and return Keycloak logout URL.
+    
+    This combines local session cleanup with Keycloak logout.
+    Tokens should be passed in the Authorization header or request body.
+    """
+    ip_address = get_client_ip(request)
+    user_agent = get_user_agent(request)
+    
+    # Get tokens from Authorization header first, then fall back to cookies (for backward compatibility)
+    auth_header = request.headers.get("Authorization", "")
+    access_token = None
+    if auth_header.startswith("Bearer "):
+        access_token = auth_header[7:]
+    
+    # Try to get refresh_token and id_token from request body if it's JSON
+    refresh_token = None
+    id_token = None
+    try:
+        body = await request.json()
+        refresh_token = body.get("refresh_token")
+        id_token = body.get("id_token")
+    except:
+        pass
+    
+    # Revoke tokens in Keycloak if we have them
+    if access_token or refresh_token:
+        await auth_service.logout(
+            token=access_token,
+            refresh_token=refresh_token,
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+    
+    # requires_keycloak_redirect is True whenever Keycloak is enabled, because the
+    # Keycloak browser session (SSO cookie) must be terminated via the end-session
+    # redirect — regardless of whether an id_token was provided.
+    # Without this redirect, clicking SSO login again after logout silently
+    # re-authenticates the user using the still-active Keycloak session.
+    requires_keycloak_redirect = KEYCLOAK_ENABLED
+
+    if KEYCLOAK_ENABLED:
+        logout_response = auth_service.get_oauth_logout_url(id_token=id_token)
+        logout_url = logout_response.logout_url
+    else:
+        logout_url = None
+
+    return {
+        "success": True,
+        "logout_url": logout_url,
+        "requires_keycloak_redirect": requires_keycloak_redirect,
+        "message": "Tokens revoked. Redirect to logout_url to complete Keycloak logout." if requires_keycloak_redirect else "Tokens revoked. Local session ended."
+    }
+
+
+@router.get("/oauth/status")
+async def oauth_status():
+    """
+    Check OAuth/MFA configuration status.
+    
+    Returns information about the current authentication configuration.
+    """
+    return {
+        "direct_login_enabled": KEYCLOAK_ALLOW_DIRECT_LOGIN,
+        "oauth_flow_enabled": True,
+        "mfa_supported": True,
+        "message": "Use /auth/oauth/login for MFA-compatible authentication" if not KEYCLOAK_ALLOW_DIRECT_LOGIN 
+                   else "Both direct login and OAuth flow are available. OAuth flow supports MFA."
+    }
+
+
+# ==================== End OAuth Routes ====================
+
+
+# ==================== Azure AD / MSAL Pass-Through Status Check ====================
+
+@router.get("/me")
+async def get_azure_ad_user_status(
+    request: Request,
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    """
+    Status check for MSAL / Azure AD users (token pass-through — no exchange).
+
+    The UI calls this endpoint immediately after acquiring an MSAL access token.
+    The Azure AD token is validated via JWKS signature verification but is never
+    stored or exchanged — the UI continues to use the same token for all apps.
+
+    The backend checks the user's provisioning state in the database and returns
+    a `status` field the UI uses for navigation:
+
+    | status                      | UI action                              |
+    |-----------------------------|----------------------------------------|
+    | USER_EXISTS                 | Proceed to the app dashboard           |
+    | NEEDS_DEPARTMENT_SELECTION  | Navigate to /select-department         |
+    | PENDING_APPROVAL            | Navigate to /pending-approval          |
+    | ACCOUNT_DEACTIVATED         | Show deactivated error, stay on login  |
+
+    All state is persisted in the database — no pod-local memory is used.
+
+    Authorization: Bearer <azure_ad_access_token>
+    """
+    if not AZURE_AD_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Azure AD is not enabled. Set AZURE_AD_ENABLED=true in your .env to enable it."
+        )
+
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header missing or not a Bearer token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = auth_header[7:].strip()
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Bearer token is empty",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Decode Azure AD token payload — no signature validation performed
+    claims = await auth_service.azure_ad_service.decode_token(token)
+    if not claims:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not decode Azure AD token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Extract identity claims — Azure AD uses upn/unique_name for corporate accounts
+    email: Optional[str] = (
+        claims.get("upn")
+        or claims.get("unique_name")
+        or claims.get("email")
+        or claims.get("preferred_username")
+    )
+    if not email:
+        log.warning("Azure AD token validated but missing upn/email claim")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Azure AD token is missing a required identity claim (upn/email)",
+        )
+
+    username: str = claims.get("name") or email
+    ip_address = get_client_ip(request)
+    user_agent = get_user_agent(request)
+
+    log.info(f"[/auth/me] Azure AD token accepted for {email}, running JIT provisioning check")
+
+    # All state lives in DB — safe across multiple pods
+    try:
+        jit_result = await auth_service.handle_sso_user_jit_provisioning(
+            email=email,
+            username=username,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+    except Exception as exc:
+        log.exception(f"[/auth/me] JIT provisioning error for {email}: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while checking account status. Please try again.",
+        )
+
+    provisioning_status = jit_result.get("status")
+
+    return {
+        "email": email,
+        "username": username,
+        "status": provisioning_status,
+        "message": jit_result.get("message", ""),
+        # role and department_name are only populated when status == "USER_EXISTS";
+        # they come from the DB — never hardcoded defaults.
+        "role": jit_result.get("role"),
+        "department_name": jit_result.get("department_name"),
+    }
+
+
+# ==================== End Azure AD / MSAL Pass-Through Status Check ====================
 
 
 @router.post("/logout")
@@ -56,7 +823,30 @@ async def logout(
     ip_address = get_client_ip(request)
     user_agent = get_user_agent(request)
     refresh_token = request.cookies.get("refresh_token")
+
+    # Try to read id_token from request body or cookie for SSO session termination
+    id_token = None
+    try:
+        body = await request.json()
+        id_token = body.get("id_token")
+    except Exception:
+        pass
+    if not id_token:
+        id_token = request.cookies.get("id_token")
+
     await auth_service.logout(token, refresh_token, ip_address, user_agent)
+
+    # For SSO users the Keycloak browser session must also be terminated.
+    # Return logout_url so the frontend can redirect to end the SSO session;
+    # without this step, clicking SSO login again silently re-authenticates.
+    if KEYCLOAK_ENABLED:
+        logout_response = auth_service.get_oauth_logout_url(id_token=id_token)
+        return {
+            "message": "Logged out successfully",
+            "logout_url": logout_response.logout_url,
+            "requires_keycloak_redirect": True
+        }
+
     return {"message": "Logged out successfully"}
 
 @router.post("/register", response_model=RegisterResponse)
@@ -133,6 +923,89 @@ async def assign_role_department(
     )
 
 
+@router.post("/remove-role-department", response_model=RemoveRoleDepartmentResponse)
+async def remove_role_department(
+    request: Request,
+    remove_data: RemoveRoleDepartmentRequest,
+    current_user: User = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    """
+    Remove a specific role from a user in a department.
+    Only SuperAdmin or department Admin can use this endpoint.
+    """
+    ip_address = get_client_ip(request)
+    user_agent = get_user_agent(request)
+
+    if current_user.role not in ["SuperAdmin", "Admin"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Only SuperAdmin or Admin can remove roles from users"
+        )
+
+    result = await auth_service.remove_role_from_user_in_department(
+        email_id=remove_data.email_id,
+        department_name=remove_data.department_name,
+        role=remove_data.role,
+        current_user=current_user,
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["message"])
+
+    return RemoveRoleDepartmentResponse(
+        success=result["success"],
+        message=result["message"]
+    )
+
+
+@router.post("/promote-superadmin")
+async def promote_to_superadmin(
+    request: Request,
+    target_email: str = Body(..., embed=True),
+    current_user: User = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service),
+):
+    """
+    Promote an existing user to SuperAdmin. SuperAdmin only.
+    The target user must already exist (have logged in at least once).
+    """
+    ip_address = get_client_ip(request)
+    user_agent = get_user_agent(request)
+    return await auth_service.promote_to_superadmin(
+        target_email=target_email,
+        current_user=current_user,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
+
+@router.post("/depromote-superadmin")
+async def depromote_from_superadmin(
+    request: Request,
+    target_email: str = Body(..., embed=True),
+    current_user: User = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service),
+):
+    """
+    depromote a SuperAdmin back to a regular user. SuperAdmin only.
+    Users listed in the INITIAL_SUPERADMIN_EMAILS env variable cannot be depromoted.
+    """
+    ip_address = get_client_ip(request)
+    user_agent = get_user_agent(request)
+    result = await auth_service.depromote_from_superadmin(
+        target_email=target_email,
+        current_user=current_user,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["message"])
+    return result
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # REGISTRATION REQUEST APPROVAL ENDPOINTS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -168,6 +1041,40 @@ async def get_my_requests(
     return result
 
 
+@router.get("/my-requests/search-paginated", response_model=dict)
+async def search_paginated_my_requests(
+    request: Request,
+    search_value: Optional[str] = Query(None, description="Department name to search for (partial, case-insensitive match)"),
+    page_number: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(20, ge=1, le=100, description="Number of items per page"),
+    status: Optional[str] = Query(None, description="Filter by request status: pending, approved, or rejected"),
+    current_user: User = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    """
+    Get the logged-in user's department access requests with pagination and search.
+
+    Args:
+        search_value: Optional department name to search for (partial, case-insensitive match)
+        page_number: Page number for pagination (starts from 1)
+        page_size: Number of results per page
+        status: Optional filter by request status (pending, approved, rejected)
+
+    Returns:
+        Paginated request results with pagination metadata
+    """
+    result = await auth_service.get_my_requests_paginated(
+        email_id=current_user.email,
+        search_value=search_value or '',
+        page=page_number,
+        limit=page_size,
+        status=status
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("message", "Failed to fetch requests"))
+    return result
+
+
 @router.get("/registration-requests", response_model=dict)
 async def get_registration_requests(
     request: Request,
@@ -187,7 +1094,7 @@ async def get_registration_requests(
     return result
 
 
-@router.patch("/registration-requests/approve")
+@router.api_route("/registration-requests/approve", methods=["PATCH", "POST"])
 async def approve_registration_request(
     request: Request,
     approve_data: RegistrationApproveRequest,
@@ -208,6 +1115,7 @@ async def approve_registration_request(
     result = await auth_service.bulk_approve_registration(
         request_ids=approve_data.request_ids,
         role=approve_data.role,
+        department_name_override=approve_data.department_name,
         current_user=current_user,
         ip_address=ip_address,
         user_agent=user_agent
@@ -218,7 +1126,7 @@ async def approve_registration_request(
     return result
 
 
-@router.patch("/registration-requests/reject")
+@router.api_route("/registration-requests/reject", methods=["PATCH", "POST"])
 async def reject_registration_request(
     request: Request,
     reject_data: RegistrationRejectRequest,
@@ -258,7 +1166,6 @@ async def guest_login(
     ip_address = get_client_ip(request)
     user_agent = get_user_agent(request)
     login_response = await auth_service.guest_login(ip_address, user_agent)
-    log.info("Guest login attempted with response: %s", login_response)
     return login_response
 
 
@@ -385,6 +1292,150 @@ async def change_password(
         )
 
 
+# ==================== Department Switching Endpoints ====================
+
+@router.get("/my-departments", response_model=GetUserDepartmentsResponse)
+async def get_my_departments(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    """
+    Get all departments the current user has access to.
+
+    The response includes:
+    - department_name: Name of the department
+    - role: User's role in that department
+    - is_active: Whether user is active in that department
+    - is_default: True for the most recently used department (default on next login)
+    - last_used_at: Timestamp when department was last used
+
+    The departments are ordered by most recently used first.
+    """
+    result = await auth_service.get_user_departments_with_default(current_user.email)
+
+    if not result["approval"]:
+        return GetUserDepartmentsResponse(
+            approval=False,
+            departments=[],
+            message=result["message"]
+        )
+
+    # Convert dict departments to UserDepartmentInfo models
+    departments = [
+        UserDepartmentInfo(
+            department_name=dept["department_name"],
+            role=dept["role"],
+            roles=dept.get("roles", [dept["role"]]),
+            is_active=dept["is_active"],
+            is_default=dept.get("is_default", False),
+            created_at=dept.get("created_at"),
+            last_used_at=dept.get("last_used_at")
+        )
+        for dept in result["departments"]
+    ]
+
+    return GetUserDepartmentsResponse(
+        approval=True,
+        departments=departments,
+        message=result["message"]
+    )
+
+
+@router.post("/switch-department", response_model=SwitchDepartmentResponse)
+async def switch_department(
+    request: Request,
+    switch_request: SwitchDepartmentRequest,
+    current_user: User = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    """
+    Switch to a different department.
+
+    This endpoint:
+    1. Verifies user has access to the requested department
+    2. Updates last_used_at timestamp (makes it the new default)
+    3. Generates a new JWT with the new department context
+    4. Returns new JWT token with the appropriate role for that department
+
+    After switching, the new department will be used as the default on next login.
+    """
+    ip_address = get_client_ip(request)
+    user_agent = get_user_agent(request)
+
+    result = await auth_service.switch_department(
+        email=current_user.email,
+        department_name=switch_request.department_name,
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+    if not result["approval"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result["message"]
+        )
+
+    return SwitchDepartmentResponse(
+        approval=True,
+        token=result.get("token"),
+        refresh_token=result.get("refresh_token"),
+        role=result.get("role"),
+        department_name=result.get("department_name"),
+        available_roles=result.get("available_roles"),
+        message=result["message"]
+    )
+
+
+@router.post("/switch-role", response_model=SwitchRoleResponse)
+async def switch_role(
+    request: Request,
+    switch_request: SwitchRoleRequest,
+    current_user: User = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    """
+    Switch to a different role within a department.
+
+    This endpoint:
+    1. Verifies user has the requested role in the department
+    2. Updates is_current flag in the database
+    3. Generates a new JWT with the new role context
+    4. Returns new JWT token with the new role
+
+    If department_name is not provided, uses the current department from the JWT.
+    """
+    ip_address = get_client_ip(request)
+    user_agent = get_user_agent(request)
+
+    # Use department from request or fall back to current JWT department
+    department_name = switch_request.department_name or current_user.department_name
+
+    result = await auth_service.switch_role(
+        email=current_user.email,
+        role=switch_request.role,
+        department_name=department_name,
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+    if not result["approval"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result["message"]
+        )
+
+    return SwitchRoleResponse(
+        approval=True,
+        token=result.get("token"),
+        refresh_token=result.get("refresh_token"),
+        role=result.get("role"),
+        department_name=result.get("department_name"),
+        available_roles=result.get("available_roles"),
+        message=result["message"]
+    )
+
+
 @router.get("/users")
 async def list_users(
     request: Request,
@@ -420,7 +1471,6 @@ async def list_users(
                 u["mail_id"]: {
                     "email": u["mail_id"],
                     "username": u["user_name"],
-                    "global_is_active": u.get("is_active", True) if u.get("is_active") is not None else True,
                     "departments": []  # will be filled for mapped users; stays [] for unassigned
                 }
                 for u in all_users
@@ -451,7 +1501,11 @@ async def list_users(
             # Compute counts
             superadmin_emails = {m["mail_id"] for m in mappings if m["role"] == "SuperAdmin"}
             
-            department_counts = {dept: len(users) for dept, users in dept_user_set.items()}
+            # Remove SuperAdmin users from the output — they should not be visible in user lists
+            for sa_email in superadmin_emails:
+                by_email.pop(sa_email, None)
+            
+            department_counts = {dept: len(users - superadmin_emails) for dept, users in dept_user_set.items()}
             unassigned_emails = sorted(all_emails - assigned_emails - superadmin_emails)
             unassigned_count = len(unassigned_emails)
 
@@ -460,7 +1514,6 @@ async def list_users(
                 {
                     "email": e,
                     "username": by_email[e]["username"],
-                    "global_is_active": by_email[e]["global_is_active"],
                     "departments": []  # explicitly empty to indicate "no department / no role yet"
                 }
                 for e in unassigned_emails
@@ -492,7 +1545,7 @@ async def list_users(
             }
 
         dept_users = await auth_service.user_dept_mapping_repo.get_department_users(admin_dept)
-        # dept_users rows: {mail_id, role, is_active, created_at, created_by, user_name, global_is_active}
+        # dept_users rows: {mail_id, role, is_active, created_at, created_by, user_name}
 
         # Shape output and aggregate role-wise counts
         users_out: dict[str, dict] = {}
@@ -501,13 +1554,15 @@ async def list_users(
         for du in dept_users:
             email = du.get("mail_id")
             role = du.get("role")
+            # Skip SuperAdmin users — they should not appear in user lists
+            if role == "SuperAdmin":
+                continue
             role_counts[role] += 1
 
             if email not in users_out:
                 users_out[email] = {
                     "email": email,
                     "username": du.get("user_name"),
-                    "global_is_active": du.get("global_is_active", True) if du.get("global_is_active") is not None else True,
                     "departments": []
                 }
             users_out[email]["departments"].append({
@@ -536,7 +1591,7 @@ async def list_users(
 
 
 
-@router.patch("/users/update-role")
+@router.api_route("/users/update-role", methods=["PATCH", "POST"])
 async def update_user_role_in_department(
     request: Request,
     payload: UpdateUserRoleRequest,
@@ -544,11 +1599,12 @@ async def update_user_role_in_department(
     auth_service: AuthService = Depends(get_auth_service),
 ):
     """
-    Update a user's role and/or PWD within a department.
+    Update a user's roles and/or PWD within a department.
+    - Assign one or more roles (add_roles) and/or remove one or more roles (remove_roles).
+    - Optionally set a temporary password (temporary_password).
     - SuperAdmin: Can update any user in any department (must provide department_name in payload).
     - Admin: Can update users only within their own department.
-    - Validates role is allowed in the department (if role update requested).
-    - Updates role in userdepartmentmapping and/or PWD, writes audit logs.
+    - At least one of add_roles / remove_roles / temporary_password must be provided.
     """
 
     # 1) Role gate: Admin and SuperAdmin only
@@ -558,22 +1614,32 @@ async def update_user_role_in_department(
             detail="Only Admin or SuperAdmin can update user details"
         )
 
+    add_roles = payload.add_roles or []
+    remove_roles = payload.remove_roles or []
+    temporary_password = payload.temporary_password if payload.temporary_password else None
+
     # At least one update field must be provided
-    if not payload.new_role and not payload.temporary_password:
+    if not add_roles and not remove_roles and not temporary_password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one of 'new_role' or 'temporary_password' must be provided"
+            detail="At least one of 'add_roles', 'remove_roles' or 'temporary_password' must be provided"
+        )
+
+    # A role cannot be both added and removed in the same request
+    conflicting = set(add_roles) & set(remove_roles)
+    if conflicting:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Role(s) {sorted(conflicting)} cannot be both added and removed in the same request"
         )
 
     target_email = payload.email_id.strip()
-    new_role = payload.new_role.strip() if payload.new_role else None
-    temporary_password = payload.temporary_password if payload.temporary_password else None
 
-    # Prevent Admin from updating their own role
-    if current_user.role == "Admin" and target_email == current_user.email and new_role:
+    # Prevent Admin from updating their own roles
+    if current_user.role == "Admin" and target_email == current_user.email and (add_roles or remove_roles):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin cannot update their own role"
+            detail="Admin cannot update their own roles"
         )
 
     # 2) Determine target department based on role
@@ -625,62 +1691,50 @@ async def update_user_role_in_department(
                 detail="Cannot update role for a SuperAdmin. SuperAdmin has system-wide access and is not tied to any department."
             )
 
-        # Track what was updated
-        updates_made = []
-        old_role = None
         ip_address = request.client.host if request.client else None
         user_agent = request.headers.get("User-Agent")
 
-        # 4) Update role if provided
-        if new_role:
-            # Validate the new role is allowed in this department
-            role_allowed = await auth_service.department_repo.is_role_allowed_in_department(
+        updates_made = []
+        roles_added = []
+        roles_removed = []
+        errors = []
+
+        # 4) Assign roles (delegates to assign_role_department for validation/auth/audit)
+        for role in add_roles:
+            result = await auth_service.assign_role_department(
+                email_id=target_email,
                 department_name=target_dept,
-                role_name=new_role
+                role=role,
+                current_user=current_user,
+                ip_address=ip_address,
+                user_agent=user_agent
             )
-            if not role_allowed:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Role '{new_role}' is not allowed in department '{target_dept}'. "
-                           f"Ask SuperAdmin to add this role to the department."
-                )
+            if result["success"]:
+                roles_added.append(role)
+            else:
+                errors.append(result["message"])
 
-            # Read old role for audit
-            old_role = await auth_service.user_dept_mapping_repo.get_user_role_in_department(
-                mail_id=target_email,
-                department_name=target_dept
-            )
-
-            # Update the role
-            updated = await auth_service.user_dept_mapping_repo.update_user_role_in_department(
-                mail_id=target_email,
+        # 5) Remove roles (delegates to remove_role_from_user_in_department)
+        for role in remove_roles:
+            result = await auth_service.remove_role_from_user_in_department(
+                email_id=target_email,
                 department_name=target_dept,
-                new_role=new_role
+                role=role,
+                current_user=current_user,
+                ip_address=ip_address,
+                user_agent=user_agent
             )
-            if not updated:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to update role"
-                )
+            if result["success"]:
+                roles_removed.append(role)
+            else:
+                errors.append(result["message"])
 
-            # Audit log for role update
-            try:
-                await auth_service.audit_repo.log_action(
-                    user_id=current_user.email,
-                    action="ROLE_UPDATED_IN_DEPARTMENT",
-                    resource_type="user",
-                    resource_id=target_email,
-                    old_value=old_role,
-                    new_value=new_role,
-                    ip_address=ip_address,
-                    user_agent=user_agent
-                )
-            except Exception as audit_err:
-                log.warning(f"Audit log failed for role update: {audit_err}")
+        if roles_added:
+            updates_made.append("roles_added")
+        if roles_removed:
+            updates_made.append("roles_removed")
 
-            updates_made.append("role")
-
-        # 5) Set temporary PWD if provided (user must change on next login)
+        # 6) Set temporary PWD if provided (user must change on next login)
         if temporary_password:
             password_updated = await auth_service.set_temporary_password(
                 email=target_email,
@@ -690,30 +1744,38 @@ async def update_user_role_in_department(
                 user_agent=user_agent
             )
             if not password_updated:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to set temporary password"
-                )
-            updates_made.append("password")
+                errors.append("Failed to set temporary password")
+            else:
+                updates_made.append("password")
+
+        # If nothing succeeded, surface the errors as a failure
+        if not updates_made:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="; ".join(errors) if errors else "No updates were applied"
+            )
 
         # Build response message
         message_parts = []
-        if "role" in updates_made:
-            message_parts.append(f"role from '{old_role}' to '{new_role}'")
+        if roles_added:
+            message_parts.append(f"added role(s) {roles_added}")
+        if roles_removed:
+            message_parts.append(f"removed role(s) {roles_removed}")
         if "password" in updates_made:
             message_parts.append("temporary password (user must change on next login)")
 
         return {
             "success": True,
-            "message": f"Updated {' and '.join(message_parts)} for {target_email} in department '{target_dept}'",
+            "message": f"Updated {', '.join(message_parts)} for {target_email} in department '{target_dept}'",
             "data": {
                 "email": target_email,
                 "department_name": target_dept,
-                "old_role": old_role,
-                "new_role": new_role,
+                "roles_added": roles_added,
+                "roles_removed": roles_removed,
                 "password_updated": "password" in updates_made,
                 "must_change_password": "password" in updates_made,
-                "updates": updates_made
+                "updates": updates_made,
+                "errors": errors
             }
         }
 
@@ -927,7 +1989,7 @@ async def check_superadmin_exists(
 # USER ENABLE/DISABLE ENDPOINTS
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.patch("/users/set-active-status", response_model=UserActiveStatusResponse)
+@router.api_route("/users/set-active-status", methods=["PATCH", "POST"], response_model=UserActiveStatusResponse)
 async def set_user_active_status(
     request: Request,
     payload: SetUserActiveStatusRequest,
@@ -935,17 +1997,11 @@ async def set_user_active_status(
     auth_service: AuthService = Depends(get_auth_service)
 ):
     """
-    Enable or disable a user's login access.
+    Enable or disable a user's login access in a specific department.
     
-    Supports two modes:
-    1. **Global disable** (department_name=None): Disables user across ALL departments
-       - Only SuperAdmin can perform global disable
-    2. **Department-specific disable** (department_name provided): Disables user in specific department only
-       - SuperAdmin: Can disable in any department
-       - Admin: Can only disable users in their own department
-    
-    When a user is globally disabled:
-    - They cannot log in to ANY department
+    **Department-specific disable**: Disables user in specified department only
+    - SuperAdmin: Can disable in any department
+    - Admin: Can only disable users in their own department
     
     When a user is disabled in a specific department:
     - They cannot log in to THAT department
@@ -986,68 +2042,50 @@ async def set_user_active_status(
                 detail="Admin cannot change active status of SuperAdmin users"
             )
         
-        # Determine scope: global or department-specific
-        if target_department is None:
-            # GLOBAL DISABLE - Only SuperAdmin can do this
-            if current_user.role != "SuperAdmin":
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Only SuperAdmin can globally enable/disable users. Admins must specify a department."
-                )
-            
-            # Get current status for audit
-            current_status = await auth_service.user_repo.is_user_active(target_email)
-            
-            # Update global status
-            success = await auth_service.user_repo.set_user_active_status(target_email, new_status)
-            scope = "global"
-            
-        else:
-            # DEPARTMENT-SPECIFIC DISABLE
-            # Verify department exists
-            if auth_service.department_repo:
-                dept_exists = await auth_service.department_repo.department_exists(target_department)
-                if not dept_exists:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail=f"Department '{target_department}' does not exist"
-                    )
-            
-            # For Admin users, verify they can only manage their own department
-            if current_user.role == "Admin":
-                admin_dept = current_user.department_name
-                if not admin_dept:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Admin has no department context"
-                    )
-                if admin_dept != target_department:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=f"You can only manage users in your department '{admin_dept}'"
-                    )
-            
-            # Check if target user is in the specified department
-            target_in_dept = await auth_service.user_dept_mapping_repo.check_user_in_department(
-                mail_id=target_email,
-                department_name=target_department
-            )
-            if not target_in_dept:
+        # DEPARTMENT-SPECIFIC DISABLE
+        # Verify department exists
+        if auth_service.department_repo:
+            dept_exists = await auth_service.department_repo.department_exists(target_department)
+            if not dept_exists:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"User '{target_email}' is not a member of department '{target_department}'"
+                    detail=f"Department '{target_department}' does not exist"
                 )
-            
-            # Get current department-specific status for audit
-            current_status = await auth_service.user_dept_mapping_repo.is_user_active_in_department(
-                target_email, target_department
+        
+        # For Admin users, verify they can only manage their own department
+        if current_user.role == "Admin":
+            admin_dept = current_user.department_name
+            if not admin_dept:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Admin has no department context"
+                )
+            if admin_dept != target_department:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"You can only manage users in your department '{admin_dept}'"
+                )
+        
+        # Check if target user is in the specified department
+        target_in_dept = await auth_service.user_dept_mapping_repo.check_user_in_department(
+            mail_id=target_email,
+            department_name=target_department
+        )
+        if not target_in_dept:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User '{target_email}' is not a member of department '{target_department}'"
             )
-            
-            # Update department-specific status
-            success = await auth_service.user_dept_mapping_repo.set_user_active_in_department(
-                target_email, target_department, new_status
-            )
-            scope = "department"
+        
+        # Get current department-specific status for audit
+        current_status = await auth_service.user_dept_mapping_repo.is_user_active_in_department(
+            target_email, target_department
+        )
+        
+        # Update department-specific status
+        success = await auth_service.user_dept_mapping_repo.set_user_active_in_department(
+            target_email, target_department, new_status
+        )
         
         if not success:
             raise HTTPException(
@@ -1058,34 +2096,29 @@ async def set_user_active_status(
         # Log the action
         status_text = "enabled" if new_status else "disabled"
         old_status_text = "enabled" if current_status else "disabled"
-        action = "USER_STATUS_CHANGED_GLOBAL" if scope == "global" else "USER_STATUS_CHANGED_IN_DEPARTMENT"
         
         try:
             await auth_service.audit_repo.log_action(
                 user_id=current_user.email,
-                action=action,
+                action="USER_STATUS_CHANGED_IN_DEPARTMENT",
                 resource_type="user",
                 resource_id=target_email,
-                old_value=f"{old_status_text} (dept: {target_department or 'global'})",
-                new_value=f"{status_text} (dept: {target_department or 'global'})",
+                old_value=f"{old_status_text} (dept: {target_department})",
+                new_value=f"{status_text} (dept: {target_department})",
                 ip_address=request.client.host if request.client else None,
                 user_agent=request.headers.get("User-Agent")
             )
         except Exception as audit_err:
             log.warning(f"Audit log failed for user status change: {audit_err}")
         
-        if scope == "global":
-            message = f"User '{target_email}' has been {status_text} globally (all departments)"
-        else:
-            message = f"User '{target_email}' has been {status_text} in department '{target_department}'"
+        message = f"User '{target_email}' has been {status_text} in department '{target_department}'"
         
         return UserActiveStatusResponse(
             success=True,
             message=message,
             email=target_email,
             is_active=new_status,
-            department_name=target_department,
-            scope=scope
+            department_name=target_department
         )
     
     except HTTPException:
@@ -1101,15 +2134,15 @@ async def set_user_active_status(
 @router.get("/users/{email}/active-status")
 async def get_user_active_status(
     email: str,
-    department_name: Optional[str] = Query(None, description="Department to check status for. If None, returns global status."),
+    department_name: Optional[str] = Query(None, description="Department to check status for. If None, returns all department statuses."),
     current_user: User = Depends(get_current_user),
     auth_service: AuthService = Depends(get_auth_service)
 ):
     """
-    Get a user's active status.
+    Get a user's active status per department.
     
     - If department_name is provided: Returns department-specific status
-    - If department_name is None: Returns global status and all department statuses
+    - If department_name is None: Returns all department statuses
     
     Access Control:
     - SuperAdmin: Can check any user's status in any department
@@ -1130,10 +2163,6 @@ async def get_user_active_status(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"User '{email}' not found"
             )
-        
-        # Get global status
-        global_is_active = await auth_service.user_repo.is_user_active(email)
-        global_is_active = global_is_active if global_is_active is not None else True
         
         if department_name:
             # Department-specific query
@@ -1162,24 +2191,16 @@ async def get_user_active_status(
             )
             dept_is_active = dept_is_active if dept_is_active is not None else True
             
-            # Effective status: user must be active globally AND in department
-            effective_is_active = global_is_active and dept_is_active
-            
             return {
                 "success": True,
                 "email": email,
                 "username": target_user.get("user_name"),
-                "global_is_active": global_is_active,
                 "department_name": department_name,
-                "department_is_active": dept_is_active,
-                "effective_is_active": effective_is_active,
-                "message": "User can login" if effective_is_active else (
-                    "User is globally disabled" if not global_is_active 
-                    else f"User is disabled in department '{department_name}'"
-                )
+                "is_active": dept_is_active,
+                "message": "User can login" if dept_is_active else f"User is disabled in department '{department_name}'"
             }
         else:
-            # Return global status and all department statuses
+            # Return all department statuses
             # For Admin, only return their department
             if current_user.role == "Admin":
                 admin_dept = current_user.department_name
@@ -1224,7 +2245,6 @@ async def get_user_active_status(
                 "success": True,
                 "email": email,
                 "username": target_user.get("user_name"),
-                "global_is_active": global_is_active,
                 "departments": departments
             }
     
@@ -1235,6 +2255,78 @@ async def get_user_active_status(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get user active status"
+        )
+
+
+@router.get("/users/{email}/roles")
+async def get_user_roles_in_department(
+    email: str,
+    department_name: str = Query(..., description="Department to get roles for"),
+    current_user: User = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    """
+    Get all roles a user has in a specific department.
+
+    Access Control:
+    - SuperAdmin: Can check any user in any department
+    - Admin: Can check users within their own department only
+    """
+    if current_user.role not in ("Admin", "SuperAdmin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only Admin and SuperAdmin can view user roles"
+        )
+
+    try:
+        # Admin can only query their own department
+        if current_user.role == "Admin":
+            admin_dept = current_user.department_name
+            if admin_dept != department_name:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"You can only view users in your department '{admin_dept}'"
+                )
+
+        # Check if target user exists
+        target_user = await auth_service.user_repo.get_user_basic_by_email(email)
+        if not target_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User '{email}' not found"
+            )
+
+        # Get all departments (includes grouped roles per department)
+        user_depts = await auth_service.user_dept_mapping_repo.get_user_departments(email)
+
+        # Find the requested department
+        dept_data = next(
+            (d for d in user_depts if d.get("department_name") == department_name),
+            None
+        )
+        if not dept_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User '{email}' is not a member of department '{department_name}'"
+            )
+
+        return {
+            "success": True,
+            "email": email,
+            "username": target_user.get("user_name"),
+            "department_name": department_name,
+            "current_role": dept_data.get("role"),
+            "roles": dept_data.get("roles", []),
+            "is_active": dept_data.get("is_active", True)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Error getting user roles in department: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get user roles"
         )
 
 

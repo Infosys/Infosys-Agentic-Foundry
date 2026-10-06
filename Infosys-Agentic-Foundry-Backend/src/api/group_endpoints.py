@@ -378,7 +378,7 @@ async def get_all_groups_endpoint(
         raise HTTPException(status_code=500, detail=f"Error retrieving all groups: {str(e)}")
 
 
-@router.put("/update-group/{group_name}", response_model=GroupUpdateResponse)
+@router.api_route("/update-group/{group_name}", methods=["PUT", "POST"], response_model=GroupUpdateResponse)
 async def update_group_endpoint(
     request: Request,
     group_name: str,
@@ -514,7 +514,7 @@ async def update_group_endpoint(
         log.error(f"Error updating group: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error updating group: {str(e)}")
 
-@router.delete("/delete-group")
+@router.api_route("/delete-group", methods=["DELETE", "POST"])
 async def delete_group_endpoint(
     delete_request: DeleteGroupsRequest,
     current_user: User = Depends(get_current_user),
@@ -663,7 +663,7 @@ async def get_groups_by_agent_endpoint(
         raise HTTPException(status_code=500, detail=f"Error retrieving groups by agent: {str(e)}")
 
 
-@router.get("/get/search-paginated/")
+@router.get("/get/search-paginated")
 async def search_paginated_groups_endpoint(
     request: Request,
     search_value: Optional[str] = Query(None),

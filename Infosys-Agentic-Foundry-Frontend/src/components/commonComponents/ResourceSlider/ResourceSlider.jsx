@@ -7,7 +7,7 @@ import { useErrorHandler } from "../../../Hooks/useErrorHandler";
 import { useToolsAgentsService } from "../../../services/toolService";
 import { useMcpServerService } from "../../../services/serverService";
 import { useKnowledgeBaseService } from "../../../services/knowledgeBaseService";
-import { META_AGENT, PLANNER_META_AGENT, HYBRID_AGENT, agentTypesDropdown } from "../../../constant";
+import { META_AGENT, PLANNER_META_AGENT, HYBRID_AGENT, SKILL_AGENT, agentTypesDropdown } from "../../../constant";
 import ToolDetailModal from "../../ToolDetailModal/ToolDetailModal";
 import UnifiedFilterDropdown from "../UnifiedFilterDropdown";
 import IAFButton from "../../../iafComponents/GlobalComponents/Buttons/Button";
@@ -33,8 +33,11 @@ const ResourceSlider = ({
 }) => {
   // Check if this is a meta agent (requires agents instead of tools/servers)
   const isMetaAgent = agentType === META_AGENT || agentType === PLANNER_META_AGENT;
-  // const showDatabasesTab = !isMetaAgent && availableDbConnections.length > 0; // Data connectors tab hidden
-  const showDatabasesTab = false;
+
+  // Skill agents have no tools/KB — parent already gates this
+  const isSkillAgent = agentType === SKILL_AGENT;
+
+  const showDatabasesTab = !isMetaAgent && !isSkillAgent && availableDbConnections.length > 0;
 
   // For meta agents, default to "agents" tab; otherwise use the provided initialTab
   const [resourceTab, setResourceTab] = useState(isMetaAgent ? "agents" : initialTab);
@@ -138,7 +141,14 @@ const ResourceSlider = ({
    */
   const getTypeOptions = () => {
     if (isMetaAgent || resourceTab === "agents") {
-      return agentTypesDropdown.filter((type) => type.value !== "" && type.value !== META_AGENT && type.value !== PLANNER_META_AGENT && type.value !== HYBRID_AGENT);
+      return agentTypesDropdown.filter(
+        (type) =>
+          type.value !== "" &&
+          type.value !== META_AGENT &&
+          type.value !== PLANNER_META_AGENT &&
+          type.value !== HYBRID_AGENT &&
+          type.value !== SKILL_AGENT
+      );
     }
     if (resourceTab === "servers") {
       return [
@@ -251,15 +261,13 @@ const ResourceSlider = ({
 
       let items = response?.details || [];
 
-      // For agents tab, exclude meta_agent, planner_meta_agent, and hybrid_agent types
-      // These agent types cannot be used as sub-agents
+      // For agents tab, exclude types that cannot be used as sub-agents for Meta / Planner Meta
       if (effectiveType === "agents") {
-        const excludedTypes = [META_AGENT, PLANNER_META_AGENT, HYBRID_AGENT];
+        const excludedTypes = [META_AGENT, PLANNER_META_AGENT, HYBRID_AGENT, SKILL_AGENT];
         items = items.filter(
           (item) => !excludedTypes.includes(item.agentic_application_type)
         );
       }
-
 
       if (append) {
         setAllResources((prev) => (Array.isArray(prev) ? [...prev, ...items] : items));
@@ -606,7 +614,7 @@ const ResourceSlider = ({
     return internalSelectedResources.some((r) => (r.tool_id || r.agentic_application_id || r.id) === resourceId);
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || isSkillAgent) return null;
 
   return ReactDOM.createPortal(
     <>

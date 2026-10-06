@@ -32,6 +32,9 @@ const AvailableTools = () => {
   const canAddTools = typeof hasPermission === "function" ? hasPermission("add_access.tools") : false;
   const canUpdateTools = typeof hasPermission === "function" ? hasPermission("update_access.tools") : false;
   const canDeleteTools = typeof hasPermission === "function" ? hasPermission("delete_access.tools") : false;
+  const canExportTools = typeof hasPermission === "function" ? hasPermission("export_tools_access") : false;
+  const canImportTools = typeof hasPermission === "function" ? hasPermission("import_tools_access") : false;
+  const canConvertToMcp = typeof hasPermission === "function" ? hasPermission("convert_to_mcp_access") : false;
 
   const [toolList, setToolList] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -780,16 +783,16 @@ const AvailableTools = () => {
           showCreatedByDropdown={true}
           createdBy={createdBy}
           onCreatedByChange={handleCreatedByChange}
-          secondaryButtonLabel={canAddTools ? "Convert to MCP" : undefined}
-          onSecondaryButtonClick={canAddTools ? handleGenerateClick : undefined}
-          secondaryButtonDisabled={canAddTools ? (selectedToolIds.length === 0 || hasSelectedValidators) : true}
+          secondaryButtonLabel={canConvertToMcp ? "Convert to MCP" : undefined}
+          onSecondaryButtonClick={canConvertToMcp ? handleGenerateClick : undefined}
+          secondaryButtonDisabled={canConvertToMcp ? (selectedToolIds.length === 0 || hasSelectedValidators) : true}
           secondaryButtonTitle={hasSelectedValidators ? "Validators cannot be converted to MCP" : ""}
-          tertiaryButtonLabel={canAddTools ? "Export" : undefined}
-          onTertiaryButtonClick={canAddTools ? handleExportTools : undefined}
+          tertiaryButtonLabel={canExportTools ? "Export" : undefined}
+          onTertiaryButtonClick={canExportTools ? handleExportTools : undefined}
           tertiaryButtonDisabled={selectedToolIds.length === 0 || exportLoading}
           tertiaryButtonTitle={selectedToolIds.length === 0 ? "Select tools to export" : ""}
-          quaternaryButtonLabel={canAddTools ? "Import" : undefined}
-          onQuaternaryButtonClick={canAddTools ? () => setShowImportModal(true) : undefined}
+          quaternaryButtonLabel={canImportTools ? "Import" : undefined}
+          onQuaternaryButtonClick={canImportTools ? () => setShowImportModal(true) : undefined}
           quaternaryButtonDisabled={importLoading}
           quaternaryButtonTitle="Import tools from a zip file"
           showSelectAll={canDeleteTools && isAdmin && visibleData.length > 1}
@@ -819,11 +822,11 @@ const AvailableTools = () => {
               contextType="tool"
               onCreateClick={canAddTools ? handlePlusIconClick : undefined}
               showCreateCard={false}
-              showCheckbox={canDeleteTools || canAddTools}
+              showCheckbox={canDeleteTools || canAddTools || canExportTools}
               onSelectionChange={(name, checked) => {
-                // Update both multi-select (for delete) and tool select (for MCP conversion)
+                // Update both multi-select (for delete) and tool select (for MCP conversion / export)
                 handleMultiSelectChange(name, checked);
-                if (canAddTools) handleToolSelect(name, checked);
+                if (canAddTools || canExportTools || canConvertToMcp) handleToolSelect(name, checked);
               }}
               selectedIds={multiSelectIds}
               idKey="tool_id"

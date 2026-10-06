@@ -1,0 +1,222 @@
+name: Build and Deploy Frontend to AKS #
+
+on:
+  push:
+    branches:
+      - 'skill-agent-dev-sync'
+  workflow_dispatch:
+    inputs:
+      backend_ip:
+        description: 'Backend LoadBalancer IP (from backend pipeline)'
+        required: false
+        type: string
+      frontend_namespace:
+        description: 'K8s namespace for frontend'
+        required: false
+        default: 'iaffe19'
+        type: string
+
+env:
+  AZURE_CONTAINER_REGISTRY: acr10052.azurecr.io
+  RESOURCE_GROUP: RG-PCS-AZ-CR-10052
+  CLUSTER_NAME: aks-REQ0848275
+  NAMESPACE: iaffesohan
+  DEPLOY_NAME: iaffe
+  CONTAINER_NAME: iaffe
+  SHORT_NAME: iaffe
+  FRONTEND_NAMESPACE: iaffesohan
+
+jobs:
+  buildImage:
+    name: Build and Push Docker Image
+    runs-on: [self-hosted, Linux, X64, iaffe]
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        shell: bash
+        env:
+          REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-bundle.crt
+          SSL_CERT_FILE: /etc/ssl/certs/ca-bundle.crt
+        run: |
+          az login --service-principal \
+            --username "${{ secrets.AZURE_CLIENT_ID }}" \
+            --password "${{ secrets.AZURE_CLIENT_SECRET }}" \
+            --tenant "${{ secrets.AZURE_TENANT_ID }}"
+          az account set --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+
+      - name: Build and Push Docker Image to ACR
+        env:
+          HTTP_PROXY: http://agblrproxy.ad.infosys.com:80
+          HTTPS_PROXY: https://agblrproxy.ad.infosys.com:80
+          NO_PROXY: '127.0.0.1,localhost,acr10052.azurecr.io,phoenix.iafobserve.svc.cluster.local,100.78.161.68,10.0.0.0/8,*.local'
+          BACKEND_IP: ${{ github.event.inputs.backend_ip }}
+        run: |
+          ACR_IMG="${{ env.AZURE_CONTAINER_REGISTRY }}/iaf-fe19:${{ github.sha }}"
+          echo "Logging in to ACR..."
+          unset HTTP_PROXY
+          unset HTTPS_PROXY
+          az acr login --name acr10052
+          cd "$AGENT_PATH"
+          BUILD_ARGS=""
+          if [ -n "$BACKEND_IP" ]; then
+            REACT_APP_BASE_URL="http://${BACKEND_IP}:8000"
+            BUILD_ARGS="--build-arg REACT_APP_BASE_URL=$REACT_APP_BASE_URL"
+            echo "Building with REACT_APP_BASE_URL=$REACT_APP_BASE_URL"
+          fi
+          docker build --shm-size=8g $BUILD_ARGS -t "$ACR_IMG" .
+          docker push "$ACR_IMG"
+
+  deploy:
+    name: Deploy to AKS
+    needs: buildImage
+    runs-on: [self-hosted, Linux, X64, iaffe]
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        shell: bash
+        env:
+          REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-bundle.crt
+          SSL_CERT_FILE: /etc/ssl/certs/ca-bundle.crt
+        run: |
+          az login --service-principal \
+            --username "${{ secrets.AZURE_CLIENT_ID }}" \
+            --password "${{ secrets.AZURE_CLIENT_SECRET }}" \
+            --tenant "${{ secrets.AZURE_TENANT_ID }}"
+          az account set --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+
+      - name: Set up kubelogin
+        env:
+          NODE_EXTRA_CA_CERTS: /etc/ssl/certs/ca-bundle.crt
+        uses: azure/use-kubelogin@v1
+        with:
+          kubelogin-version: 'v0.0.25'
+
+      - name: Get K8s context
+        uses: azure/aks-set-context@v3
+        with:
+          resource-group: ${{ env.RESOURCE_GROUP }}
+          cluster-name: ${{ env.CLUSTER_NAME }}
+          admin: 'false'
+          use-kubelogin: 'true'
+
+      - name: Ensure Namespace Exists
+        run: |
+          kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+
+      - name: Create/Update Kubernetes Secret
+        env:
+          ENV_FILE_CONTENT: ${{ secrets.AZURE_SOHAN_FE }}
+        run: |
+          echo "=== Processing environment file ==="
+          if [ -z "$ENV_FILE_CONTENT" ]; then
+             echo "ERROR: APP_ENV_FILE_AZURE_FE secret is empty."
+             exit 1
+          fi
+
+          printf "%s" "$ENV_FILE_CONTENT" > .env.temp
+          sed 's/\r$//' .env.temp > .env.temp.lf && mv .env.temp.lf .env.temp
+          awk -F= '!seen[$1]++' .env.temp > .env.cleaned
+          sed 's/^[[:space:]]*//; s/[[:space:]]*=[[:space:]]*/=/; s/="\(.*\)"$/=\1/; s/='\''\(.*\)'\''$/=\1/; /^$/d; /^#/d' .env.cleaned > .env.k8s
+
+          if [ -n "${{ github.event.inputs.backend_ip }}" ]; then
+            echo "REACT_APP_BASE_URL=http://${{ github.event.inputs.backend_ip }}:8000" >> .env.k8s
+          fi
+
+          kubectl create secret generic app-env \
+            --from-env-file=.env.k8s \
+            -n ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+          rm -f .env.temp .env.cleaned .env.k8s
+
+      - name: Validate app-env Secret
+        run: |
+          kubectl describe secret app-env -n ${{ env.NAMESPACE }}
+
+      - name: Check if Deployment Exists and Deploy
+        run: |
+          VAR_IMAGE="${{ env.AZURE_CONTAINER_REGISTRY }}/iaf-fe19:${{ github.sha }}"
+          if kubectl get deployment ${{ env.DEPLOY_NAME }} -n ${{ env.NAMESPACE }} > /dev/null 2>&1; then
+            echo "=== Deployment already exists. Updating image only ==="
+            kubectl set image deployment/${{ env.DEPLOY_NAME }} \
+              ${{ env.CONTAINER_NAME }}="$VAR_IMAGE" \
+              -n ${{ env.NAMESPACE }}
+          else
+            echo "=== First-time deployment. Creating Deployment and Service ==="
+            cat <<EOF | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: ${{ env.DEPLOY_NAME }}
+            namespace: ${{ env.NAMESPACE }}
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: ${{ env.DEPLOY_NAME }}
+            template:
+              metadata:
+                labels:
+                  app: ${{ env.DEPLOY_NAME }}
+              spec:
+                imagePullSecrets:
+                - name: acr-secret
+                containers:
+                  - name: ${{ env.CONTAINER_NAME }}
+                    image: ${VAR_IMAGE}
+                    ports:
+                      - containerPort: 8000
+                    envFrom:
+                      - secretRef:
+                          name: app-env
+                    resources:
+                      requests:
+                        memory: "512Mi"
+                        cpu: "250m"
+                      limits:
+                        memory: "2Gi"
+                        cpu: "1000m"
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: ${{ env.DEPLOY_NAME }}
+            namespace: ${{ env.NAMESPACE }}
+            annotations:
+              service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+          spec:
+            selector:
+              app: ${{ env.DEPLOY_NAME }}
+            ports:
+              - protocol: TCP
+                port: 80
+                targetPort: 80
+            type: LoadBalancer
+          EOF
+          fi
+
+      - name: Wait and Check Deployment
+        run: |
+          echo "Waiting for deployment to be ready..."
+          kubectl rollout status deployment/${{ env.DEPLOY_NAME }} -n ${{ env.NAMESPACE }} --timeout=10m
+          echo "=== Deployment Status ==="
+          kubectl get deployment -n ${{ env.NAMESPACE }} -l app=${{ env.DEPLOY_NAME }}
+          echo "=== Pod Status ==="
+          kubectl get pods -n ${{ env.NAMESPACE }} -l app=${{ env.DEPLOY_NAME }}
+          echo "=== Service Status ==="
+          kubectl get svc -n ${{ env.NAMESPACE }} ${{ env.DEPLOY_NAME }}
+          POD_NAME=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=${{ env.DEPLOY_NAME }} \
+                      -o jsonpath="{.items[0].metadata.name}")
+          if [ -n "$POD_NAME" ]; then
+            echo "=== Pod Logs (last 100 lines) ==="
+            kubectl logs "$POD_NAME" -n ${{ env.NAMESPACE }} --tail=100 || echo "No logs available"

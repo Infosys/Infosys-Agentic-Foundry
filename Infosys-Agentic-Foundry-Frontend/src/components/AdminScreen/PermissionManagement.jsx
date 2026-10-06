@@ -1,10 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import Cookies from "js-cookie";
-import axios from "axios";
 import styles from "./AgentAssignment.module.css";
 import { useMessage } from "../../Hooks/MessageContext";
-import useFetch from "../../Hooks/useAxios.js";
-import { APIs, BASE_URL } from "../../constant";
+import useFetch, { axiosInstance } from "../../Hooks/useAxios.js";
+import { APIs } from "../../constant";
 import Loader from "../commonComponents/Loader";
 import SVGIcons from "../../Icons/SVGIcons";
 
@@ -57,17 +55,31 @@ const PermissionManagement = ({ selectedRole, userDepartment }) => {
       }
     });
 
-    // Inject export_agents_access directly into the Agents category
-    if (typeof perms.export_agents_access === "boolean") {
-      if (!dynamicPermissions["Agents"]) {
-        dynamicPermissions["Agents"] = {};
-      }
-      dynamicPermissions["Agents"]["export_agents_access"] = Boolean(perms.export_agents_access);
-    }
+    // Permissions that belong to specific entity categories (not standalone)
+    const entityCategoryPermissions = {
+      export_agents_access: "Agents",
+      import_agents_access: "Agents",
+      export_tools_access: "Tools",
+      import_tools_access: "Tools",
+      export_servers_access: "Mcp_servers",
+      import_servers_access: "Mcp_servers",
+      convert_to_mcp_access: "Mcp_servers",
+    };
 
-    // Process standalone boolean permissions (exclude export_agents_access since it's handled above)
+    // Inject entity-specific permissions into their categories
+    Object.entries(entityCategoryPermissions).forEach(([permKey, category]) => {
+      if (typeof perms[permKey] === "boolean") {
+        if (!dynamicPermissions[category]) {
+          dynamicPermissions[category] = {};
+        }
+        dynamicPermissions[category][permKey] = Boolean(perms[permKey]);
+      }
+    });
+
+    // Process standalone boolean permissions (exclude entity-specific ones since handled above)
+    const entityPermKeys = Object.keys(entityCategoryPermissions);
     const standalonePermissions = Object.entries(perms).filter(
-      ([key, value]) => !nestedAccessKeys.includes(key) && key !== "export_agents_access" && typeof value === "boolean"
+      ([key, value]) => !nestedAccessKeys.includes(key) && !entityPermKeys.includes(key) && typeof value === "boolean"
     );
 
     // Dynamic category grouping - can be extended without code changes
@@ -129,17 +141,11 @@ const PermissionManagement = ({ selectedRole, userDepartment }) => {
     setPermissions({});
 
     try {
-      const url = `${BASE_URL}${APIs.GET_ROLE_PERMISSIONS}`;
-      const response = await axios.post(
-        url,
+      const response = await axiosInstance.post(
+        APIs.GET_ROLE_PERMISSIONS,
         {
           role_name: roleName,
           department_name: userDepartment || "",
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${Cookies.get("jwt-token")}`,
-          },
         }
       );
 

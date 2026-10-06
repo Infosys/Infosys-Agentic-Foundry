@@ -85,6 +85,11 @@
   cursor: not-allowed;
 }
 
+/* Dark theme: clearer off-state track */
+:root[data-theme="dark"] .slider {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
 /* Light mode overrides */
 :global(:root[data-theme="light"]) .slider {
   background-color: #d1d5db;

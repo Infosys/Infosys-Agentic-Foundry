@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 
 from src.utils.errors import LLMInfrastructureError
 from telemetry_wrapper import logger as log
-
+from src.utils.guardrail_helpers import is_guardrail_exception
 
 # ────────────────────────────────────────────────────────────────────────────
 # 1. Build the ordered error map at import time.
@@ -162,6 +162,9 @@ def classify_llm_exception(exc: Exception) -> Tuple[str, str]:
          so unknown-provider errors are never masked.
     """
     # --- Tier 1: known exception classes ---
+    if isinstance(exc, BadRequestError) and is_guardrail_exception(exc):
+        return "content_policy", "Request was blocked due to content policy. Please rephrase your message."
+
     for exc_class, error_type, message in LLM_ERROR_MAP:
         if isinstance(exc, exc_class):
             return error_type, message
@@ -225,6 +228,9 @@ async def handle_llm_errors(session_id: str = None, writer: Callable = None):
         # Already wrapped, just re-raise
         raise
     except Exception as e:
+        if is_guardrail_exception(e):
+            raise
+
         if is_llm_exception(e):
             error_type, user_message = classify_llm_exception(e)
             provider_info = _get_provider_info(e)

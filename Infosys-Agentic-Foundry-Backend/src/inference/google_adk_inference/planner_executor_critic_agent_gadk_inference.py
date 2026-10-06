@@ -222,7 +222,7 @@ NOTE:
             tools=tools,
             output_schema=CriticSchema,
             output_key="critic_response",
-            after_tool_callback=await self.get_after_critics_tool_callback(inference_config=inference_config)
+            after_agent_callback=await self.get_after_critic_agent_callback(inference_config=inference_config)
         )
 
         critic_based_planner_agent = LlmAgent(

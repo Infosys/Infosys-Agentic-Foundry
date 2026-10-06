@@ -13,9 +13,9 @@ class AzureBlobStorage(StorageInterface):
     def __init__(self):
         try:
             log.info('Fetching Azure connection string from vault...')
-            self.connection_string = get_user_secrets("AZURE_CONNECTION_STRING")
+            self.connection_string = os.getenv("AZURE_CONNECTION_STRING")  # Try environment variable first
             if not self.connection_string:
-                raise ValueError("AZURE_CONNECTION_STRING secret is missing or empty.")
+                raise ValueError("AZURE_CONNECTION_STRING is missing or empty.")
             log.info('Successfully fetched connection string.')
 
             log.info('Fetching Azure container name from vault...')
@@ -30,8 +30,26 @@ class AzureBlobStorage(StorageInterface):
             
             log.info(f'Successfully fetched container name: {self.container_name}')
 
-            self.blob_service_client = BlobServiceClient.from_connection_string(self.connection_string)
-            log.info("Azure BlobServiceClient initialized successfully.")
+            # Try default SSL first (works in K8s/cloud); fall back to custom cert if SSL fails (local/VM behind Zscaler)
+            try:
+                self.blob_service_client = BlobServiceClient.from_connection_string(self.connection_string)
+                self.blob_service_client.get_account_information()  # triggers SSL handshake
+                log.info("[AzureBlobStorage] Initialized with system SSL certs.")
+            except Exception as ssl_err:
+                if "CERTIFICATE" in str(ssl_err) or "SSL" in str(ssl_err):
+                    cert_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "certs", "cerifi.pem")
+                    log.info(f"[AzureBlobStorage] System SSL failed, retrying with custom cert: {cert_path} (exists={os.path.exists(cert_path)})")
+                    if os.path.exists(cert_path):
+                        self.blob_service_client = BlobServiceClient.from_connection_string(
+                            self.connection_string,
+                            connection_verify=cert_path
+                        )
+                        log.info("[AzureBlobStorage] Initialized with custom SSL certificate.")
+                    else:
+                        log.error("[AzureBlobStorage] Custom cert not found, cannot recover from SSL failure.")
+                        raise
+                else:
+                    raise
 
             self.container_client = self.blob_service_client.get_container_client(self.container_name)
             log.info("Azure BlobServiceClient initialized successfully.")
@@ -51,9 +69,10 @@ class AzureBlobStorage(StorageInterface):
                 container=self.container_name, blob=file_name
             )
             blob_client.upload_blob(file_obj, overwrite=True)
+            log.info(f"[AzureBlobStorage] Upload success: '{file_name}' -> container='{self.container_name}'")
             return blob_client.url
         except Exception as e:
-            log.error(f"Error uploading to Azure Blob: {e}")
+            log.error(f"[AzureBlobStorage] Upload failed: '{file_name}' -> container='{self.container_name}' | error={e}", exc_info=True)
             raise
 
     def download_file(self, object_key: str) -> IO:

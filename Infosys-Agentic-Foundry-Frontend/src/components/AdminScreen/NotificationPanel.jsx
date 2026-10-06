@@ -80,6 +80,7 @@ const NotificationPanel = ({ onClose, requests = [], onRefresh, loading = false 
   const [showBulkRejectStrip, setShowBulkRejectStrip] = useState(false);
   const [showBulkApproveStrip, setShowBulkApproveStrip] = useState(false);
 
+
   /** Fetch roles for a given department */
   const fetchDepartmentRoles = useCallback(async (departmentName) => {
     if (!departmentName) {
@@ -88,7 +89,7 @@ const NotificationPanel = ({ onClose, requests = [], onRefresh, loading = false 
     }
     setRolesLoading(true);
     try {
-      const url = `${APIs.GET_DEPARTMENT_ROLES}${encodeURIComponent(departmentName)}/roles`;
+      const url = `${APIs.GET_DEPARTMENT_ROLES}/${encodeURIComponent(departmentName)}/roles`;
       const response = await fetchData(url);
       const roles = Array.isArray(response) ? response
         : Array.isArray(response?.roles) ? response.roles
@@ -102,12 +103,13 @@ const NotificationPanel = ({ onClose, requests = [], onRefresh, loading = false 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** When approve strip is expanded, fetch roles for the appropriate department */
+  /** When approve strip is expanded, fetch departments list */
   useEffect(() => {
     if (!approveExpandedId) {
       setDepartmentRoles([]);
       return;
     }
+
     const request = requests.find((r) => r.id === approveExpandedId);
     // SuperAdmin → use the request's department; Admin → use logged-in department
     const deptName = userRole === "SUPERADMIN" ? (request?.department_name || "") : userDepartment;
@@ -242,7 +244,7 @@ const NotificationPanel = ({ onClose, requests = [], onRefresh, loading = false 
     const fetchBulkRoles = async () => {
       setBulkRolesLoading(true);
       try {
-        const url = `${APIs.GET_DEPARTMENT_ROLES}${encodeURIComponent(deptName)}/roles`;
+        const url = `${APIs.GET_DEPARTMENT_ROLES}/${encodeURIComponent(deptName)}/roles`;
         const response = await fetchData(url);
         const roles = Array.isArray(response)
           ? response
@@ -396,7 +398,7 @@ const NotificationPanel = ({ onClose, requests = [], onRefresh, loading = false 
                     )}
                     selected={bulkRole}
                     onSelect={(option) => setBulkRole(option)}
-                    placeholder={bulkRolesLoading ? "Loading..." : "Select role"}
+                    placeholder={bulkRolesLoading ? "Loading..." : "Select Role"}
                     showSearch={true}
                     width="100%"
                     disabled={bulkRolesLoading || bulkLoading}
@@ -518,13 +520,24 @@ const NotificationPanel = ({ onClose, requests = [], onRefresh, loading = false 
                           {request.email_id || "—"}
                         </span>
                       </div>
-                      <span
-                        className={`${styles.statusBadge} ${getStatusClass(
-                          request.status
-                        )}`}
-                      >
-                        {request.status || "pending"}
-                      </span>
+                      <div className={styles.badgeGroup}>
+                        {request.is_sso ? (
+                          <span className={styles.ssoBadge} title="Registered via SSO">
+                            SSO
+                          </span>
+                        ) : (
+                          <span className={styles.ssoBadge} title="Registered without SSO">
+                            Non SSO
+                          </span>
+                        )}
+                        <span
+                          className={`${styles.statusBadge} ${getStatusClass(
+                            request.status
+                          )}`}
+                        >
+                          {request.status || "pending"}
+                        </span>
+                      </div>
                     </div>
 
                     {/* ── Meta info ── */}
@@ -572,7 +585,7 @@ const NotificationPanel = ({ onClose, requests = [], onRefresh, loading = false 
                       )}
                     </div>
 
-                    {/* ── Expanded Approve Strip with Role Dropdown ── */}
+                    {/* ── Expanded Approve Strip with Role Dropdowns ── */}
                     {isPending && approveExpandedId === request.id && (
                       <div className={styles.approveStrip}>
                         <div className={styles.roleDropdownWrapper}>
@@ -580,7 +593,7 @@ const NotificationPanel = ({ onClose, requests = [], onRefresh, loading = false 
                             options={departmentRoles.filter((r) => userRole === "SUPERADMIN" || r.toLowerCase() !== "admin")}
                             selected={selectedRole}
                             onSelect={(option) => setSelectedRole(option)}
-                            placeholder={rolesLoading ? "Loading roles..." : "Select role"}
+                            placeholder={rolesLoading ? "Loading roles..." : "Select Role"}
                             showSearch={true}
                             width="100%"
                             disabled={rolesLoading}
@@ -651,7 +664,7 @@ const NotificationPanel = ({ onClose, requests = [], onRefresh, loading = false 
           )}
         </div>
       </div>
-    </div>
+    </div >
   );
 };
 

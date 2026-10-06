@@ -1,6 +1,7 @@
 import asyncpg
 import hashlib
 import json
+from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from src.config.constants import TableNames
 from src.auth.models import UserRole
@@ -102,6 +103,7 @@ class UserRepository:
         else:
             # Get user's role in specific department
             # Also check for SuperAdmin with NULL department (they can access any department)
+            # Prefer the is_current=TRUE role when user has multiple roles in the department
             query = """
             SELECT 
                 lc.mail_id,
@@ -116,7 +118,16 @@ class UserRepository:
                 udm.department_name = $2 OR 
                 (udm.department_name IS NULL AND udm.role = 'SuperAdmin')
             )
-            ORDER BY CASE WHEN udm.department_name = $2 THEN 0 ELSE 1 END
+            ORDER BY 
+                CASE WHEN udm.department_name = $2 THEN 0 ELSE 1 END,
+                CASE WHEN udm.is_current = TRUE THEN 0 ELSE 1 END,
+                CASE udm.role
+                    WHEN 'SuperAdmin' THEN 0
+                    WHEN 'Admin' THEN 1
+                    WHEN 'Developer' THEN 2
+                    WHEN 'User' THEN 3
+                    ELSE 4
+                END
             LIMIT 1
             """
             params = [email, department_name]
@@ -319,11 +330,12 @@ class UserDepartmentMappingRepository:
             department_name VARCHAR(50),
             role VARCHAR(50) NOT NULL DEFAULT 'User',
             is_active BOOLEAN DEFAULT TRUE,
+            is_current BOOLEAN DEFAULT FALSE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             created_by TEXT,
             FOREIGN KEY (mail_id) REFERENCES login_credential(mail_id) ON DELETE CASCADE,
             FOREIGN KEY (department_name) REFERENCES departments(department_name) ON DELETE CASCADE,
-            UNIQUE(mail_id, department_name)
+            UNIQUE(mail_id, department_name, role)
         );
         """
         try:
@@ -350,13 +362,107 @@ class UserDepartmentMappingRepository:
                     log.info("Modified department_name column to allow NULL values for SuperAdmin")
                 except Exception as e:
                     log.debug(f"Department_name column already allows NULL or error: {e}")
-                
+
+                # Add last_used_at column for default department tracking
+                try:
+                    await conn.execute(f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMP")
+                    log.info("Added last_used_at column to userdepartmentmapping table for default department tracking")
+                except Exception as e:
+                    log.debug(f"last_used_at column may already exist: {e}")
+
+                # Add is_current column for multi-role per department support
+                try:
+                    await conn.execute(f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS is_current BOOLEAN DEFAULT FALSE")
+                    log.info("Added is_current column to userdepartmentmapping table for multi-role support")
+                except Exception as e:
+                    log.debug(f"is_current column may already exist: {e}")
+
+                # MIGRATION: Migrate from UNIQUE(mail_id, department_name) to UNIQUE(mail_id, department_name, role)
+                await self._migrate_to_multi_role_constraint(conn)
+
                 # MIGRATION: Migrate existing users from login_credential to userdepartmentmapping
                 await self._migrate_existing_users(conn)
                 
                 log.info(f"Table {self.table_name} created successfully or already exists")
         except Exception as e:
             log.error(f"Error creating {self.table_name} table: {e}")
+
+    async def _migrate_to_multi_role_constraint(self, conn):
+        """
+        Migrate from UNIQUE(mail_id, department_name) to UNIQUE(mail_id, department_name, role).
+        Also sets is_current=TRUE for all existing rows (since they are the only role per dept).
+        Creates partial unique index to ensure only one current role per user per department.
+        """
+        try:
+            # Check if old constraint exists
+            old_constraint_exists = await conn.fetchval("""
+                SELECT COUNT(*) FROM information_schema.table_constraints
+                WHERE table_name = $1 
+                AND constraint_type = 'UNIQUE'
+                AND constraint_name LIKE '%mail_id_department_name_key%'
+            """, self.table_name)
+
+            if old_constraint_exists:
+                # Set all existing rows to is_current = TRUE before changing constraint
+                await conn.execute(f"UPDATE {self.table_name} SET is_current = TRUE WHERE is_current = FALSE OR is_current IS NULL")
+                log.info("Set is_current=TRUE for all existing single-role-per-dept rows")
+
+                # Drop old UNIQUE(mail_id, department_name) constraint
+                # The constraint name varies, so find it dynamically
+                old_constraint_name = await conn.fetchval("""
+                    SELECT constraint_name FROM information_schema.table_constraints
+                    WHERE table_name = $1 
+                    AND constraint_type = 'UNIQUE'
+                    AND constraint_name LIKE '%mail_id_department_name_key%'
+                    LIMIT 1
+                """, self.table_name)
+                
+                if old_constraint_name:
+                    await conn.execute(f"ALTER TABLE {self.table_name} DROP CONSTRAINT IF EXISTS {old_constraint_name}")
+                    log.info(f"Dropped old unique constraint: {old_constraint_name}")
+
+                # Add new UNIQUE(mail_id, department_name, role) constraint
+                try:
+                    await conn.execute(f"""
+                        ALTER TABLE {self.table_name} 
+                        ADD CONSTRAINT userdepartmentmapping_mail_dept_role_key 
+                        UNIQUE(mail_id, department_name, role)
+                    """)
+                    log.info("Added new UNIQUE(mail_id, department_name, role) constraint")
+                except Exception as e:
+                    log.debug(f"New unique constraint may already exist: {e}")
+            else:
+                # Check if the new constraint exists already, if not create it
+                new_constraint_exists = await conn.fetchval("""
+                    SELECT COUNT(*) FROM information_schema.table_constraints
+                    WHERE table_name = $1 
+                    AND constraint_type = 'UNIQUE'
+                    AND constraint_name = 'userdepartmentmapping_mail_dept_role_key'
+                """, self.table_name)
+                if not new_constraint_exists:
+                    try:
+                        await conn.execute(f"""
+                            ALTER TABLE {self.table_name} 
+                            ADD CONSTRAINT userdepartmentmapping_mail_dept_role_key 
+                            UNIQUE(mail_id, department_name, role)
+                        """)
+                        log.info("Added UNIQUE(mail_id, department_name, role) constraint")
+                    except Exception as e:
+                        log.debug(f"Constraint may already exist: {e}")
+
+            # Create partial unique index for is_current (only one current role per user per department)
+            try:
+                await conn.execute(f"""
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_one_current_role_per_dept
+                    ON {self.table_name} (mail_id, department_name)
+                    WHERE is_current = TRUE
+                """)
+                log.info("Created partial unique index idx_one_current_role_per_dept")
+            except Exception as e:
+                log.debug(f"Partial unique index may already exist: {e}")
+
+        except Exception as e:
+            log.error(f"Error during multi-role constraint migration: {e}")
 
     async def _migrate_existing_users(self, conn):
         """
@@ -478,15 +584,24 @@ class UserDepartmentMappingRepository:
             # Don't raise - migration failure shouldn't block table creation
 
     async def add_user_to_department(self, mail_id: str, department_name: str, role: str, created_by: str = None) -> bool:
-        """Add a user to a department with a specific role"""
-        query = f"""
-        INSERT INTO {self.table_name} (mail_id, department_name, role, created_by)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (mail_id, department_name) DO NOTHING
-        """
+        """Add a user to a department with a specific role. Supports multiple roles per department."""
         try:
             async with self.pool.acquire() as conn:
-                result = await conn.execute(query, mail_id, department_name, role, created_by)
+                # Check if user already has any role in this department
+                existing_count = await conn.fetchval(f"""
+                    SELECT COUNT(*) FROM {self.table_name}
+                    WHERE mail_id = $1 AND department_name = $2
+                """, mail_id, department_name)
+
+                # If this is the first role in this department, set is_current = TRUE
+                is_current = (existing_count == 0)
+
+                query = f"""
+                INSERT INTO {self.table_name} (mail_id, department_name, role, created_by, is_current)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (mail_id, department_name, role) DO NOTHING
+                """
+                result = await conn.execute(query, mail_id, department_name, role, created_by, is_current)
                 # Check if row was actually inserted (not skipped due to conflict)
                 return "INSERT 0 1" in result
         except Exception as e:
@@ -495,44 +610,101 @@ class UserDepartmentMappingRepository:
 
     async def add_superadmin(self, mail_id: str, created_by: str = None) -> bool:
         """Add a SuperAdmin user with NULL department for system-wide access (insert only)."""
-        insert_query = f"""
-        INSERT INTO {self.table_name} (mail_id, department_name, role, created_by)
-        VALUES ($1, NULL, 'SuperAdmin', $2)
-        ON CONFLICT (mail_id, department_name) DO NOTHING
-        """
         try:
             async with self.pool.acquire() as conn:
-                await conn.execute(insert_query, mail_id, created_by)
+                already_exists = await conn.fetchval(
+                    f"SELECT 1 FROM {self.table_name} WHERE mail_id = $1 AND department_name IS NULL AND role = 'SuperAdmin'",
+                    mail_id,
+                )
+                if already_exists:
+                    return True
+
+                await conn.execute(
+                    f"INSERT INTO {self.table_name} (mail_id, department_name, role, created_by) VALUES ($1, NULL, 'SuperAdmin', $2)",
+                    mail_id, created_by,
+                )
                 return True
         except Exception as e:
             log.error(f"Error adding SuperAdmin {mail_id}: {e}")
             return False
 
-    async def remove_user_from_department(self, mail_id: str, department_name: str) -> bool:
-        """Remove a user from a department"""
-        query = f"""
+    async def remove_superadmin(self, mail_id: str) -> bool:
+        """Remove the SuperAdmin mapping (NULL department, role='SuperAdmin') for a user."""
+        delete_query = f"""
         DELETE FROM {self.table_name}
-        WHERE mail_id = $1 AND department_name = $2
+        WHERE mail_id = $1 AND department_name IS NULL AND role = 'SuperAdmin'
         """
         try:
             async with self.pool.acquire() as conn:
-                result = await conn.execute(query, mail_id, department_name)
-                return "DELETE 1" in result
+                result = await conn.execute(delete_query, mail_id)
+                return "DELETE" in result and "DELETE 0" not in result
+        except Exception as e:
+            log.error(f"Error removing SuperAdmin mapping for {mail_id}: {e}")
+            return False
+
+    async def remove_user_from_department(self, mail_id: str, department_name: str, role: str = None) -> bool:
+        """Remove a user from a department. If role is specified, remove only that role assignment."""
+        if role:
+            query = f"""
+            DELETE FROM {self.table_name}
+            WHERE mail_id = $1 AND department_name = $2 AND role = $3
+            """
+        else:
+            query = f"""
+            DELETE FROM {self.table_name}
+            WHERE mail_id = $1 AND department_name = $2
+            """
+        try:
+            async with self.pool.acquire() as conn:
+                if role:
+                    result = await conn.execute(query, mail_id, department_name, role)
+                else:
+                    result = await conn.execute(query, mail_id, department_name)
+                return "DELETE" in result and "DELETE 0" not in result
         except Exception as e:
             log.error(f"Error removing user {mail_id} from department {department_name}: {e}")
             return False
 
     async def get_user_departments(self, mail_id: str) -> List[Dict[str, Any]]:
-        """Get all departments for a user with their roles and active status"""
+        """Get all departments for a user with their current role, all roles, active status, and last_used_at"""
         query = f"""
-        SELECT department_name, role, is_active FROM {self.table_name}
-        WHERE mail_id = $1
-        ORDER BY department_name
+        SELECT department_name, role, is_active, is_current, created_at, last_used_at
+        FROM {self.table_name}
+        WHERE mail_id = $1 AND department_name IS NOT NULL
+        ORDER BY last_used_at DESC NULLS LAST, created_at DESC
         """
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(query, mail_id)
-                return [dict(row) for row in rows]
+                # Group by department, collecting all roles per department
+                dept_map = {}
+                for row in rows:
+                    dept_name = row['department_name']
+                    if dept_name not in dept_map:
+                        dept_map[dept_name] = {
+                            'department_name': dept_name,
+                            'role': row['role'] if row['is_current'] else None,
+                            'roles': [],
+                            'is_active': row['is_active'],
+                            'created_at': row['created_at'],
+                            'last_used_at': row['last_used_at'],
+                        }
+                    dept_map[dept_name]['roles'].append(row['role'])
+                    if row['is_current']:
+                        dept_map[dept_name]['role'] = row['role']
+                    # is_active: if any role in dept is active, department is active
+                    if row['is_active']:
+                        dept_map[dept_name]['is_active'] = True
+                    # Use latest last_used_at
+                    if row['last_used_at'] and (dept_map[dept_name]['last_used_at'] is None or row['last_used_at'] > dept_map[dept_name]['last_used_at']):
+                        dept_map[dept_name]['last_used_at'] = row['last_used_at']
+
+                # For departments where no role is marked current, pick the first role
+                for dept_name, dept_data in dept_map.items():
+                    if dept_data['role'] is None and dept_data['roles']:
+                        dept_data['role'] = dept_data['roles'][0]
+
+                return list(dept_map.values())
         except Exception as e:
             log.error(f"Error getting departments for user {mail_id}: {e}")
             return []
@@ -555,7 +727,7 @@ class UserDepartmentMappingRepository:
     async def get_department_users(self, department_name: str) -> List[Dict[str, Any]]:
         """Get all users in a department with their details, roles, and active status"""
         query = f"""
-        SELECT udm.mail_id, udm.role, udm.is_active, udm.created_at, udm.created_by, lc.user_name, lc.is_active as global_is_active
+        SELECT udm.mail_id, udm.role, udm.is_active, udm.created_at, udm.created_by, lc.user_name
         FROM {self.table_name} udm
         JOIN login_credential lc ON udm.mail_id = lc.mail_id
         WHERE udm.department_name = $1
@@ -584,11 +756,100 @@ class UserDepartmentMappingRepository:
             return False
 
     async def get_user_role_in_department(self, mail_id: str, department_name: str) -> Optional[str]:
-        """Get user's role in a specific department"""
+        """Get user's currently active role in a specific department"""
         query = f"""
         SELECT role FROM {self.table_name}
-        WHERE mail_id = $1 AND department_name = $2
+        WHERE mail_id = $1 AND department_name = $2 AND is_current = TRUE
         """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchval(query, mail_id, department_name)
+                if result:
+                    return result
+                # Fallback: if no is_current set, return highest priority role
+                fallback_query = f"""
+                SELECT role FROM {self.table_name}
+                WHERE mail_id = $1 AND department_name = $2 AND is_active = TRUE
+                ORDER BY CASE role 
+                    WHEN 'SuperAdmin' THEN 4
+                    WHEN 'Admin' THEN 3 
+                    WHEN 'Developer' THEN 2
+                    WHEN 'User' THEN 1
+                    ELSE 0
+                END DESC
+                LIMIT 1
+                """
+                return await conn.fetchval(fallback_query, mail_id, department_name)
+        except Exception as e:
+            log.error(f"Error getting user {mail_id} role in department {department_name}: {e}")
+            return None
+
+    async def get_user_roles_in_department(self, mail_id: str, department_name: str) -> List[str]:
+        """Get all roles a user has in a specific department"""
+        query = f"""
+        SELECT role FROM {self.table_name}
+        WHERE mail_id = $1 AND department_name = $2 AND is_active = TRUE
+        ORDER BY CASE role 
+            WHEN 'SuperAdmin' THEN 4
+            WHEN 'Admin' THEN 3 
+            WHEN 'Developer' THEN 2
+            WHEN 'User' THEN 1
+            ELSE 0
+        END DESC
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, mail_id, department_name)
+                return [row['role'] for row in rows]
+        except Exception as e:
+            log.error(f"Error getting roles for user {mail_id} in department {department_name}: {e}")
+            return []
+
+    async def switch_role_in_department(self, mail_id: str, department_name: str, new_role: str) -> bool:
+        """Switch user's active role within a department. Sets is_current=TRUE on new role, FALSE on others."""
+        try:
+            async with self.pool.acquire() as conn:
+                # Verify user has the target role in this department
+                has_role = await conn.fetchval(f"""
+                    SELECT COUNT(*) FROM {self.table_name}
+                    WHERE mail_id = $1 AND department_name = $2 AND role = $3 AND is_active = TRUE
+                """, mail_id, department_name, new_role)
+                
+                if not has_role:
+                    return False
+
+                # Unset current on all roles in this department for this user
+                await conn.execute(f"""
+                    UPDATE {self.table_name}
+                    SET is_current = FALSE
+                    WHERE mail_id = $1 AND department_name = $2 AND is_current = TRUE
+                """, mail_id, department_name)
+
+                # Set current on the new role
+                result = await conn.execute(f"""
+                    UPDATE {self.table_name}
+                    SET is_current = TRUE
+                    WHERE mail_id = $1 AND department_name = $2 AND role = $3
+                """, mail_id, department_name, new_role)
+
+                return "UPDATE 1" in result
+        except Exception as e:
+            log.error(f"Error switching role for user {mail_id} in department {department_name} to {new_role}: {e}")
+            return False
+
+    async def check_user_has_role_in_department(self, mail_id: str, department_name: str, role: str) -> bool:
+        """Check if a user has a specific role in a department"""
+        query = f"""
+        SELECT 1 FROM {self.table_name}
+        WHERE mail_id = $1 AND department_name = $2 AND role = $3
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchrow(query, mail_id, department_name, role)
+                return result is not None
+        except Exception as e:
+            log.error(f"Error checking if user {mail_id} has role {role} in department {department_name}: {e}")
+            return False
         try:
             async with self.pool.acquire() as conn:
                 result = await conn.fetchval(query, mail_id, department_name)
@@ -599,7 +860,7 @@ class UserDepartmentMappingRepository:
 
     async def get_user_role_for_department(self, mail_id: str, department_name: str = None) -> Optional[str]:
         """
-        Get user's role for a specific department (including NULL department for SuperAdmin).
+        Get user's current active role for a specific department (including NULL department for SuperAdmin).
         Used for login authentication.
         """
         if department_name is None:
@@ -609,10 +870,10 @@ class UserDepartmentMappingRepository:
             WHERE mail_id = $1 AND department_name IS NULL
             """
         else:
-            # Check for specific department
+            # Check for current role in specific department
             query = f"""
             SELECT role FROM {self.table_name}
-            WHERE mail_id = $1 AND department_name = $2
+            WHERE mail_id = $1 AND department_name = $2 AND is_current = TRUE
             """
         
         try:
@@ -621,6 +882,23 @@ class UserDepartmentMappingRepository:
                     result = await conn.fetchval(query, mail_id)
                 else:
                     result = await conn.fetchval(query, mail_id, department_name)
+                
+                # Fallback: if no is_current role found, pick highest priority active role
+                if not result and department_name is not None:
+                    fallback_query = f"""
+                    SELECT role FROM {self.table_name}
+                    WHERE mail_id = $1 AND department_name = $2 AND is_active = TRUE
+                    ORDER BY CASE role 
+                        WHEN 'SuperAdmin' THEN 4
+                        WHEN 'Admin' THEN 3 
+                        WHEN 'Developer' THEN 2
+                        WHEN 'User' THEN 1
+                        ELSE 0
+                    END DESC
+                    LIMIT 1
+                    """
+                    result = await conn.fetchval(fallback_query, mail_id, department_name)
+                
                 return result
         except Exception as e:
             log.error(f"Error getting user {mail_id} role for department {department_name}: {e}")
@@ -645,7 +923,7 @@ class UserDepartmentMappingRepository:
         """Get all user-department mappings with roles and active status"""
         query = f"""
         SELECT udm.mail_id, udm.department_name, udm.role, udm.is_active, udm.created_at, udm.created_by, 
-               lc.user_name, lc.is_active as global_is_active
+               lc.user_name
         FROM {self.table_name} udm
         JOIN login_credential lc ON udm.mail_id = lc.mail_id
         ORDER BY lc.user_name, udm.department_name
@@ -687,7 +965,7 @@ class UserDepartmentMappingRepository:
     # ─────────────────────────────────────────────────────────────────────────────
 
     async def set_user_active_in_department(self, mail_id: str, department_name: str, is_active: bool) -> bool:
-        """Enable or disable a user in a specific department"""
+        """Enable or disable a user in a specific department (all roles)"""
         query = f"""
         UPDATE {self.table_name}
         SET is_active = $3
@@ -696,7 +974,7 @@ class UserDepartmentMappingRepository:
         try:
             async with self.pool.acquire() as conn:
                 result = await conn.execute(query, mail_id, department_name, is_active)
-                if "UPDATE 1" in result:
+                if "UPDATE" in result:
                     status = "enabled" if is_active else "disabled"
                     log.info(f"User {mail_id} has been {status} in department {department_name}")
                     return True
@@ -715,9 +993,9 @@ class UserDepartmentMappingRepository:
         return await self.set_user_active_in_department(mail_id, department_name, False)
 
     async def is_user_active_in_department(self, mail_id: str, department_name: str) -> Optional[bool]:
-        """Check if user is active in a specific department. Returns None if mapping not found."""
+        """Check if user is active in a specific department. Returns True if any role in dept is active. Returns None if mapping not found."""
         query = f"""
-        SELECT is_active FROM {self.table_name}
+        SELECT BOOL_OR(is_active) FROM {self.table_name}
         WHERE mail_id = $1 AND department_name = $2
         """
         try:
@@ -729,14 +1007,23 @@ class UserDepartmentMappingRepository:
             return None
 
     async def get_user_department_status(self, mail_id: str, department_name: str) -> Optional[Dict[str, Any]]:
-        """Get user's full status in a department including role and active status"""
+        """Get user's full status in a department. Returns the current role's status, or any active role's status."""
         query = f"""
         SELECT role, is_active, created_at, created_by FROM {self.table_name}
-        WHERE mail_id = $1 AND department_name = $2
+        WHERE mail_id = $1 AND department_name = $2 AND is_current = TRUE
         """
         try:
             async with self.pool.acquire() as conn:
                 result = await conn.fetchrow(query, mail_id, department_name)
+                if result:
+                    return dict(result)
+                # Fallback: get any active row for this dept
+                fallback_query = f"""
+                SELECT role, is_active, created_at, created_by FROM {self.table_name}
+                WHERE mail_id = $1 AND department_name = $2 AND is_active = TRUE
+                LIMIT 1
+                """
+                result = await conn.fetchrow(fallback_query, mail_id, department_name)
                 return dict(result) if result else None
         except Exception as e:
             log.error(f"Error getting user {mail_id} status in department {department_name}: {e}")
@@ -752,6 +1039,17 @@ class UserDepartmentMappingRepository:
         except Exception as e:
             log.error(f"Error checking if SuperAdmin exists: {e}")
             return True  # Return True to be safe and prevent creating multiple SuperAdmins
+
+    async def has_superadmin_assignment_for_user(self, mail_id: str) -> bool:
+        """Check if a specific user has a SuperAdmin NULL-department entry (system-wide access marker)"""
+        query = f"SELECT COUNT(*) FROM {self.table_name} WHERE mail_id = $1 AND role = 'SuperAdmin' AND department_name IS NULL"
+        try:
+            async with self.pool.acquire() as conn:
+                count = await conn.fetchval(query, mail_id)
+                return count > 0
+        except Exception as e:
+            log.error(f"Error checking SuperAdmin assignment for user {mail_id}: {e}")
+            return False
 
 
     async def search_users_all(
@@ -782,11 +1080,12 @@ class UserDepartmentMappingRepository:
                     params_count.append(f"%{search}%")
 
                 rows_q = f"""
-                    SELECT lc.mail_id, lc.user_name, lc.is_active as global_is_active
+                    SELECT lc.mail_id, lc.user_name
                     FROM login_credential lc
                     LEFT JOIN {self.table_name} udm ON lc.mail_id = udm.mail_id
                     WHERE udm.mail_id IS NULL
                     {search_cond}
+                    ORDER BY lc.user_name ASC, lc.mail_id ASC
                     LIMIT ${len(params_rows)+1} OFFSET ${len(params_rows)+2}
                 """
                 # Add limit/offset only to rows query
@@ -806,7 +1105,6 @@ class UserDepartmentMappingRepository:
                         {
                             "email": r["mail_id"],
                             "username": r["user_name"],
-                            "global_is_active": r["global_is_active"] if r["global_is_active"] is not None else True,
                             "departments": [],
                             "status": "Pending",
                         }
@@ -838,34 +1136,31 @@ class UserDepartmentMappingRepository:
 
             where_sql = " AND ".join(where_parts)
 
-            inner = f"""
-                SELECT lc.mail_id, lc.user_name, lc.is_active as global_is_active,
-                    udm.department_name, udm.role, udm.is_active as dept_is_active, udm.created_at, udm.created_by
+            rows_q = f"""
+                SELECT lc.mail_id, lc.user_name,
+                    ARRAY[
+                        JSON_BUILD_OBJECT(
+                            'department_name', udm.department_name,
+                            'role', udm.role,
+                            'is_active', udm.is_active,
+                            'added_at', udm.created_at,
+                            'added_by', udm.created_by
+                        )
+                    ] AS departments
                 FROM {self.table_name} udm
                 JOIN login_credential lc ON lc.mail_id = udm.mail_id
                 WHERE {where_sql} {search_cond}
-            """
-
-            rows_q = f"""
-                SELECT s.mail_id AS mail_id,
-                    MAX(s.user_name) AS user_name,
-                    BOOL_AND(s.global_is_active) AS global_is_active,
-                    ARRAY_AGG(
-                        JSON_BUILD_OBJECT(
-                        'department_name', s.department_name,
-                        'role', s.role,
-                        'is_active', s.dept_is_active,
-                        'added_at', s.created_at,
-                        'added_by', s.created_by
-                        )
-                    ) AS departments
-                FROM ({inner}) AS s
-                GROUP BY s.mail_id
+                ORDER BY LOWER(TRIM(lc.user_name)) ASC, lc.mail_id ASC, udm.department_name ASC
                 LIMIT ${len(params_rows)+1} OFFSET ${len(params_rows)+2}
             """
             rows = await conn.fetch(rows_q, *params_rows, limit, offset)
 
-            count_q = f"SELECT COUNT(DISTINCT s.mail_id) FROM ({inner}) AS s"
+            count_q = f"""
+                SELECT COUNT(*)
+                FROM {self.table_name} udm
+                JOIN login_credential lc ON lc.mail_id = udm.mail_id
+                WHERE {where_sql} {search_cond}
+            """
             total = await conn.fetchval(count_q, *params_count)
 
             return {
@@ -873,9 +1168,8 @@ class UserDepartmentMappingRepository:
                     {
                         "email": r["mail_id"],
                         "username": r["user_name"],
-                        "global_is_active": r["global_is_active"] if r["global_is_active"] is not None else True,
                         "departments": r["departments"],
-                        "status": "Active" if r["departments"] else "Pending",
+                        "status": "Active",
                     }
                     for r in rows
                 ],
@@ -915,35 +1209,32 @@ class UserDepartmentMappingRepository:
             params_rows.append(f"%{search}%")
             params_count.append(f"%{search}%")
 
-        inner = f"""
-            SELECT lc.mail_id, lc.user_name, lc.is_active as global_is_active,
-                udm.department_name, udm.role, udm.is_active as dept_is_active, udm.created_at, udm.created_by
+        rows_q = f"""
+            SELECT lc.mail_id, lc.user_name,
+                ARRAY[
+                    JSON_BUILD_OBJECT(
+                        'department_name', udm.department_name,
+                        'role', udm.role,
+                        'is_active', udm.is_active,
+                        'added_at', udm.created_at,
+                        'added_by', udm.created_by
+                    )
+                ] AS departments
             FROM {self.table_name} udm
             JOIN login_credential lc ON lc.mail_id = udm.mail_id
             WHERE {' AND '.join(where_parts)} {search_cond}
-        """
-
-        rows_q = f"""
-            SELECT s.mail_id AS mail_id,
-                MAX(s.user_name) AS user_name,
-                BOOL_AND(s.global_is_active) AS global_is_active,
-                ARRAY_AGG(
-                    JSON_BUILD_OBJECT(
-                    'department_name', s.department_name,
-                    'role', s.role,
-                    'is_active', s.dept_is_active,
-                    'added_at', s.created_at,
-                    'added_by', s.created_by
-                    )
-                ) AS departments
-            FROM ({inner}) AS s
-            GROUP BY s.mail_id
+            ORDER BY LOWER(TRIM(lc.user_name)) ASC, lc.mail_id ASC, udm.department_name ASC
             LIMIT ${len(params_rows)+1} OFFSET ${len(params_rows)+2}
         """
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(rows_q, *params_rows, limit, offset)
 
-            count_q = f"SELECT COUNT(DISTINCT s.mail_id) FROM ({inner}) AS s"
+            count_q = f"""
+                SELECT COUNT(*)
+                FROM {self.table_name} udm
+                JOIN login_credential lc ON lc.mail_id = udm.mail_id
+                WHERE {' AND '.join(where_parts)} {search_cond}
+            """
             total = await conn.fetchval(count_q, *params_count)
 
         return {
@@ -951,7 +1242,6 @@ class UserDepartmentMappingRepository:
                 {
                     "email": r["mail_id"],
                     "username": r["user_name"],
-                    "global_is_active": r["global_is_active"] if r["global_is_active"] is not None else True,
                     "departments": r["departments"],
                     "status": "Active",
                 }
@@ -976,6 +1266,49 @@ class UserDepartmentMappingRepository:
         except Exception as e:
             log.error(f"Error getting admin emails for department {department_name}: {e}")
             return []
+
+    async def update_last_used_at(self, mail_id: str, department_name: str) -> bool:
+        """Update the last_used_at timestamp for a users department (for tracking default department)"""
+        query = f"""
+        UPDATE {self.table_name}
+        SET last_used_at = CURRENT_TIMESTAMP
+        WHERE mail_id = $1 AND department_name = $2
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(query, mail_id, department_name)
+                return "UPDATE" in result
+        except Exception as e:
+            log.error(f"Error updating last_used_at for user {mail_id} in department {department_name}: {e}")
+            return False
+
+    async def get_default_department(self, mail_id: str) -> Optional[Dict[str, Any]]:
+        """Get the most recently used (default) department for a user with the current role"""
+        query = f"""
+        SELECT department_name, role, is_active, last_used_at
+        FROM {self.table_name}
+        WHERE mail_id = $1 AND is_active = TRUE AND is_current = TRUE
+        ORDER BY last_used_at DESC NULLS LAST, created_at DESC
+        LIMIT 1
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, mail_id)
+                if row:
+                    return dict(row)
+                # Fallback: if no is_current row, get most recent department
+                fallback_query = f"""
+                SELECT department_name, role, is_active, last_used_at
+                FROM {self.table_name}
+                WHERE mail_id = $1 AND is_active = TRUE AND department_name IS NOT NULL
+                ORDER BY last_used_at DESC NULLS LAST, created_at DESC
+                LIMIT 1
+                """
+                row = await conn.fetchrow(fallback_query, mail_id)
+                return dict(row) if row else None
+        except Exception as e:
+            log.error(f"Error getting default department for user {mail_id}: {e}")
+            return None
 
 
 class ApprovalPermissionRepository:
@@ -1087,11 +1420,11 @@ class AuditLogRepository:
         self.table_name = TableNames.AUDIT_LOGS_IAF.value
 
     async def create_table_if_not_exists(self):
-        """Create audit logs table if it doesn't exist. user_id refers to mail_id from login_credential."""
+        """Create audit logs table if it doesn't exist."""
         create_table_query = f"""
         CREATE TABLE IF NOT EXISTS {self.table_name} (
             id TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id TEXT REFERENCES {TableNames.LOGIN_CREDENTIAL.value}(mail_id) ON DELETE SET NULL,
+            user_id TEXT,
             action VARCHAR(100) NOT NULL,
             resource_type VARCHAR(50) NOT NULL,
             resource_id VARCHAR(255),
@@ -1105,6 +1438,11 @@ class AuditLogRepository:
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(create_table_query)
+                # If table already existed with old schema (user_id REFERENCES login_credential), drop that FK
+                fk_name = f"{self.table_name}_user_id_fkey"
+                await conn.execute(
+                    f"ALTER TABLE {self.table_name} DROP CONSTRAINT IF EXISTS {fk_name}"
+                )
             log.info(f"Table '{self.table_name}' created or already exists.")
         except Exception as e:
             log.error(f"Error creating table '{self.table_name}': {e}")
@@ -1386,6 +1724,12 @@ class RoleRepository:
                     canvas_view_access BOOLEAN DEFAULT false,
                     context_access BOOLEAN DEFAULT false,
                     export_agents_access BOOLEAN DEFAULT false,
+                    export_tools_access BOOLEAN DEFAULT false,
+                    export_servers_access BOOLEAN DEFAULT false,
+                    convert_to_mcp_access BOOLEAN DEFAULT false,
+                    import_tools_access BOOLEAN DEFAULT false,
+                    import_servers_access BOOLEAN DEFAULT false,
+                    import_agents_access BOOLEAN DEFAULT false,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     created_by TEXT,
@@ -1471,6 +1815,48 @@ class RoleRepository:
                     log.info("Added export_agents_access column to existing table")
                 except Exception as e:
                     log.debug(f"export_agents_access column may already exist: {e}")
+
+                # Add export_tools_access column (for existing databases)
+                try:
+                    await conn.execute(f"ALTER TABLE {self.role_access_table} ADD COLUMN IF NOT EXISTS export_tools_access BOOLEAN DEFAULT false")
+                    log.info("Added export_tools_access column to existing table")
+                except Exception as e:
+                    log.debug(f"export_tools_access column may already exist: {e}")
+
+                # Add export_servers_access column (for existing databases)
+                try:
+                    await conn.execute(f"ALTER TABLE {self.role_access_table} ADD COLUMN IF NOT EXISTS export_servers_access BOOLEAN DEFAULT false")
+                    log.info("Added export_servers_access column to existing table")
+                except Exception as e:
+                    log.debug(f"export_servers_access column may already exist: {e}")
+
+                # Add convert_to_mcp_access column (for existing databases)
+                try:
+                    await conn.execute(f"ALTER TABLE {self.role_access_table} ADD COLUMN IF NOT EXISTS convert_to_mcp_access BOOLEAN DEFAULT false")
+                    log.info("Added convert_to_mcp_access column to existing table")
+                except Exception as e:
+                    log.debug(f"convert_to_mcp_access column may already exist: {e}")
+
+                # Add import_tools_access column (for existing databases)
+                try:
+                    await conn.execute(f"ALTER TABLE {self.role_access_table} ADD COLUMN IF NOT EXISTS import_tools_access BOOLEAN DEFAULT false")
+                    log.info("Added import_tools_access column to existing table")
+                except Exception as e:
+                    log.debug(f"import_tools_access column may already exist: {e}")
+
+                # Add import_servers_access column (for existing databases)
+                try:
+                    await conn.execute(f"ALTER TABLE {self.role_access_table} ADD COLUMN IF NOT EXISTS import_servers_access BOOLEAN DEFAULT false")
+                    log.info("Added import_servers_access column to existing table")
+                except Exception as e:
+                    log.debug(f"import_servers_access column may already exist: {e}")
+
+                # Add import_agents_access column (for existing databases)
+                try:
+                    await conn.execute(f"ALTER TABLE {self.role_access_table} ADD COLUMN IF NOT EXISTS import_agents_access BOOLEAN DEFAULT false")
+                    log.info("Added import_agents_access column to existing table")
+                except Exception as e:
+                    log.debug(f"import_agents_access column may already exist: {e}")
 
                 # Migration: Add mcp_servers and workflows keys to existing JSONB permission fields
                 try:
@@ -1590,6 +1976,12 @@ class RoleRepository:
                                   validator_access: bool = None, file_context_access: bool = None,
                                   canvas_view_access: bool = None, context_access: bool = None,
                                   export_agents_access: bool = None,
+                                  export_tools_access: bool = None,
+                                  export_servers_access: bool = None,
+                                  convert_to_mcp_access: bool = None,
+                                  import_tools_access: bool = None,
+                                  import_servers_access: bool = None,
+                                  import_agents_access: bool = None,
                                   created_by: str = None) -> bool:
         """Set permissions for a role in a specific department"""
         # First check if role exists in the department
@@ -1627,11 +2019,17 @@ class RoleRepository:
         canvas_view_access_val = canvas_view_access if canvas_view_access is not None else False
         context_access_val = context_access if context_access is not None else False
         export_agents_access_val = export_agents_access if export_agents_access is not None else False
+        export_tools_access_val = export_tools_access if export_tools_access is not None else False
+        export_servers_access_val = export_servers_access if export_servers_access is not None else False
+        convert_to_mcp_access_val = convert_to_mcp_access if convert_to_mcp_access is not None else False
+        import_tools_access_val = import_tools_access if import_tools_access is not None else False
+        import_servers_access_val = import_servers_access if import_servers_access is not None else False
+        import_agents_access_val = import_agents_access if import_agents_access is not None else False
 
         # Insert or update role permissions
         upsert_query = f"""
-        INSERT INTO {self.role_access_table} (department_name, role_name, read_access, add_access, update_access, delete_access, execute_access, execution_steps_access, tool_verifier_flag_access, plan_verifier_flag_access, online_evaluation_flag_access, evaluation_access, vault_access, data_connector_access, knowledgebase_access, validator_access, file_context_access, canvas_view_access, context_access, export_agents_access, created_by)
-        VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+        INSERT INTO {self.role_access_table} (department_name, role_name, read_access, add_access, update_access, delete_access, execute_access, execution_steps_access, tool_verifier_flag_access, plan_verifier_flag_access, online_evaluation_flag_access, evaluation_access, vault_access, data_connector_access, knowledgebase_access, validator_access, file_context_access, canvas_view_access, context_access, export_agents_access, export_tools_access, export_servers_access, convert_to_mcp_access, import_tools_access, import_servers_access, import_agents_access, created_by)
+        VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
         ON CONFLICT (department_name, role_name) 
         DO UPDATE SET 
             read_access = EXCLUDED.read_access,
@@ -1652,6 +2050,12 @@ class RoleRepository:
             canvas_view_access = EXCLUDED.canvas_view_access,
             context_access = EXCLUDED.context_access,
             export_agents_access = EXCLUDED.export_agents_access,
+            export_tools_access = EXCLUDED.export_tools_access,
+            export_servers_access = EXCLUDED.export_servers_access,
+            convert_to_mcp_access = EXCLUDED.convert_to_mcp_access,
+            import_tools_access = EXCLUDED.import_tools_access,
+            import_servers_access = EXCLUDED.import_servers_access,
+            import_agents_access = EXCLUDED.import_agents_access,
             updated_at = CURRENT_TIMESTAMP
         """
         try:
@@ -1664,7 +2068,7 @@ class RoleRepository:
                                  tool_verifier_access, plan_verifier_access, online_evaluation_flag,
                                  evaluation_access_val, vault_access_val, data_connector_access_val,
                                  knowledgebase_access_val, validator_access_val, file_context_access_val, canvas_view_access_val,
-                                 context_access_val, export_agents_access_val, created_by)
+                                 context_access_val, export_agents_access_val, export_tools_access_val, export_servers_access_val, convert_to_mcp_access_val, import_tools_access_val, import_servers_access_val, import_agents_access_val, created_by)
                 log.info(f"Permissions set for role '{role_name}' in department '{department_name}'")
                 return True
         except Exception as e:
@@ -1694,7 +2098,7 @@ class RoleRepository:
         for perm_name, perm_value in permissions.items():
             if perm_value is not None and perm_name.endswith('_access'):
                 param_count += 1
-                if perm_name in ['execution_steps_access', 'tool_verifier_flag_access', 'plan_verifier_flag_access', 'online_evaluation_flag_access', 'evaluation_access', 'vault_access', 'data_connector_access', 'knowledgebase_access', 'validator_access', 'file_context_access', 'canvas_view_access', 'context_access', 'export_agents_access']:
+                if perm_name in ['execution_steps_access', 'tool_verifier_flag_access', 'plan_verifier_flag_access', 'online_evaluation_flag_access', 'evaluation_access', 'vault_access', 'data_connector_access', 'knowledgebase_access', 'validator_access', 'file_context_access', 'canvas_view_access', 'context_access', 'export_agents_access', 'export_tools_access', 'export_servers_access', 'convert_to_mcp_access', 'import_tools_access', 'import_servers_access', 'import_agents_access']:
                     # Handle boolean fields
                     update_fields.append(f"{perm_name} = ${param_count}")
                     params.append(perm_value)
@@ -1742,7 +2146,9 @@ class RoleRepository:
                    ra.tool_verifier_flag_access, ra.plan_verifier_flag_access, ra.online_evaluation_flag_access,
                    ra.evaluation_access, ra.vault_access, ra.data_connector_access, ra.knowledgebase_access,
                    ra.validator_access, ra.file_context_access, ra.canvas_view_access, ra.context_access,
-                   ra.export_agents_access,
+                   ra.export_agents_access, ra.export_tools_access, ra.export_servers_access,
+                   ra.convert_to_mcp_access,
+                   ra.import_tools_access, ra.import_servers_access, ra.import_agents_access,
                    ra.created_at, ra.updated_at, ra.created_by
             FROM {self.role_access_table} ra
             WHERE ra.department_name = $1
@@ -1756,7 +2162,9 @@ class RoleRepository:
                    ra.tool_verifier_flag_access, ra.plan_verifier_flag_access, ra.online_evaluation_flag_access,
                    ra.evaluation_access, ra.vault_access, ra.data_connector_access, ra.knowledgebase_access,
                    ra.validator_access, ra.file_context_access, ra.canvas_view_access, ra.context_access,
-                   ra.export_agents_access,
+                   ra.export_agents_access, ra.export_tools_access, ra.export_servers_access,
+                   ra.convert_to_mcp_access,
+                   ra.import_tools_access, ra.import_servers_access, ra.import_agents_access,
                    ra.created_at, ra.updated_at, ra.created_by
             FROM {self.role_access_table} ra
             ORDER BY ra.department_name, ra.role_name
@@ -1794,7 +2202,13 @@ class RoleRepository:
                     "file_context_access": False,
                     "canvas_view_access": False,
                     "context_access": False,
-                    "export_agents_access": False
+                    "export_agents_access": False,
+                    "export_tools_access": False,
+                    "export_servers_access": False,
+                    "convert_to_mcp_access": False,
+                    "import_tools_access": False,
+                    "import_servers_access": False,
+                    "import_agents_access": False
                 },
                 "Developer": {
                     "read_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
@@ -1814,7 +2228,13 @@ class RoleRepository:
                     "file_context_access": True,
                     "canvas_view_access": True,
                     "context_access": True,
-                    "export_agents_access": True
+                    "export_agents_access": True,
+                    "export_tools_access": True,
+                    "export_servers_access": True,
+                    "convert_to_mcp_access": True,
+                    "import_tools_access": True,
+                    "import_servers_access": True,
+                    "import_agents_access": True
                 },
                 "Admin": {
                     "read_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
@@ -1834,7 +2254,13 @@ class RoleRepository:
                     "file_context_access": True,
                     "canvas_view_access": True,
                     "context_access": True,
-                    "export_agents_access": True
+                    "export_agents_access": True,
+                    "export_tools_access": True,
+                    "export_servers_access": True,
+                    "convert_to_mcp_access": True,
+                    "import_tools_access": True,
+                    "import_servers_access": True,
+                    "import_agents_access": True
                 },
                 "SuperAdmin": {
                     "read_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
@@ -1854,7 +2280,13 @@ class RoleRepository:
                     "file_context_access": True,
                     "canvas_view_access": True,
                     "context_access": True,
-                    "export_agents_access": True
+                    "export_agents_access": True,
+                    "export_tools_access": True,
+                    "export_servers_access": True,
+                    "convert_to_mcp_access": True,
+                    "import_tools_access": True,
+                    "import_servers_access": True,
+                    "import_agents_access": True
                 }
             }
 
@@ -1912,6 +2344,12 @@ class RoleRepository:
                         canvas_view_access=permissions["canvas_view_access"],
                         context_access=permissions["context_access"],
                         export_agents_access=permissions["export_agents_access"],
+                        export_tools_access=permissions["export_tools_access"],
+                        export_servers_access=permissions["export_servers_access"],
+                        convert_to_mcp_access=permissions["convert_to_mcp_access"],
+                        import_tools_access=permissions["import_tools_access"],
+                        import_servers_access=permissions["import_servers_access"],
+                        import_agents_access=permissions["import_agents_access"],
                         created_by=system_user
                     )
                     log.info(f"Default permissions set for role '{role_name}' in department 'General'")
@@ -1980,31 +2418,52 @@ class DepartmentRepository:
             return False
 
     async def add_department(self, department_name: str, created_by: str = None):
-        """Add a new department to the departments table"""
+        """Add a new department to the departments table.
+
+        Seeds the ``roles`` column with the default set (``Admin``, ``Developer``,
+        ``User``) at INSERT time so a freshly-created department has usable
+        roles immediately. Previously the column relied on its ``'[]'::jsonb``
+        default and was only populated later by
+        ``initialize_default_roles_and_permissions`` on the next startup /
+        background sweep, which caused a race where the UI would show an
+        empty roles list until that task ran.
+        """
         try:
+            import json
+
             # Ensure department name is properly formatted (first letter capitalized)
             department_name = department_name.strip()
             if department_name and not department_name[0].isupper():
                 department_name = department_name.capitalize()
-            
+
             # Check if department already exists
             if await self.department_exists(department_name):
                 log.warning(f"Department '{department_name}' already exists")
                 return False
-            
+
+            default_roles = []
+
             async with self.pool.acquire() as conn:
                 query = f"""
-        INSERT INTO {self.departments_table} (department_name, created_by)
-        VALUES ($1, $2)
-        RETURNING department_name, created_at, created_by
+        INSERT INTO {self.departments_table} (department_name, created_by, roles)
+        VALUES ($1, $2, $3::jsonb)
+        RETURNING department_name, created_at, created_by, roles
         """
-                result = await conn.fetchrow(query, department_name, created_by)
-                
+                result = await conn.fetchrow(
+                    query,
+                    department_name,
+                    created_by,
+                    json.dumps(default_roles),
+                )
+
                 if result:
-                    log.info(f"Department '{department_name}' added successfully by {created_by}")
+                    log.info(
+                        f"Department '{department_name}' added successfully by {created_by} "
+                        f"with default roles {default_roles}"
+                    )
                     return dict(result)
                 return None
-                
+
         except Exception as e:
             log.error(f"Failed to add department '{department_name}': {e}")
             return None
@@ -2662,7 +3121,7 @@ class UserAccessKeyRepository:
     and department admins assign allowed values to users here.
     
     Example:
-        User "john@company.com" has:
+        User "user@example.com" has:
         - access_key: "employees", allowed_values: ["EMP001", "EMP002"]
         - access_key: "projects", allowed_values: ["*"]  (wildcard = all)
     """
@@ -2722,6 +3181,7 @@ class UserAccessKeyRepository:
             SELECT access_key, allowed_values, excluded_values
             FROM {self.table_name} 
             WHERE user_id = $1 AND department_name = $2
+            ORDER BY assigned_at DESC
             """
             params = (user_id, department_name)
         else:
@@ -2729,6 +3189,7 @@ class UserAccessKeyRepository:
             SELECT access_key, allowed_values, excluded_values
             FROM {self.table_name} 
             WHERE user_id = $1
+            ORDER BY assigned_at DESC
             """
             params = (user_id,)
         try:
@@ -2756,6 +3217,7 @@ class UserAccessKeyRepository:
             SELECT access_key, excluded_values 
             FROM {self.table_name} 
             WHERE user_id = $1 AND department_name = $2
+            ORDER BY assigned_at DESC
             """
             params = (user_id, department_name)
         else:
@@ -2763,6 +3225,7 @@ class UserAccessKeyRepository:
             SELECT access_key, excluded_values 
             FROM {self.table_name} 
             WHERE user_id = $1
+            ORDER BY assigned_at DESC
             """
             params = (user_id,)
         try:
@@ -2789,6 +3252,7 @@ class UserAccessKeyRepository:
             SELECT access_key, allowed_values, excluded_values 
             FROM {self.table_name} 
             WHERE user_id = $1 AND department_name = $2
+            ORDER BY assigned_at DESC
             """
             params = (user_id, department_name)
         else:
@@ -2796,6 +3260,7 @@ class UserAccessKeyRepository:
             SELECT access_key, allowed_values, excluded_values 
             FROM {self.table_name} 
             WHERE user_id = $1
+            ORDER BY assigned_at DESC
             """
             params = (user_id,)
         try:
@@ -3055,6 +3520,7 @@ class UserAccessKeyRepository:
             SELECT user_id, allowed_values, excluded_values, department_name
             FROM {self.table_name} 
             WHERE access_key = $1 AND department_name = $2
+            ORDER BY assigned_at DESC
             """
             params = (access_key, department_name)
         else:
@@ -3062,6 +3528,7 @@ class UserAccessKeyRepository:
             SELECT user_id, allowed_values, excluded_values, department_name
             FROM {self.table_name} 
             WHERE access_key = $1
+            ORDER BY assigned_at DESC
             """
             params = (access_key,)
         try:
@@ -3162,12 +3629,21 @@ class RegistrationRequestRepository:
             reviewed_at TIMESTAMP,
             rejection_reason TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            is_sso BOOLEAN DEFAULT FALSE,
             CONSTRAINT {self.table_name}_status_check CHECK (status IN ('pending', 'approved', 'rejected'))
         );
         """
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(create_table_query)
+
+                # Add is_sso column if it doesn't exist (for existing databases)
+                try:
+                    await conn.execute(f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS is_sso BOOLEAN DEFAULT FALSE")
+                    log.info("Added is_sso column to registration_requests table")
+                except Exception as e:
+                    log.debug(f"Column is_sso may already exist: {e}")
+
                 # Create indexes for faster lookups
                 await conn.execute(
                     f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_dept_status "
@@ -3176,6 +3652,10 @@ class RegistrationRequestRepository:
                 await conn.execute(
                     f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_email_status "
                     f"ON {self.table_name} (email_id, status)"
+                )
+                await conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_sso_status "
+                    f"ON {self.table_name} (is_sso, status)"
                 )
             log.info(f"Table '{self.table_name}' created successfully or already exists.")
         except Exception as e:
@@ -3201,10 +3681,10 @@ class RegistrationRequestRepository:
         """Get all pending registration requests for a department"""
         query = f"""
         SELECT id, email_id, user_name, department_name, status, assigned_role,
-               reviewed_by, reviewed_at, rejection_reason, created_at
+               reviewed_by, reviewed_at, rejection_reason, created_at, is_sso
         FROM {self.table_name}
         WHERE department_name = $1 AND status = 'pending'
-        ORDER BY created_at ASC
+        ORDER BY created_at DESC
         """
         try:
             async with self.pool.acquire() as conn:
@@ -3218,10 +3698,10 @@ class RegistrationRequestRepository:
         """Get all pending registration requests (SuperAdmin view)"""
         query = f"""
         SELECT id, email_id, user_name, department_name, status, assigned_role,
-               reviewed_by, reviewed_at, rejection_reason, created_at
+               reviewed_by, reviewed_at, rejection_reason, created_at, is_sso
         FROM {self.table_name}
         WHERE status = 'pending'
-        ORDER BY department_name, created_at ASC
+        ORDER BY department_name, created_at DESC
         """
         try:
             async with self.pool.acquire() as conn:
@@ -3307,4 +3787,405 @@ class RegistrationRequestRepository:
                 return [dict(row) for row in rows]
         except Exception as e:
             log.error(f"Error fetching requests for email {email_id}: {e}")
+            return []
+
+    async def get_total_requests_count_by_email(
+        self,
+        email_id: str,
+        search_value: str = '',
+        status: Optional[str] = None
+    ) -> int:
+        """
+        Returns the total count of registration requests for an email matching the search criteria.
+
+        Args:
+            email_id (str): The email whose requests to count.
+            search_value (str, optional): Department name to filter by (partial match).
+            status (str, optional): Filter by request status (pending, approved, rejected).
+
+        Returns:
+            int: Total count of matching requests.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                conditions = ["email_id = $1"]
+                params: List[Any] = [email_id]
+                param_count = 1
+
+                if search_value:
+                    param_count += 1
+                    conditions.append(f"department_name ILIKE ${param_count}")
+                    params.append(f"%{search_value}%")
+
+                if status:
+                    param_count += 1
+                    conditions.append(f"status = ${param_count}")
+                    params.append(status)
+
+                where_clause = " WHERE " + " AND ".join(conditions)
+                query = f"SELECT COUNT(*) FROM {self.table_name}{where_clause}"
+                count = await conn.fetchval(query, *params)
+                return int(count) if count is not None else 0
+        except Exception as e:
+            log.error(f"Error getting total requests count for email {email_id}: {e}")
+            return 0
+
+    async def get_requests_by_email_paginated(
+        self,
+        email_id: str,
+        search_value: str = '',
+        limit: int = 20,
+        page: int = 1,
+        status: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get registration requests for an email with pagination and search filtering.
+
+        Args:
+            email_id (str): The email whose requests to retrieve.
+            search_value (str, optional): Department name to filter by (partial match).
+            limit (int, optional): Number of results per page.
+            page (int, optional): Page number for pagination.
+            status (str, optional): Filter by request status (pending, approved, rejected).
+
+        Returns:
+            List[Dict[str, Any]]: List of registration request records.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                conditions = ["email_id = $1"]
+                params: List[Any] = [email_id]
+                param_count = 1
+
+                if search_value:
+                    param_count += 1
+                    conditions.append(f"department_name ILIKE ${param_count}")
+                    params.append(f"%{search_value}%")
+
+                if status:
+                    param_count += 1
+                    conditions.append(f"status = ${param_count}")
+                    params.append(status)
+
+                where_clause = " WHERE " + " AND ".join(conditions)
+
+                offset = (page - 1) * limit
+                param_count += 1
+                limit_clause = f" LIMIT ${param_count}"
+                params.append(limit)
+
+                param_count += 1
+                offset_clause = f" OFFSET ${param_count}"
+                params.append(offset)
+
+                query = f"""
+                SELECT id, email_id, user_name, department_name, status, assigned_role,
+                       reviewed_by, reviewed_at, rejection_reason, created_at
+                FROM {self.table_name}
+                {where_clause}
+                ORDER BY created_at DESC
+                {limit_clause}{offset_clause}
+                """
+                rows = await conn.fetch(query, *params)
+                return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error fetching paginated requests for email {email_id}: {e}")
+            return []
+
+    async def create_sso_request(self, email_id: str, user_name: str) -> Optional[int]:
+        """Create a new SSO user registration request (no PWD, no department yet).
+        Returns the request ID."""
+        query = f"""
+        INSERT INTO {self.table_name} (email_id, user_name, password, department_name, status, is_sso)
+        VALUES ($1, $2, 'SSO_USER', 'UNASSIGNED', 'pending', TRUE)
+        RETURNING id
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchrow(query, email_id, user_name)
+                log.info(f"Created SSO registration request for {email_id}, request_id: {result['id'] if result else None}")
+                return result['id'] if result else None
+        except asyncpg.UniqueViolationError:
+            log.warning(f"SSO registration request already exists for {email_id}")
+            return None
+        except Exception as e:
+            log.error(f"Error creating SSO registration request: {e}")
+            return None
+
+    async def create_sso_requests_with_departments(self, email_id: str, user_name: str, department_names: list) -> list:
+        """Create SSO registration requests for one or more specific departments.
+        Returns list of created request IDs."""
+        request_ids = []
+        query = f"""
+        INSERT INTO {self.table_name} (email_id, user_name, password, department_name, status, is_sso)
+        VALUES ($1, $2, 'SSO_USER', $3, 'pending', TRUE)
+        RETURNING id
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                for department_name in department_names:
+                    try:
+                        result = await conn.fetchrow(query, email_id, user_name, department_name)
+                        if result:
+                            request_ids.append(result['id'])
+                    except Exception as e:
+                        log.warning(f"Could not create SSO request for {email_id} / {department_name}: {e}")
+        except Exception as e:
+            log.error(f"Error creating SSO registration requests for {email_id}: {e}")
+        return request_ids
+
+    async def has_pending_sso_request(self, email_id: str) -> bool:
+        """Check if a pending SSO request already exists for this email"""
+        query = f"""
+        SELECT 1 FROM {self.table_name}
+        WHERE email_id = $1 AND is_sso = TRUE AND status = 'pending'
+        LIMIT 1
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchrow(query, email_id)
+                return result is not None
+        except Exception as e:
+            log.error(f"Error checking pending SSO request: {e}")
+            return False
+
+    async def get_all_pending_sso_users(self) -> List[Dict[str, Any]]:
+        """Get all pending SSO registration requests"""
+        query = f"""
+        SELECT id, email_id, user_name, created_at, is_sso
+        FROM {self.table_name}
+        WHERE is_sso = TRUE AND status = 'pending'
+        ORDER BY created_at DESC
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query)
+                return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error fetching pending SSO users: {e}")
+            return []
+
+    async def approve_sso_request(self, request_id: int, department_name: str, role: str, reviewed_by: str) -> bool:
+        """Approve an SSO registration request with department and role assignment"""
+        query = f"""
+        UPDATE {self.table_name}
+        SET status = 'approved', department_name = $1, assigned_role = $2, reviewed_by = $3, reviewed_at = CURRENT_TIMESTAMP
+        WHERE id = $4 AND status = 'pending' AND is_sso = TRUE
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(query, department_name, role, reviewed_by, request_id)
+                return result == "UPDATE 1"
+        except Exception as e:
+            log.error(f"Error approving SSO registration request {request_id}: {e}")
+            return False
+
+
+class AuthorizationCodeRepository:
+    """Repository for one-time authorization codes (OAuth callback security)"""
+
+    def __init__(self, pool: asyncpg.Pool):
+        self.pool = pool
+        self.table_name = "authorization_codes"
+
+    async def create_table_if_not_exists(self):
+        """Create authorization_codes table if it doesn't exist"""
+        create_table_query = f"""
+        CREATE TABLE IF NOT EXISTS {self.table_name} (
+            code VARCHAR(64) PRIMARY KEY,
+            access_token TEXT NOT NULL,
+            refresh_token TEXT,
+            id_token TEXT,
+            email VARCHAR(255) NOT NULL,
+            username VARCHAR(255),
+            role VARCHAR(50),
+            department_name VARCHAR(50),
+            expires_in INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL,
+            used_at TIMESTAMP,
+            ip_address VARCHAR(45),
+            user_agent TEXT
+        );
+        """
+
+        create_index_query = f"""
+        CREATE INDEX IF NOT EXISTS idx_authorization_codes_expires_at
+        ON {self.table_name}(expires_at);
+        """
+
+        create_email_index = f"""
+        CREATE INDEX IF NOT EXISTS idx_authorization_codes_email
+        ON {self.table_name}(email);
+        """
+
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_table_query)
+                await conn.execute(create_index_query)
+                await conn.execute(create_email_index)
+                log.info(f"Table {self.table_name} created successfully or already exists")
+        except Exception as e:
+            log.error(f"Error creating {self.table_name} table: {e}")
+
+    async def store_code(
+        self,
+        code: str,
+        access_token: str,
+        refresh_token: str,
+        id_token: str,
+        email: str,
+        username: str,
+        role: str,
+        department_name: str,
+        expires_in: int,
+        expiry_seconds: int = 60,
+        ip_address: str = None,
+        user_agent: str = None
+    ) -> bool:
+        """
+        Store a one-time authorization code with associated tokens.
+
+        Args:
+            code: One-time authorization code (generated by backend)
+            access_token: JWT access token to return after code exchange
+            refresh_token: Refresh token
+            id_token: OpenID Connect ID token
+            email: User email
+            username: User display name
+            role: User role in department
+            department_name: Current department
+            expires_in: Token expiry in seconds
+            expiry_seconds: Code expiry time (default 60 seconds)
+            ip_address: Client IP for audit
+            user_agent: Client user agent for audit
+        """
+        query = f"""
+        INSERT INTO {self.table_name}
+        (code, access_token, refresh_token, id_token, email, username, role,
+         department_name, expires_in, expires_at, ip_address, user_agent)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        """
+
+        expires_at = datetime.utcnow() + timedelta(seconds=expiry_seconds)
+
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    query,
+                    code,
+                    access_token,
+                    refresh_token,
+                    id_token,
+                    email,
+                    username,
+                    role,
+                    department_name,
+                    expires_in,
+                    expires_at,
+                    ip_address,
+                    user_agent
+                )
+                log.info(f"Stored authorization code for user {email} (expires in {expiry_seconds}s)")
+                return True
+        except Exception as e:
+            log.error(f"Error storing authorization code: {e}")
+            return False
+
+    async def exchange_code(self, code: str) -> Optional[Dict[str, Any]]:
+        """
+        Exchange one-time code for tokens (one-time use only).
+
+        Returns token data and marks code as used, or None if:
+        - Code doesn't exist
+        - Code already used
+        - Code expired
+        """
+        # Get code data
+        query = f"""
+        SELECT code, access_token, refresh_token, id_token, email, username,
+               role, department_name, expires_in, used_at, expires_at
+        FROM {self.table_name}
+        WHERE code = $1
+        """
+
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, code)
+
+                if not row:
+                    log.warning(f"Authorization code not found: {code[:8]}...")
+                    return None
+
+                # Check if already used
+                if row['used_at'] is not None:
+                    log.warning(f"Authorization code already used: {code[:8]}...")
+                    return None
+
+                # Check if expired
+                if datetime.utcnow() > row['expires_at']:
+                    log.warning(f"Authorization code expired: {code[:8]}...")
+                    return None
+
+                # Mark as used
+                update_query = f"""
+                UPDATE {self.table_name}
+                SET used_at = CURRENT_TIMESTAMP
+                WHERE code = $1
+                """
+                await conn.execute(update_query, code)
+
+                log.info(f"Authorization code exchanged successfully for user {row['email']}")
+
+                return {
+                    'token': row['access_token'],
+                    'refresh_token': row['refresh_token'],
+                    'id_token': row['id_token'],
+                    'email': row['email'],
+                    'username': row['username'],
+                    'role': row['role'],
+                    'department_name': row['department_name'],
+                    'expires_in': row['expires_in']
+                }
+
+        except Exception as e:
+            log.error(f"Error exchanging authorization code: {e}")
+            return None
+
+    async def cleanup_expired_codes(self) -> int:
+        """Delete expired and used authorization codes"""
+        query = f"""
+        DELETE FROM {self.table_name}
+        WHERE expires_at < CURRENT_TIMESTAMP OR used_at IS NOT NULL
+        """
+
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(query)
+                # Parse "DELETE N" to get count
+                count = int(result.split()[-1]) if result.startswith("DELETE") else 0
+                if count > 0:
+                    log.info(f"Cleaned up {count} expired/used authorization codes")
+                return count
+        except Exception as e:
+            log.error(f"Error cleaning up authorization codes: {e}")
+            return 0
+
+    async def revoke_codes_for_user(self, email: str) -> int:
+        """Revoke all authorization codes for a user (for logout/security)"""
+        query = f"""
+        DELETE FROM {self.table_name}
+        WHERE email = $1
+        """
+
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(query, email)
+                count = int(result.split()[-1]) if result.startswith("DELETE") else 0
+                if count > 0:
+                    log.info(f"Revoked {count} authorization codes for user {email}")
+                return count
+        except Exception as e:
+            log.error(f"Error revoking authorization codes for {email}: {e}")
+            return 0
             return []

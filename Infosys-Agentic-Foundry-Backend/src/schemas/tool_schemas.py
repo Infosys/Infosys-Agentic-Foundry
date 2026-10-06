@@ -104,6 +104,18 @@ class ExecuteRequest(BaseModel):
     inputs: Optional[Dict[str, Any]] = {}
     handle_default: bool = False
 
+    @field_validator('code')
+    @classmethod
+    def decode_code(cls, v: str) -> str:
+        try:
+            decoded = base64.b64decode(v).decode('utf-8')
+            # Basic sanity check: decoded content should look like Python code
+            if any(kw in decoded for kw in ('def ', 'import ', 'class ', '=', 'print')):
+                return decoded
+        except Exception:
+            pass
+        return v  # Not base64, use as-is (backward compatibility)
+
 # class ExecuteResponse(BaseModel):
 #     inputs_required: List[str] = []
 #     output: Optional[Any] = None
@@ -206,12 +218,24 @@ class McpToolTestResponse(BaseModel):
 
 class InlineMcpRequest(BaseModel):
     """Schema for inline MCP code execution request."""
-    code: str = Field(..., description="Python MCP server code to execute.")
+    code: str = Field(..., description="Python MCP server code to execute (raw or base64 encoded).")
     tool_name: Optional[str] = Field(None, description="Name of the tool to execute. If not provided, returns tool introspection.")
     arguments: Optional[Dict[str, Any]] = Field(None, description="Arguments to pass to the tool.")
     timeout_sec: Optional[int] = Field(5, ge=1, le=15, description="Timeout for tool execution in seconds.")
     debug: Optional[bool] = Field(False, description="If true, include lightweight discovery diagnostics in warnings (introspection mode only).")
     handle_default: Optional[bool] = Field(False, description="If true, on coercion failure or missing required params with defaults, auto-apply defaults instead of erroring. Also echoed back in responses.")
+
+    @field_validator('code')
+    @classmethod
+    def decode_code(cls, v: str) -> str:
+        try:
+            decoded = base64.b64decode(v).decode('utf-8')
+            # Basic sanity check: decoded content should look like Python code
+            if any(kw in decoded for kw in ('def ', 'import ', 'class ', '=', 'print', 'mcp')):
+                return decoded
+        except Exception:
+            pass
+        return v  # Not base64, use as-is (backward compatibility)
 
 class InlineRemoteMcpRequest(BaseModel):
     """Schema for remote MCP server execution without registering the server."""

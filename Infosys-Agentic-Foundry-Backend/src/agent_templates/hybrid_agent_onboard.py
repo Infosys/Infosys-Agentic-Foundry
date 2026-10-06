@@ -1,6 +1,6 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
 from typing import Dict, Optional, List
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers.string import StrOutputParser
 from src.prompts.prompts import hybrid_agent_system_prompt_generator_prompt
 

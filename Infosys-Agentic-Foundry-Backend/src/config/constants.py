@@ -15,7 +15,7 @@ load_dotenv()
 class Limits:
     # Chat Constants
     LANGGRAPH_LONG_TERM_MEMORY_LIMIT: Final[int] = 8
-    LANGGRAPH_EXECUTOR_MESSAGES_LIMIT: Final[int] = 30
+    LANGGRAPH_EXECUTOR_MESSAGES_LIMIT: Final[int] = 100
     PYTHON_BASED_AGENT_CHAT_HISTORY_LOOKBACK: Final[Optional[int]] = 30
     # Cache TTL for admin config service (seconds)
     ADMIN_CONFIG_CACHE_TTL_SECONDS: Final[int] = 60
@@ -28,6 +28,32 @@ class Limits:
     RELEVANCE_THRESHOLD: Final[float] = 0.65
     CLEANUP_USAGE_THRESHOLD: Final[int] = 3
     LOW_PERFORMER_THRESHOLD: Final[float] = 0.2
+
+
+# ============================================================================
+# Async Response Mode Configuration
+# ============================================================================
+
+class AsyncResponseConfig:
+    """
+    Configuration for the flag-based async response mode used by long-running
+    endpoints (agent/tool onboarding, inference) so they can return a task_id
+    immediately and let the client poll, instead of holding the HTTP connection
+    open past a gateway timeout.
+
+    All limits are PER-POD (per worker process). Total capacity across the
+    deployment = value x number of pods.
+    """
+    # N — Max number of async background tasks allowed to EXECUTE concurrently per pod.
+    ASYNC_RESPONSE_MAX_RUNNING: Final[int] = int(os.getenv("ASYNC_RESPONSE_MAX_RUNNING", "100"))
+    # M — Max number of async tasks allowed to WAIT (queued in memory) for a running
+    # slot per pod. 0 = no queue; reject immediately with HTTP 429 once N slots are full.
+    ASYNC_RESPONSE_MAX_QUEUED: Final[int] = int(os.getenv("ASYNC_RESPONSE_MAX_QUEUED", "0"))
+    # Minutes after which a task still stuck in 'queued'/'processing' is considered
+    # orphaned (e.g. the pod running it restarted) and marked 'failed' by the reaper.
+    ASYNC_RESPONSE_STUCK_TIMEOUT_MINUTES: Final[float] = float(os.getenv("ASYNC_RESPONSE_STUCK_TIMEOUT_MINUTES", "30"))
+    # Hours to retain a completed/failed task row before the cleanup job deletes it.
+    ASYNC_RESPONSE_RESULT_RETENTION_HOURS: Final[float] = float(os.getenv("ASYNC_RESPONSE_RESULT_RETENTION_HOURS", "24"))
 
 
 # ============================================================================
@@ -184,6 +210,8 @@ class AgentType(StrEnum):
     # Meta Agent Types
     META_AGENT = "meta_agent"
     PLANNER_META_AGENT = "planner_meta_agent"
+    # Skill-Based Agent Type (AgentOS)
+    SKILL_AGENT = "skill_agent"
 
     @classmethod
     def basic_types(cls) -> Set["AgentType"]:
@@ -237,6 +265,7 @@ class AgentType(StrEnum):
             AgentType.HYBRID_AGENT: "hyb",
             AgentType.META_AGENT: "met",
             AgentType.PLANNER_META_AGENT: "pme",
+            AgentType.SKILL_AGENT: "skl",
         }
         return code_mapping.get(self)
 
@@ -312,6 +341,11 @@ class TableNames(StrEnum):
     # Standalone LiteLLM token usage logs and model cost lookup
     TOKEN_USAGE_LOGS = "token_usage_logs"
     MODEL_COSTS = "model_costs"
+    # Cron Scheduler
+    SCHEDULED_JOBS = "scheduled_jobs"
+    SCHEDULE_EXECUTION_HISTORY = "schedule_execution_history"
+    # LLM Request Tracking (for monitoring success/failure rates)
+    LLM_REQUEST_TRACKING = "llm_request_tracking"
 
 
 # ============================================================================
@@ -321,16 +355,36 @@ class TableNames(StrEnum):
 class ModelNames(StrEnum):
     GPT_4O = "gpt-4o"
     GPT_5_CHAT = "gpt-5-chat"
+    CLAUDE_SONNET_4 = "claude-sonnet-4-6"
 
 
 # ============================================================================
-# Kafka Configuration
+# Message Queue Configuration
 # ============================================================================
 
-class KafkaTopics(StrEnum):
-    TOOL_REQUESTS = "iaf_tool_call_requests"
-    TOOL_RESPONSES = "iaf_tool_call_responses"
-    AGENT_REQUESTS = "iaf_agent_call_requests"
+class MessageQueueProvider(StrEnum):
+    """Supported message queue providers"""
+    KAFKA = "kafka"
+    AZURE_SERVICE_BUS = "azure_service_bus"
+    NONE = "none"
+
+    @classmethod
+    def from_env(cls) -> "MessageQueueProvider":
+        """Get message queue provider from environment variable"""
+        try:
+            env_value = os.getenv("MESSAGE_QUEUE_PROVIDER", "").lower().strip()
+            if not env_value:
+                return cls.NONE
+            return cls(env_value)
+        except ValueError:
+            return cls.KAFKA
+
+
+class MQTopics(StrEnum):
+    """Generic message queue topic/queue names (provider-agnostic)"""
+    TOOL_REQUESTS = os.getenv("MQ_TOPIC_TOOL_REQUESTS", os.getenv("KAFKA_TOPIC_TOOL_REQUESTS", "iaf_tool_call_requests"))
+    TOOL_RESPONSES = os.getenv("MQ_TOPIC_TOOL_RESPONSES", os.getenv("KAFKA_TOPIC_TOOL_RESPONSES", "iaf_tool_call_responses"))
+    AGENT_REQUESTS = os.getenv("MQ_TOPIC_AGENT_REQUESTS", os.getenv("KAFKA_TOPIC_AGENT_REQUESTS", "iaf_agent_call_requests"))
 
 
 @dataclass(frozen=True)
@@ -371,5 +425,75 @@ class KafkaDefaults:
     # Listener
     LISTENER_POLL_TIMEOUT_MS: int = 3000
     LISTENER_DEFAULT_TIMEOUT: int = 300  # seconds (5 minutes)
+
+
+@dataclass(frozen=True)
+class AzureServiceBusDefaults:
+    """Default configuration values for Azure Service Bus"""
+    # Connection — Priority: connection string > Azure AD
+    CONNECTION_STRING: str = os.getenv("AZURE_SERVICEBUS_CONNECTION_STRING", "")
+    NAMESPACE: str = os.getenv("AZURE_SERVICEBUS_NAMESPACE", "")  # fully qualified: <name>.servicebus.windows.net
+
+    # Azure AD auth (used when connection string is empty)
+    TENANT_ID: str = os.getenv("AZURE_SERVICEBUS_TENANT_ID", os.getenv("AZURE_TENANT_ID", ""))
+    CLIENT_ID: str = os.getenv("AZURE_SERVICEBUS_CLIENT_ID", os.getenv("AZURE_CLIENT_ID", ""))
+    CLIENT_SECRET: str = os.getenv("AZURE_SERVICEBUS_CLIENT_SECRET", os.getenv("AZURE_CLIENT_SECRET", ""))
+
+    # Worker
+    WORKER_MAX_PARALLEL_EXECUTIONS: int = int(os.getenv("WORKER_MAX_PARALLEL_EXECUTIONS", 10))
+    WORKER_TOOL_EXECUTION_TIMEOUT: int = 300  # seconds
+    WORKER_AGENT_EXECUTION_TIMEOUT: int = 1800  # seconds
+    WORKER_IDLE_SLEEP_SECONDS: float = 5  # sleep between empty polls
+
+    # Receiver settings
+    MAX_WAIT_TIME_SECONDS: int = int(os.getenv("AZURE_SERVICEBUS_MAX_WAIT_TIME", "5"))
+    PREFETCH_COUNT: int = int(os.getenv("AZURE_SERVICEBUS_PREFETCH_COUNT", "10"))
+    MAX_MESSAGE_COUNT: int = int(os.getenv("AZURE_SERVICEBUS_MAX_MESSAGE_COUNT", "1"))
+
+    # Listener (response wait)
+    LISTENER_DEFAULT_TIMEOUT: int = 300  # seconds (5 minutes)
+    LISTENER_POLL_INTERVAL: float = 0.5  # seconds between polls
+
+    # Recovery
+    RECOVERY_LOOKBACK_HOURS: float = float(os.getenv("RECOVERY_LOOKBACK_HOURS", "24"))
+    RECOVERY_RECHECK_MINUTES: float = float(os.getenv("RECOVERY_RECHECK_MINUTES", "30"))
+
+
+# ============================================================================
+# Cron Scheduler Configuration
+# ============================================================================
+
+@dataclass(frozen=True)
+class CronSchedulerConfig:
+    """Configuration for the multi-pod-safe cron scheduler subsystem.
+
+    All values are sourced from environment variables (with sane defaults)
+    so deployments can tune behavior per environment without code changes.
+    """
+    # How often each pod polls the database for due jobs (seconds).
+    POLL_INTERVAL_SECONDS: int = int(os.getenv("CRON_POLL_INTERVAL_SECONDS", "30"))
+
+    # Maximum number of due jobs a single pod will claim per poll cycle.
+    MAX_JOBS_PER_POLL: int = int(os.getenv("CRON_MAX_JOBS_PER_POLL", "50"))
+
+    # Default timezone applied when a schedule does not specify one.
+    DEFAULT_TIMEZONE: str = os.getenv("CRON_DEFAULT_TIMEZONE", "Asia/Kolkata")
+
+    # Default value used when a schedule's max_consecutive_failures is not specified.
+    DEFAULT_MAX_CONSECUTIVE_FAILURES: int = int(os.getenv("CRON_DEFAULT_MAX_CONSECUTIVE_FAILURES", "5"))
+
+    # How long execution history rows are retained (days).
+    HISTORY_RETENTION_DAYS: int = int(os.getenv("CRON_HISTORY_RETENTION_DAYS", "90"))
+
+    # How often the history cleanup task runs (hours).
+    HISTORY_CLEANUP_INTERVAL_HOURS: int = int(os.getenv("CRON_HISTORY_CLEANUP_INTERVAL_HOURS", "24"))
+
+    # Number of upcoming runs returned by the validate-cron preview endpoint.
+    VALIDATE_PREVIEW_COUNT: int = int(os.getenv("CRON_VALIDATE_PREVIEW_COUNT", "5"))
+
+    # Master switch — set to "false" in pods that should NOT run the polling loop
+    # (e.g. dedicated worker pods). Defaults to enabled.
+    ENABLED: bool = os.getenv("CRON_SCHEDULER_ENABLED", "true").lower() == "true"
+
 
 

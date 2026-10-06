@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { getRoleFromToken } from "../../utils/jwtUtils";
+import { debounce } from "lodash";
+import { getRoleFromToken, getEmailFromToken, getDepartmentFromToken } from "../../utils/jwtUtils";
 import { APIs } from "../../constant";
 import useFetch from "../../Hooks/useAxios";
 import { useMessage } from "../../Hooks/MessageContext";
@@ -7,7 +8,7 @@ import { extractErrorMessage } from "../../utils/errorUtils";
 import Loader from "../commonComponents/Loader";
 import EmptyState from "../commonComponents/EmptyState";
 import Toggle from "../commonComponents/Toggle";
-import SummaryLine from "../../iafComponents/GlobalComponents/SummaryLine";
+import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
 import DisplayCard1 from "../../iafComponents/GlobalComponents/DisplayCard/DisplayCard1";
 import TextField from "../../iafComponents/GlobalComponents/TextField/TextField";
 import styles from "./ResourceAllocationManagement.module.css";
@@ -15,14 +16,7 @@ import styles from "./ResourceAllocationManagement.module.css";
 // Constants
 const HTTP_NOT_FOUND = 404;
 const HTTP_FORBIDDEN = 403;
-const MAX_VALUES_DISPLAY = 2;
 
-// Icon Components - Inline SVGs for better control
-const KeyIcon = () => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
-  </svg>
-);
 
 const ChevronLeftIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -62,19 +56,31 @@ const PlusIcon = () => (
  * Modern card-based layout with smooth transitions.
  * 
  * Based on Swagger endpoints:
- * - GET /resource-allocation/access-keys - List access keys
+ * - GET /resource-allocation/access-keys/search-paginated-allocation - List access keys
  * - GET /resource-allocation/access-keys/{access_key}/users - Get users
  * - PUT /resource-allocation/access-keys/{access_key}/users/{user_email}/access - Add/Update user
  * - DELETE /resource-allocation/access-keys/{access_key}/users/{user_email} - Remove user
  * - POST /resource-allocation/access-keys/{access_key}/bulk-assign - Bulk assign
  * - DELETE /resource-allocation/access-keys/{access_key} - Delete access key
  */
-const ResourceAllocationManagement = ({ externalSearchTerm = "", onPlusClickRef, onClearSearchRef, onNavigationChange }) => {
+const ResourceAllocationManagement = ({
+  externalSearchTerm = "",
+  externalCreatedBy = "All",
+  onPlusClickRef,
+  onClearSearchRef,
+  onClearFilters,
+  onNavigationChange,
+}) => {
+  const PAGE_SIZE = 20;
+  const loggedInUserEmail = getEmailFromToken();
+
   // State
   const [accessKeys, setAccessKeys] = useState([]);
   const [selectedKey, setSelectedKey] = useState(null);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
   const [usersLoading, setUsersLoading] = useState(false);
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [userSearchTerm, setUserSearchTerm] = useState("");
@@ -88,6 +94,12 @@ const ResourceAllocationManagement = ({ externalSearchTerm = "", onPlusClickRef,
   // Hooks
   const { fetchData, postData, putData, deleteData } = useFetch();
   const { addMessage } = useMessage();
+
+  const listContainerRef = useRef(null);
+  const pageRef = useRef(1);
+  const isLoadingRef = useRef(false);
+  const prevExternalSearchTerm = useRef(externalSearchTerm);
+  const prevExternalCreatedBy = useRef(externalCreatedBy);
 
   // Use ref for addMessage to avoid infinite loops in useCallback
   const addMessageRef = useRef(addMessage);
@@ -116,27 +128,34 @@ const ResourceAllocationManagement = ({ externalSearchTerm = "", onPlusClickRef,
     }
   }, [onPlusClickRef]);
 
-  // Clear search handler
-  useEffect(() => {
-    if (onClearSearchRef) {
-      onClearSearchRef.current = () => {
-        setSelectedKey(null);
-      };
-    }
-  }, [onClearSearchRef]);
-
   /**
-   * Fetch all access keys
+   * Fetch access keys via paginated search API
    */
-  const fetchAccessKeys = useCallback(async () => {
+  const fetchAccessKeys = useCallback(async (pageNumber = 1, search = "", createdByFilter = "All") => {
+    if (isLoadingRef.current) return;
+    isLoadingRef.current = true;
     setLoading(true);
+
     try {
-      const response = await fetchData(APIs.GET_ACCESS_KEYS);
+      const params = [];
+      params.push(`page_number=${pageNumber}`);
+      params.push(`page_size=${PAGE_SIZE}`);
+      if (search && search.trim()) {
+        params.push(`search_value=${encodeURIComponent(search.trim())}`);
+      }
+      const createdByParam =
+        createdByFilter === "Me"
+          ? loggedInUserEmail
+          : createdByFilter === "System"
+            ? "system"
+            : null;
+      if (createdByParam) {
+        params.push(`created_by=${encodeURIComponent(createdByParam)}`);
+      }
 
-      // Debug: log response to see actual field names
-      console.log("Access Keys API Response:", response);
+      const apiUrl = `${APIs.GET_ACCESS_KEYS}?${params.join("&")}`;
+      const response = await fetchData(apiUrl);
 
-      // Handle various response formats
       let data = [];
       if (Array.isArray(response)) {
         data = response;
@@ -148,21 +167,38 @@ const ResourceAllocationManagement = ({ externalSearchTerm = "", onPlusClickRef,
         data = response.details;
       }
 
-      // Debug: log parsed data to see available fields
-      if (data.length > 0) {
-        console.log("Access Key fields available:", Object.keys(data[0]), data[0]);
+      const total = response?.total_count ?? response?.total ?? data.length;
+
+      if (pageNumber === 1) {
+        setAccessKeys(data);
+      } else if (data.length > 0) {
+        setAccessKeys((prev) => [...prev, ...data]);
       }
 
-      setAccessKeys(data);
+      setTotalCount(total);
+      setHasMore(data.length >= PAGE_SIZE);
     } catch (error) {
       console.error("Error fetching access keys:", error);
       const errorMessage = extractErrorMessage(error).message || "Failed to fetch access keys";
       addMessageRef.current(errorMessage, "error");
-      setAccessKeys([]);
+      if (pageNumber === 1) {
+        setAccessKeys([]);
+      }
+      setHasMore(false);
     } finally {
       setLoading(false);
+      isLoadingRef.current = false;
     }
-  }, [fetchData]);
+  }, [fetchData, loggedInUserEmail]);
+
+  // Clear search handler — exits detail view; list refetch is driven by parent filter props
+  useEffect(() => {
+    if (onClearSearchRef) {
+      onClearSearchRef.current = () => {
+        setSelectedKey(null);
+      };
+    }
+  }, [onClearSearchRef]);
 
   /**
    * Fetch users for selected access key
@@ -172,7 +208,7 @@ const ResourceAllocationManagement = ({ externalSearchTerm = "", onPlusClickRef,
 
     setUsersLoading(true);
     try {
-      const url = `${APIs.GET_ACCESS_KEY_USERS}${encodeURIComponent(accessKey)}/users`;
+      const url = `${APIs.GET_ACCESS_KEY_USERS}/${encodeURIComponent(accessKey)}/users`;
       const response = await fetchData(url);
       const data = response?.users || response || [];
       setUsers(Array.isArray(data) ? data : []);
@@ -199,7 +235,7 @@ const ResourceAllocationManagement = ({ externalSearchTerm = "", onPlusClickRef,
    */
   const fetchUserValues = useCallback(async (accessKey, userEmail) => {
     try {
-      const url = `${APIs.GET_USER_VALUES}${encodeURIComponent(accessKey)}/users/${encodeURIComponent(userEmail)}`;
+      const url = `${APIs.GET_USER_VALUES}/${encodeURIComponent(accessKey)}/users/${encodeURIComponent(userEmail)}`;
       const response = await fetchData(url);
       // Response contains values/allowed_values and exclusions/excluded_values
       const values = response?.values || response?.allowed_values || [];
@@ -227,10 +263,59 @@ const ResourceAllocationManagement = ({ externalSearchTerm = "", onPlusClickRef,
     setActionLoading(false);
   }, [selectedKey, fetchUserValues]);
 
-  // Initial load - only fetch access keys
+  // Initial load
   useEffect(() => {
-    fetchAccessKeys();
-  }, [fetchAccessKeys]);
+    fetchAccessKeys(1, externalSearchTerm, externalCreatedBy);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Sync with external search from Admin SubHeader
+  useEffect(() => {
+    if (prevExternalSearchTerm.current === externalSearchTerm) return;
+    prevExternalSearchTerm.current = externalSearchTerm;
+
+    pageRef.current = 1;
+    setAccessKeys([]);
+    setHasMore(true);
+    isLoadingRef.current = false;
+    fetchAccessKeys(1, externalSearchTerm, externalCreatedBy);
+  }, [externalSearchTerm, externalCreatedBy, fetchAccessKeys]);
+
+  // Sync with external created-by filter from Admin SubHeader
+  useEffect(() => {
+    if (prevExternalCreatedBy.current === externalCreatedBy) return;
+    prevExternalCreatedBy.current = externalCreatedBy;
+
+    pageRef.current = 1;
+    setAccessKeys([]);
+    setHasMore(true);
+    isLoadingRef.current = false;
+    fetchAccessKeys(1, externalSearchTerm, externalCreatedBy);
+  }, [externalCreatedBy, externalSearchTerm, fetchAccessKeys]);
+
+  // Infinite scroll pagination
+  useEffect(() => {
+    const container = listContainerRef?.current;
+    if (!container || selectedKey) return;
+
+    const handleScrollLoadMore = async () => {
+      if (isLoadingRef.current || !hasMore) return;
+
+      if (container.scrollTop + container.clientHeight >= container.scrollHeight - 10) {
+        const nextPage = pageRef.current + 1;
+        pageRef.current = nextPage;
+        await fetchAccessKeys(nextPage, externalSearchTerm, externalCreatedBy);
+      }
+    };
+
+    const debouncedScroll = debounce(handleScrollLoadMore, 200);
+    container.addEventListener("scroll", debouncedScroll);
+
+    return () => {
+      debouncedScroll.cancel && debouncedScroll.cancel();
+      container.removeEventListener("scroll", debouncedScroll);
+    };
+  }, [hasMore, externalSearchTerm, externalCreatedBy, fetchAccessKeys, selectedKey]);
 
   // Fetch users when key is selected
   useEffect(() => {
@@ -239,18 +324,6 @@ const ResourceAllocationManagement = ({ externalSearchTerm = "", onPlusClickRef,
       setSelectedUsers([]);
     }
   }, [selectedKey, fetchUsers]);
-
-  /**
-   * Filter access keys by search
-   */
-  const filteredKeys = useMemo(() => {
-    if (!externalSearchTerm.trim()) return accessKeys;
-    const search = externalSearchTerm.toLowerCase();
-    return accessKeys.filter(key =>
-      (key.access_key || "").toLowerCase().includes(search) ||
-      (key.description || "").toLowerCase().includes(search)
-    );
-  }, [accessKeys, externalSearchTerm]);
 
   /**
    * Handle access key click
@@ -273,12 +346,13 @@ const ResourceAllocationManagement = ({ externalSearchTerm = "", onPlusClickRef,
    */
   const handleDeleteKey = async (key) => {
     try {
-      await deleteData(`${APIs.DELETE_ACCESS_KEY}${encodeURIComponent(key.access_key)}`);
+      await deleteData(`${APIs.DELETE_ACCESS_KEY}/${encodeURIComponent(key.access_key)}`);
       addMessage("Access key deleted", "success");
       if (selectedKey?.access_key === key.access_key) {
         setSelectedKey(null);
       }
-      fetchAccessKeys();
+      isLoadingRef.current = false;
+      fetchAccessKeys(1, externalSearchTerm, externalCreatedBy);
     } catch (error) {
       addMessage(extractErrorMessage(error).message || "Failed to delete access key", "error");
     }
@@ -292,7 +366,7 @@ const ResourceAllocationManagement = ({ externalSearchTerm = "", onPlusClickRef,
 
     setActionLoading(true);
     try {
-      const url = `${APIs.UPDATE_USER_ACCESS}${encodeURIComponent(selectedKey.access_key)}/users/${encodeURIComponent(userEmail)}/access`;
+      const url = `${APIs.UPDATE_USER_ACCESS}/${encodeURIComponent(selectedKey.access_key)}/users/${encodeURIComponent(userEmail)}/access`;
       await putData(url, { add_values: values, add_exclusions: exclusions });
       addMessage("User added successfully", "success");
       setShowAddUserModal(false);
@@ -317,7 +391,7 @@ const ResourceAllocationManagement = ({ externalSearchTerm = "", onPlusClickRef,
 
     setActionLoading(true);
     try {
-      const url = `${APIs.UPDATE_USER_ACCESS}${encodeURIComponent(selectedKey.access_key)}/users/${encodeURIComponent(userEmail)}/access`;
+      const url = `${APIs.UPDATE_USER_ACCESS}/${encodeURIComponent(selectedKey.access_key)}/users/${encodeURIComponent(userEmail)}/access`;
       await putData(url, {
         add_values: addValues,
         remove_values: removeValues,
@@ -342,7 +416,7 @@ const ResourceAllocationManagement = ({ externalSearchTerm = "", onPlusClickRef,
 
     setActionLoading(true);
     try {
-      const url = `${APIs.REMOVE_USER_FROM_ACCESS_KEY}${encodeURIComponent(selectedKey.access_key)}/users/${encodeURIComponent(userEmail)}`;
+      const url = `${APIs.REMOVE_USER_FROM_ACCESS_KEY}/${encodeURIComponent(selectedKey.access_key)}/users/${encodeURIComponent(userEmail)}`;
       await deleteData(url);
       addMessage("User removed", "success");
       setSelectedUsers(prev => prev.filter(e => e !== userEmail));
@@ -362,7 +436,7 @@ const ResourceAllocationManagement = ({ externalSearchTerm = "", onPlusClickRef,
 
     setActionLoading(true);
     try {
-      const url = `${APIs.BULK_ASSIGN_VALUES}${encodeURIComponent(selectedKey.access_key)}/bulk-assign`;
+      const url = `${APIs.BULK_ASSIGN_VALUES}/${encodeURIComponent(selectedKey.access_key)}/bulk-assign`;
       await postData(url, { user_emails: selectedUsers, add_values: values });
       addMessage(`Values assigned to ${selectedUsers.length} user(s)`, "success");
       setShowBulkAssignModal(false);
@@ -404,6 +478,8 @@ const ResourceAllocationManagement = ({ externalSearchTerm = "", onPlusClickRef,
           onSubmit={handleAddUser}
           loading={actionLoading}
           keyName={selectedKey?.access_key}
+          departmentName={getDepartmentFromToken()}
+          existingUserEmails={users.map((u) => u.user_email || u.email).filter(Boolean)}
         />
       )}
 
@@ -436,10 +512,10 @@ const ResourceAllocationManagement = ({ externalSearchTerm = "", onPlusClickRef,
       {/* Access Keys Grid View */}
       {!selectedKey && (
         <>
-          <div className="listWrapper">
-            {filteredKeys.length > 0 ? (
+          <div className="listWrapper" ref={listContainerRef}>
+            {accessKeys.length > 0 ? (
               <DisplayCard1
-                data={filteredKeys.map(key => ({
+                data={accessKeys.map(key => ({
                   ...key,
                   id: key.access_key,
                   name: key.access_key,
@@ -461,7 +537,21 @@ const ResourceAllocationManagement = ({ externalSearchTerm = "", onPlusClickRef,
             ) : (
               <EmptyState
                 message="No access keys found"
-                subMessage="Access keys are configured in the Resource Dashboard"
+                subMessage={
+                  externalSearchTerm.trim() || (externalCreatedBy && externalCreatedBy !== "All")
+                    ? "Try adjusting your search or filters"
+                    : "Access keys are configured in the Resource Dashboard"
+                }
+                filters={
+                  externalSearchTerm.trim() || (externalCreatedBy && externalCreatedBy !== "All")
+                    ? [
+                        ...(externalSearchTerm.trim() ? [`Search: ${externalSearchTerm}`] : []),
+                        ...(externalCreatedBy === "Me" ? ["Created By: Me"] : externalCreatedBy === "System" ? ["Created By: System"] : []),
+                      ]
+                    : undefined
+                }
+                showClearFilter={Boolean(externalSearchTerm.trim() || (externalCreatedBy && externalCreatedBy !== "All"))}
+                onClearFilters={onClearFilters}
               />
             )}
           </div>
@@ -627,8 +717,11 @@ const ResourceAllocationManagement = ({ externalSearchTerm = "", onPlusClickRef,
 /**
  * Inline Add User Modal - Supports both include values and exclusions with toggle
  */
-const AddUserModalInline = ({ onClose, onSubmit, loading, keyName }) => {
+const AddUserModalInline = ({ onClose, onSubmit, loading, keyName, departmentName = "", existingUserEmails = [] }) => {
+  const { fetchData } = useFetch();
   const [email, setEmail] = useState("");
+  const [departmentUsers, setDepartmentUsers] = useState([]);
+  const [usersLoading, setUsersLoading] = useState(false);
   const [values, setValues] = useState([]);
   const [exclusions, setExclusions] = useState([]);
   const [newValue, setNewValue] = useState("");
@@ -637,6 +730,80 @@ const AddUserModalInline = ({ onClose, onSubmit, loading, keyName }) => {
   const [includeAllValues, setIncludeAllValues] = useState(false);
   // Preserve values before enabling "Include All Values" toggle
   const [preservedValues, setPreservedValues] = useState([]);
+
+  const loadDepartmentUsers = useCallback(async () => {
+    if (!departmentName?.trim()) {
+      setDepartmentUsers([]);
+      return;
+    }
+
+    setUsersLoading(true);
+    try {
+      const endpoint = APIs.GET_DEPARTMENT_USERS.replace(
+        "{department_name}",
+        encodeURIComponent(departmentName.trim())
+      );
+      const response = await fetchData(endpoint);
+      let usersList = [];
+      if (response?.users && Array.isArray(response.users)) {
+        usersList = response.users;
+      } else if (Array.isArray(response)) {
+        usersList = response;
+      }
+
+      const normalized = usersList
+        .map((user) => ({
+          email: (user.email || user.mail_id || user.user_email || "").trim(),
+          user_name: user.user_name || user.username || user.name || "",
+        }))
+        .filter((user) => user.email);
+
+      setDepartmentUsers(normalized);
+    } catch {
+      setDepartmentUsers([]);
+    } finally {
+      setUsersLoading(false);
+    }
+  }, [departmentName, fetchData]);
+
+  useEffect(() => {
+    loadDepartmentUsers();
+  }, [loadDepartmentUsers]);
+
+  const existingEmailSet = useMemo(
+    () => new Set(existingUserEmails.map((item) => item.trim().toLowerCase()).filter(Boolean)),
+    [existingUserEmails]
+  );
+
+  const availableUsers = useMemo(
+    () => departmentUsers.filter((user) => !existingEmailSet.has(user.email.toLowerCase())),
+    [departmentUsers, existingEmailSet]
+  );
+
+  const userDropdownOptions = useMemo(
+    () => availableUsers.map((user) => user.email),
+    [availableUsers]
+  );
+
+  const userOptionTooltips = useMemo(() => {
+    const tooltips = {};
+    availableUsers.forEach((user) => {
+      if (user.email && user.user_name) {
+        tooltips[user.email] = user.user_name;
+      }
+    });
+    return tooltips;
+  }, [availableUsers]);
+
+  const userOptionSearchText = useMemo(() => {
+    const searchText = {};
+    availableUsers.forEach((user) => {
+      if (user.email && user.user_name) {
+        searchText[user.email] = user.user_name;
+      }
+    });
+    return searchText;
+  }, [availableUsers]);
 
   const addValue = () => {
     const v = newValue.trim();
@@ -681,8 +848,15 @@ const AddUserModalInline = ({ onClose, onSubmit, loading, keyName }) => {
     }
   };
 
-  // Basic email validation
-  const isValidEmail = email.trim() && email.includes("@");
+  const isValidEmail = Boolean(email.trim());
+
+  const userEmailPlaceholder = !departmentName?.trim()
+    ? "No department available"
+    : usersLoading
+      ? "Loading users..."
+      : userDropdownOptions.length === 0
+        ? "No users available"
+        : "Select user email";
 
   return (
     <div className={styles.modalOverlay} onClick={onClose}>
@@ -696,14 +870,19 @@ const AddUserModalInline = ({ onClose, onSubmit, loading, keyName }) => {
         <div className={styles.modalBody}>
           <div className={styles.formField}>
             <label className={styles.fieldLabel}>User Email <span className={styles.required}>*</span></label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="Enter user email..."
-              className={styles.textInput}
-              autoFocus
-            />
+            <div className={styles.dropdownField}>
+              <NewCommonDropdown
+                options={userDropdownOptions}
+                selected={email}
+                onSelect={(optionLabel) => setEmail(optionLabel || "")}
+                placeholder={userEmailPlaceholder}
+                showSearch={true}
+                width="100%"
+                disabled={usersLoading || !departmentName?.trim() || userDropdownOptions.length === 0}
+                optionTooltips={userOptionTooltips}
+                optionSearchText={userOptionSearchText}
+              />
+            </div>
           </div>
 
           {/* Include Values Section */}

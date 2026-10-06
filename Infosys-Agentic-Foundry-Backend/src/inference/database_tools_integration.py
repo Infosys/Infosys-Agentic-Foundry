@@ -57,35 +57,57 @@ database_query_tool(
 ```
 - **Allowed SQL operations are controlled by the connection's blocked commands list**
 
-### 2. `run_shell_command` - File Operations & Database Info
-The `run_shell_command` tool provides Unix-like shell access for reading database metadata files:
+### 2. `run_shell_command` - Powerful Shell (18 commands + pipe support)
+The `run_shell_command` tool provides a Unix-like shell with 18 commands for reading, searching, and managing files:
 
 **Database Files (SHARED across all agents):**
 ```
-run_shell_command("ls /databases/")                              # List all database connections
-run_shell_command("ls /databases/YOUR_CONNECTION/")             # List files for a connection
-run_shell_command("cat /databases/YOUR_CONNECTION/schema.md")   # Read stored schema
-run_shell_command("cat /databases/YOUR_CONNECTION/samples.md")  # Read sample data
+run_shell_command("ls /databases/")                                        # List all database connections
+run_shell_command("cat /databases/YOUR_CONNECTION/schema.md")              # Read full schema
+run_shell_command("cat -n /databases/YOUR_CONNECTION/schema.md")           # Read schema with line numbers
+run_shell_command("sed -n '10,30p' /databases/YOUR_CONNECTION/schema.md")  # Read specific line range (efficient!)
+run_shell_command("stat /databases/YOUR_CONNECTION/schema.md")             # Check file size before reading
+run_shell_command("grep -C 3 'column_name' /databases/YOUR_CONNECTION/schema.md")  # Find column with 3 lines context
+run_shell_command("grep -rni 'customer' /databases/")                      # Search across ALL database schemas
+run_shell_command("diff /databases/db1/schema.md /databases/db2/schema.md")  # Compare two schemas
+run_shell_command("find /databases/ -iname '*.md'")                        # Find all markdown files (case-insensitive)
+run_shell_command("grep 'table' schema.md | head -5")                     # First 5 table matches (pipe!)
 ```
 
 **User Files:**
 ```
-run_shell_command("ls /user/")                                   # List user-specific files
 run_shell_command("cat /user/preferences.md")                   # Read user preferences
+run_shell_command("echo 'key: value' > /user/facts/prefs.md")  # Store user facts
 ```
 
 **Agent Files:**
 ```
-run_shell_command("ls /agent/")                                  # List agent memory files
+run_shell_command("ls /agent/facts/")                            # List agent facts
 run_shell_command("cat /agent/facts/important_facts.md")        # Read agent facts
 run_shell_command("echo 'content' > /agent/learnings/note.md")  # Save agent learnings
 ```
 
 **Session Files:**
 ```
-run_shell_command("ls /session/")                                # List session files
-run_shell_command("cat /session/conversation.md")               # View conversation history
+run_shell_command("ls /session/workspace/")                      # List workspace files
+run_shell_command("cat /session/conversations/summary.md")      # View conversation summary
 ```
+
+**Full Command Reference (18 commands):**
+- `ls`, `cd`, `pwd` — Navigate directories
+- `cat [-n]` — Read file (-n for line numbers)
+- `head -n N`, `tail -n N` — First/last N lines
+- `sed -n '10,20p'` — Read specific line range (targeted read)
+- `stat` — File size, line count, modified time
+- `diff` — Compare two files (unified diff)
+- `wc [-lwc] file|*.md` — Count lines/words/chars (supports globs)
+- `tree [--size]` — Directory tree (--size shows file sizes)
+- `grep [-rinlv] [-A/-B/-C N] [-e pat]` — Search with context, multi-pattern, invert
+- `semgrep "concept"` — Semantic search by meaning
+- `find -name|-iname` — Find files (-iname: case-insensitive)
+- `echo "text" > /file` — Write (>> appends)
+- `mkdir -p`, `touch` — Create dirs/files
+- **Pipes**: `cmd1 | cmd2` (up to 5 stages)
 
 ## 🔄 WORKFLOW FOR DATABASE QUERIES:
 
@@ -99,9 +121,17 @@ run_shell_command("ls /databases/")
 
 **Step 2: Read the database schema (REQUIRED before querying)**
 ```
-run_shell_command("cat /databases/{first_connection}/schema.md")
+run_shell_command("stat /databases/{first_connection}/schema.md")     # Check size first
+run_shell_command("cat /databases/{first_connection}/schema.md")      # Read full schema
 ```
 → This gives you table names, column names, data types, and relationships
+→ For large schemas, use `sed -n '1,50p'` to read in chunks instead of `cat`
+
+**Step 2b: (Optional) Search within schema for specific info**
+```
+run_shell_command("grep -C 3 'customer' /databases/{first_connection}/schema.md")  # Find with context
+run_shell_command("grep -rni 'order_id' /databases/")                              # Search across ALL schemas
+```
 
 **Step 3: (Optional) Check sample data for data format understanding**
 ```
@@ -133,6 +163,10 @@ run_shell_command("cat /databases/{first_connection}/samples.md")
 3. **Use exact names from schema** - Copy table and column names exactly as shown
 4. **Blocked commands are dynamic** - Each connection may have custom blocked SQL keywords
 5. **If schema doesn't exist** - Tell user to first store the schema using the UI or API
+6. **Use `stat` before reading** - Check file size before cat-ing large schemas
+7. **Use `sed` for targeted reads** - `sed -n '45,60p' /databases/conn/schema.md` instead of reading entire files
+8. **Use `grep -C` for context** - Find columns/tables with context instead of reading everything
+9. **Use pipes to filter** - `grep 'table' schema.md | head -5` for quick lookups
 
 ## 📁 FILE STRUCTURE:
 
@@ -240,6 +274,9 @@ async def get_db_connections_for_agent(agentic_application_id: str) -> List[str]
     This checks the agent's configuration for any associated database
     connections and returns their names.
     
+    Uses the shared DB pool from app_container when available (fast),
+    falling back to a direct asyncpg.connect() only if pool is unavailable.
+    
     Args:
         agentic_application_id: The agent's unique ID
         
@@ -249,24 +286,37 @@ async def get_db_connections_for_agent(agentic_application_id: str) -> List[str]
     log.info(f"[DB_TOOLS] Fetching db_connections for agent: {agentic_application_id}")
     
     try:
-        # Use direct database query for reliability
-        import os
-        import asyncpg
         import json as json_module
         
-        conn = await asyncpg.connect(
-            host=os.getenv("POSTGRESQL_HOST", "localhost"),
-            port=int(os.getenv("POSTGRESQL_PORT", "5432")),
-            user=os.getenv("POSTGRESQL_USER", "postgres"),
-            password=os.getenv("POSTGRESQL_PASSWORD", "postgres"),
-            database=os.getenv("DATABASE", "agentic_workflow_as_service_database")
-        )
-        
-        row = await conn.fetchrow(
-            "SELECT db_connection_names FROM agent_table WHERE agentic_application_id = $1",
-            agentic_application_id
-        )
-        await conn.close()
+        row = None
+        # Prefer the shared connection pool (avoids ~600ms fresh TCP connect per request)
+        try:
+            from src.api.app_container import app_container
+            from src.config.constants import DatabaseName
+            db_pool = await app_container.db_manager.get_pool(DatabaseName.MAIN.db_name)
+            if db_pool:
+                async with db_pool.acquire() as conn:
+                    row = await conn.fetchrow(
+                        "SELECT db_connection_names FROM agent_table WHERE agentic_application_id = $1",
+                        agentic_application_id
+                    )
+        except Exception as pool_err:
+            log.debug(f"[DB_TOOLS] Pool unavailable, falling back to direct connect: {pool_err}")
+            # Fallback: direct connection
+            import os
+            import asyncpg
+            conn = await asyncpg.connect(
+                host=os.getenv("POSTGRESQL_HOST", "localhost"),
+                port=int(os.getenv("POSTGRESQL_PORT", "5432")),
+                user=os.getenv("POSTGRESQL_USER", "postgres"),
+                password=os.getenv("POSTGRESQL_PASSWORD", "postgres"),
+                database=os.getenv("DATABASE", "agentic_workflow_as_service_database")
+            )
+            row = await conn.fetchrow(
+                "SELECT db_connection_names FROM agent_table WHERE agentic_application_id = $1",
+                agentic_application_id
+            )
+            await conn.close()
         
         if row and row['db_connection_names']:
             db_connections = row['db_connection_names']
@@ -332,7 +382,7 @@ def inject_database_tools_into_config(
     
     # Add instruction to the appropriate system prompt based on agent type
     if "SYSTEM_PROMPT" in agent_config:
-        if agent_type == "react_agent":
+        if agent_type in ("react_agent",):
             if "SYSTEM_PROMPT_REACT_AGENT" in agent_config['SYSTEM_PROMPT']:
                 agent_config['SYSTEM_PROMPT']['SYSTEM_PROMPT_REACT_AGENT'] += db_instruction
         elif agent_type == "react_critic_agent":
@@ -350,10 +400,113 @@ def inject_database_tools_into_config(
     return agent_config
 
 
+async def ensure_database_files_restored(
+    db_connection_names: List[str],
+    department: str = "General"
+) -> None:
+    """
+    Ensure database schema/samples files exist locally, restoring from blob if missing.
+    
+    This should be called BEFORE inference starts so the agent can read the files
+    via run_shell_command. Without this, if the local files were deleted or the server
+    restarted on a fresh node, the agent would get "No such file" errors.
+    
+    Args:
+        db_connection_names: List of database connection names to check/restore
+        department: The department name for file path resolution
+    """
+    import os
+    import asyncio
+    from pathlib import Path
+    
+    if not db_connection_names:
+        return
+    
+    workspace_root = Path(os.path.abspath("./agent_workspaces"))
+    storage_provider = os.getenv('STORAGE_PROVIDER', '')
+    
+    if not storage_provider:
+        log.debug("[DB_TOOLS_RESTORE] No STORAGE_PROVIDER set, skipping blob restore check")
+        return
+    
+    _BLOB_RESTORE_TIMEOUT = int(os.getenv('BLOB_RESTORE_TIMEOUT', '30'))
+    
+    for conn_name in db_connection_names:
+        db_dir = workspace_root / department / "databases" / conn_name
+        schema_file = db_dir / "schema.md"
+        samples_file = db_dir / "samples.md"
+        
+        # Skip if files already exist locally
+        if schema_file.exists() or samples_file.exists():
+            log.debug(f"[DB_TOOLS_RESTORE] Files exist locally for '{conn_name}', skipping restore")
+            continue
+        
+        # Files missing - attempt blob restore
+        log.info(f"[DB_TOOLS_RESTORE] schema.md/samples.md missing for '{conn_name}', attempting blob restore...")
+        try:
+            from src.utils.workspace_blob_sync import WorkspaceBlobSync
+            from src.storage import get_storage_client
+            
+            _client = get_storage_client(storage_provider)
+            _syncer = WorkspaceBlobSync(
+                storage_client=_client,
+                workspace_root="./agent_workspaces",
+                department=department,
+            )
+            
+            try:
+                report = await asyncio.wait_for(
+                    _syncer.restore_database_cache(connection_name=conn_name),
+                    timeout=_BLOB_RESTORE_TIMEOUT
+                )
+            except asyncio.TimeoutError:
+                log.warning(f"[DB_TOOLS_RESTORE] Timed out restoring '{conn_name}' after {_BLOB_RESTORE_TIMEOUT}s")
+                continue
+            
+            if report and report.synced > 0:
+                log.info(f"[DB_TOOLS_RESTORE] Restored {report.synced} files for '{conn_name}' from blob")
+            else:
+                log.info(f"[DB_TOOLS_RESTORE] No files found in blob for '{conn_name}'")
+                
+            # Also restore the SQLite .db file if it's a sqlite connection
+            try:
+                from src.api.data_connector_endpoints import db_connection_manager
+                config = await db_connection_manager.get_connection_config(conn_name)
+                if config and config.get("db_type", "").lower() == "sqlite":
+                    db_filename = config.get("database", "")
+                    _conn_dept = config.get("department_name") or department
+                    if db_filename:
+                        db_file_path = os.path.join("uploaded_sqlite_dbs", _conn_dept, db_filename)
+                        if not os.path.exists(db_file_path):
+                            _syncer_for_db = WorkspaceBlobSync(
+                                storage_client=_client,
+                                project_root=os.path.abspath("."),
+                            )
+                            try:
+                                restored = await asyncio.wait_for(
+                                    asyncio.to_thread(
+                                        _syncer_for_db.restore_sqlite_db_sync, _conn_dept, db_filename
+                                    ),
+                                    timeout=_BLOB_RESTORE_TIMEOUT
+                                )
+                                if restored:
+                                    log.info(f"[DB_TOOLS_RESTORE] Restored SQLite DB '{db_filename}' from blob")
+                            except asyncio.TimeoutError:
+                                log.warning(f"[DB_TOOLS_RESTORE] Timed out restoring SQLite DB '{db_filename}'")
+                            except Exception as _db_err:
+                                log.debug(f"[DB_TOOLS_RESTORE] SQLite DB restore failed: {_db_err}")
+            except Exception as _cfg_err:
+                log.debug(f"[DB_TOOLS_RESTORE] Could not check SQLite config for '{conn_name}': {_cfg_err}")
+                
+        except Exception as e:
+            log.warning(f"[DB_TOOLS_RESTORE] Failed to restore files for '{conn_name}': {e}")
+
+
 __all__ = [
     "get_database_tools_for_injection",
     "get_database_tools_system_prompt",
     "get_db_connections_for_agent",
     "inject_database_tools_into_config",
+    "ensure_database_files_restored",
     "DATABASE_TOOLS_INSTRUCTION",
 ]

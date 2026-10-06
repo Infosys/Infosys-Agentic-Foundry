@@ -221,6 +221,8 @@ export default function AvailableServers(props) {
   const canAddServers = typeof hasPermission === "function" ? hasPermission("add_access.mcp_servers") : false;
   const canUpdateServers = typeof hasPermission === "function" ? hasPermission("update_access.mcp_servers") : false;
   const canDeleteServers = typeof hasPermission === "function" ? hasPermission("delete_access.mcp_servers") : false;
+  const canExportServers = typeof hasPermission === "function" ? hasPermission("export_servers_access") : false;
+  const canImportServers = typeof hasPermission === "function" ? hasPermission("import_servers_access") : false;
   const isAdmin = getRoleFromToken().toLowerCase() === "admin";
 
   // Multi-select delete state
@@ -789,7 +791,7 @@ export default function AvailableServers(props) {
     const isAdmin = (role || "").toLowerCase() === "admin";
 
     try {
-      const apiUrl = APIs.MCP_DELETE_TOOLS.replace(/\/$/, "");
+      const apiUrl = APIs.MCP_DELETE_TOOLS;
       const payload = { tool_ids: deletableIds, is_admin: isAdmin, user_email_id: loggedInUserEmail };
       const response = await deleteData(apiUrl, payload);
       if (response && typeof response !== "string") {
@@ -1088,12 +1090,12 @@ export default function AvailableServers(props) {
           createdBy={createdBy}
           onCreatedByChange={handleCreatedByChange}
           handleTypeFilter={handleTypeFilter}
-          tertiaryButtonLabel={canAddServers ? "Export" : undefined}
-          onTertiaryButtonClick={canAddServers ? handleExportServers : undefined}
+          tertiaryButtonLabel={canExportServers ? "Export" : undefined}
+          onTertiaryButtonClick={canExportServers ? handleExportServers : undefined}
           tertiaryButtonDisabled={multiSelectIds.length === 0 || exportLoading}
           tertiaryButtonTitle={multiSelectIds.length === 0 ? "Select servers to export" : ""}
-          quaternaryButtonLabel={canAddServers ? "Import" : undefined}
-          onQuaternaryButtonClick={canAddServers ? () => setShowImportModal(true) : undefined}
+          quaternaryButtonLabel={canImportServers ? "Import" : undefined}
+          onQuaternaryButtonClick={canImportServers ? () => setShowImportModal(true) : undefined}
           quaternaryButtonDisabled={importLoading}
           quaternaryButtonTitle="Import servers from a zip file"
           showSelectAll={canDeleteServers && isAdmin && visibleData.length > 1}
@@ -1129,7 +1131,7 @@ export default function AvailableServers(props) {
               cardDisabled={!canReadServers && !canUpdateServers}
               healthStatusMap={healthStatusMap}
               hideActions={!canReadServers}
-              showCheckbox={canAddServers || canDeleteServers}
+              showCheckbox={canAddServers || canDeleteServers || canExportServers}
               onSelectionChange={(canAddServers || canDeleteServers) ? handleMultiSelectChange : undefined}
               selectedIds={multiSelectIds}
               idKey="id"

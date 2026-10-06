@@ -12,7 +12,9 @@ import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button.jsx";
 import UploadBox from "../commonComponents/UploadBox.jsx";
 import CheckBox from "../../iafComponents/GlobalComponents/CheckBox/CheckBox.jsx";
 import ConfirmationModal from "../commonComponents/ToastMessages/ConfirmationPopup";
-import { getRoleFromToken } from "../../utils/jwtUtils";
+import FileConflictModal from "../commonComponents/FileConflictModal/FileConflictModal";
+import { getRoleFromToken, getEmailFromToken } from "../../utils/jwtUtils";
+import { getKbUploadToast, KB_SUPPORTED_EXTENSIONS, KB_ACCEPT_TYPES, KB_SUPPORTED_TEXT } from "../../services/knowledgeBaseService";
 /**
  * FilesPage - A full-screen modal for managing user files
  * Following the modal pattern used by AgentForm, ToolOnBoarding, etc.
@@ -39,6 +41,9 @@ function MessageUpdateform(props) {
   const role = getRoleFromToken();
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
+  const [uploadResults, setUploadResults] = useState(null);
+  const [overwriteWarnings, setOverwriteWarnings] = useState(null);
+  const [partialUploadResults, setPartialUploadResults] = useState([]);
 
   const { fetchData, getSessionId, postData, deleteData } = useFetch();
   const { addMessage } = useMessage();
@@ -77,8 +82,8 @@ function MessageUpdateform(props) {
 
   // Supported file extensions
   const SUPPORTED_EXTENSIONS = showKnowledge
-    ? [".pdf", ".txt"]
-    : [".pdf", ".docx", ".ppt", ".pptx", ".txt", ".xlsx", ".msg", ".json", ".img", ".db", ".jpg", ".png", ".jpeg", ".csv", ".pkl", ".zip", ".tar", ".eml", ".md"];
+    ? KB_SUPPORTED_EXTENSIONS
+    : [".pdf", ".docx", ".ppt", ".pptx", ".txt", ".xlsx", ".msg", ".json", ".img", ".db", ".jpg", ".png", ".jpeg", ".tiff", ".tif", ".bmp", ".gif", ".csv", ".pkl", ".zip", ".tar", ".eml", ".md"];
 
   const isSupportedFile = (file) => {
     const fileName = file.name.toLowerCase();
@@ -119,47 +124,93 @@ function MessageUpdateform(props) {
     setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const openUploadModal = () => {
+    setUploadResults(null);
+    setOverwriteWarnings(null);
+    setPartialUploadResults([]);
+    setShowUploadModal(true);
+  };
+
+  const closeUploadModal = () => {
+    setUploadResults(null);
+    setOverwriteWarnings(null);
+    setPartialUploadResults([]);
+    setShowUploadModal(false);
+  };
+
+  const emailToFolderName = (email) => (email || "").replace(/@/g, "_at_").replace(/\./g, "_");
+
   // Upload handlers
-  const handleSubmit = async () => {
+  const handleSubmit = async (overwrite = false, subdirectoryOverride = null) => {
     if (files.length === 0) return;
 
     setLoading(true);
     const formData = new FormData();
     files.forEach((f) => formData.append("files", f));
+    const effectiveSubdirectory = subdirectoryOverride !== null ? subdirectoryOverride : subdirectory;
+    const url = `${APIs.UPLOAD_FILES}?subdirectory=${encodeURIComponent(effectiveSubdirectory || "")}&overwrite=${overwrite}`;
     try {
-      const response = await postData(`${APIs.UPLOAD_FILES}?subdirectory=${encodeURIComponent(subdirectory || "")}`, formData);
-      addMessage(response.info, "success");
-      setSubdirectory("");
-      setFiles([]);
-      setShowUploadModal(false);
-      refreshFiles();
+      const response = await postData(url, formData, { silent: true });
+      if (!overwrite && response.warnings?.files?.length > 0) {
+        addMessage(response.message, response.success ? "success" : "error");
+        setPartialUploadResults(response.uploaded_files || []);
+        setOverwriteWarnings(response.warnings);
+      } else {
+        addMessage(response.message || response.info, "success");
+        setSubdirectory("");
+        setFiles([]);
+        setOverwriteWarnings(null);
+        setUploadResults(response.uploaded_files || []);
+        refreshFiles();
+      }
     } catch (error) {
       console.error("Error uploading file", error);
-      const errorMessage = error?.response?.data?.detail;
-      addMessage(errorMessage || "Error uploading file", "error");
+      const errData = error?.response?.data;
+      if (!overwrite && errData?.warnings?.files?.length > 0) {
+        addMessage(errData.message, errData.success ? "success" : "error");
+        setPartialUploadResults(errData.uploaded_files || []);
+        setOverwriteWarnings(errData.warnings);
+      } else {
+        addMessage(errData?.detail || errData?.message || "Error uploading file", "error");
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const toolSubmit = async () => {
+  const toolSubmit = async (overwrite = false) => {
     if (files.length === 0 || !kbName.trim()) return;
 
     setKbloader(true);
-    const url = `${APIs.KB_UPLOAD_DOCUMENTS}?kb_name=${encodeURIComponent(kbName || "")}`;
+    const url = `${APIs.KB_UPLOAD_DOCUMENTS}?kb_name=${encodeURIComponent(kbName || "")}&overwrite=${overwrite}`;
     const formData = new FormData();
     formData.append("session_id", getSessionId());
     files.forEach((f) => formData.append("files", f));
     try {
-      const response = await postData(url, formData);
-      addMessage(response.message, "success");
-      setKbName("");
-      setFiles([]);
-      setShowUploadModal(false);
-      refreshFiles();
+      const response = await postData(url, formData, { silent: true });
+      if (!overwrite && response.warnings?.files?.length > 0) {
+        addMessage(response.message, response.success ? "success" : "error");
+        setPartialUploadResults(response.uploaded_files || []);
+        setOverwriteWarnings(response.warnings);
+      } else {
+        const { message, type } = getKbUploadToast(response, response.message || "Documents uploaded successfully");
+        addMessage(message, type);
+        setKbName("");
+        setFiles([]);
+        setOverwriteWarnings(null);
+        closeUploadModal();
+        refreshFiles();
+      }
     } catch (error) {
       console.error("Error uploading file", error);
-      addMessage(error?.response?.detail || "Error uploading file", "error");
+      const errData = error?.response?.data;
+      if (!overwrite && errData?.warnings?.files?.length > 0) {
+        addMessage(errData.message, errData.success ? "success" : "error");
+        setPartialUploadResults(errData.uploaded_files || []);
+        setOverwriteWarnings(errData.warnings);
+      } else {
+        addMessage(errData?.detail || errData?.message || "Error uploading file", "error");
+      }
     } finally {
       setKbloader(false);
     }
@@ -629,7 +680,7 @@ function MessageUpdateform(props) {
               )}
               <IAFButton
                 type="primary"
-                onClick={() => setShowUploadModal(true)}
+                onClick={openUploadModal}
                 icon={<SVGIcons icon="fa-plus" fill="#FFF" width={16} height={16} className={styles.plusIcon} style={{ marginRight: "12px" }} />}>
                 {" "}
                 Upload File
@@ -871,99 +922,144 @@ function MessageUpdateform(props) {
 
       {/* Upload Modal */}
       {showUploadModal && (
-        <div className={styles.uploadModalOverlay} onClick={() => setShowUploadModal(false)}>
+        <div className={styles.uploadModalOverlay} onClick={closeUploadModal}>
           <div className={styles.uploadModal} onClick={(e) => e.stopPropagation()}>
             <div className={styles.uploadModalHeader}>
-              <h3 className={styles.uploadModalTitle}>Upload Files</h3>
-              <button type="button" className={styles.uploadModalCloseBtn} onClick={() => setShowUploadModal(false)} aria-label="Close">
+              <h3 className={styles.uploadModalTitle}>{uploadResults ? "Upload Complete" : "Upload Files"}</h3>
+              <button type="button" className={styles.uploadModalCloseBtn} onClick={closeUploadModal} aria-label="Close">
                 <SVGIcons icon="x" width={20} height={20} color="#6B7280" />
               </button>
             </div>
             <div className={styles.uploadModalBody}>
-              {/* Subdirectory / KB Name Input */}
-              {showKnowledge ? (
-                <div className={styles.subdirectoryInput}>
-                  <label for="kb_directory" className="label-desc">
-                    Knowledge Base Name
-                  </label>
-                  <input
-                    id="kb_directory"
-                    type="text"
-                    className={styles.subdirectoryField}
-                    value={kbName}
-                    onChange={(e) => setKbName(sanitizeFormField("knowledgeBaseName", e.target.value))}
-                    placeholder="Enter A Name For Your Knowledge Base"
-                  />
+              {uploadResults ? (
+                <div className={styles.uploadResultsList}>
+                  {uploadResults.map((file, idx) => (
+                    <div key={idx} className={styles.uploadResultItem}>
+                      <SVGIcons icon="file-default" width={18} height={18} color="var(--app-primary-color, #0073cf)" />
+                      <div className={styles.uploadResultDetails}>
+                        <span className={styles.uploadResultName}>{file.original_name}</span>
+                        <span className={styles.uploadResultPath}>{file.saved_path}</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : (
-                <div className={styles.subdirectoryInput}>
-                  <label for="sub_dir_name" className="label-desc">
-                    Subdirectory Name (Optional)
-                  </label>
+                <>
+                  {/* Subdirectory / KB Name Input */}
+                  {showKnowledge ? (
+                    <div className={styles.subdirectoryInput}>
+                      <label for="kb_directory" className="label-desc">
+                        Knowledge Base Name
+                      </label>
+                      <input
+                        id="kb_directory"
+                        type="text"
+                        className={styles.subdirectoryField}
+                        value={kbName}
+                        onChange={(e) => setKbName(sanitizeFormField("knowledgeBaseName", e.target.value))}
+                        placeholder="Enter A Name For Your Knowledge Base"
+                      />
+                    </div>
+                  ) : (
+                    <div className={styles.subdirectoryInput}>
+                      <label for="sub_dir_name" className="label-desc">
+                        Subdirectory Name (Optional)
+                      </label>
+                      <input
+                        id="sub_dir_name"
+                        type="text"
+                        className={styles.subdirectoryField}
+                        value={subdirectory}
+                        onChange={(e) => setSubdirectory(sanitizeFormField("subdirectory", e.target.value))}
+                        placeholder="Leave Blank For Root Directory"
+                      />
+                    </div>
+                  )}
+                  {/* Hidden file input */}
                   <input
-                    id="sub_dir_name"
-                    type="text"
-                    className={styles.subdirectoryField}
-                    value={subdirectory}
-                    onChange={(e) => setSubdirectory(sanitizeFormField("subdirectory", e.target.value))}
-                    placeholder="Leave Blank For Root Directory"
+                    type="file"
+                    id="filesPageUpload"
+                    className={styles.dragDropInput}
+                    onChange={handleFileChange}
+                    accept={showKnowledge ? KB_ACCEPT_TYPES : ".pdf,.docx,.pptx,.txt,.xlsx,.msg,.json,.img,.db,.jpg,.png,.jpeg,.tiff,.tif,.bmp,.gif,.csv,.pkl,.zip,.tar,.eml,.md"}
+                    multiple={!showKnowledge}
+                    style={{ display: "none" }}
                   />
-                </div>
+                  {/* Drag Drop Area using UploadBox */}
+                  <UploadBox
+                    files={files}
+                    isDragging={isDragging}
+                    onDragEnter={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setIsDragging(true);
+                    }}
+                    onDragLeave={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setIsDragging(false);
+                    }}
+                    onDragOver={handleDragOver}
+                    onDrop={handleDrop}
+                    onClick={() => document.getElementById("filesPageUpload").click()}
+                    onRemoveFile={(index) => handleRemoveFile(index)}
+                    loading={loading || kbloader}
+                    fileInputId="filesPageUpload"
+                    acceptedFileTypes={showKnowledge ? KB_ACCEPT_TYPES : ".pdf,.docx,.pptx,.txt,.xlsx,.msg,.json,.img,.db,.jpg,.png,.jpeg,.tiff,.tif,.bmp,.gif,.csv,.pkl,.zip,.tar,.eml,.md"}
+                    supportedText={showKnowledge ? KB_SUPPORTED_TEXT : "PDF, DOCX, PPTX, TXT, XLSX, JSON, CSV, Images & more"}
+                    dragText="Drop files here"
+                    uploadText="Click to upload"
+                    dragDropText=" or drag and drop"
+                    multiple={!showKnowledge}
+                  />
+                </>
               )}
-              {/* Hidden file input */}
-              <input
-                type="file"
-                id="filesPageUpload"
-                className={styles.dragDropInput}
-                onChange={handleFileChange}
-                accept={showKnowledge ? ".pdf,.txt" : ".pdf,.docx,.pptx,.txt,.xlsx,.msg,.json,.img,.db,.jpg,.png,.jpeg,.csv,.pkl,.zip,.tar,.eml,.md"}
-                multiple={!showKnowledge}
-                style={{ display: "none" }}
-              />
-              {/* Drag Drop Area using UploadBox */}
-              <UploadBox
-                files={files}
-                isDragging={isDragging}
-                onDragEnter={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setIsDragging(true);
-                }}
-                onDragLeave={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setIsDragging(false);
-                }}
-                onDragOver={handleDragOver}
-                onDrop={handleDrop}
-                onClick={() => document.getElementById("filesPageUpload").click()}
-                onRemoveFile={(index) => handleRemoveFile(index)}
-                loading={loading || kbloader}
-                fileInputId="filesPageUpload"
-                acceptedFileTypes={showKnowledge ? ".pdf,.txt" : ".pdf,.docx,.pptx,.txt,.xlsx,.msg,.json,.img,.db,.jpg,.png,.jpeg,.csv,.pkl,.zip,.tar,.eml,.md"}
-                supportedText={showKnowledge ? "Supported: PDF, TXT" : "PDF, DOCX, PPTX, TXT, XLSX, JSON, CSV, Images & more"}
-                dragText="Drop files here"
-                uploadText="Click to upload"
-                dragDropText=" or drag and drop"
-                multiple={!showKnowledge}
-              />
             </div>
             <div className={styles.uploadModalFooter}>
-              <IAFButton type="secondary" onClick={() => setShowUploadModal(false)}>
-                Cancel
-              </IAFButton>
-              {showKnowledge ? (
-                <IAFButton type="primary" onClick={toolSubmit} disabled={files.length === 0 || !kbName.trim() || kbloader} loading={kbloader}>
-                  {kbloader ? "Uploading..." : "Upload"}
+              {uploadResults ? (
+                <IAFButton type="primary" onClick={closeUploadModal}>
+                  Done
                 </IAFButton>
               ) : (
-                <IAFButton type="primary" onClick={handleSubmit} disabled={files.length === 0 || loading} loading={loading}>
-                  Upload Files
-                </IAFButton>
+                <>
+                  <IAFButton type="secondary" onClick={closeUploadModal}>
+                    Cancel
+                  </IAFButton>
+                  {showKnowledge ? (
+                    <IAFButton type="primary" onClick={() => toolSubmit()} disabled={files.length === 0 || !kbName.trim() || kbloader} loading={kbloader}>
+                      {kbloader ? "Uploading..." : "Upload"}
+                    </IAFButton>
+                  ) : (
+                    <IAFButton type="primary" onClick={() => handleSubmit()} disabled={files.length === 0 || loading} loading={loading}>
+                      Upload Files
+                    </IAFButton>
+                  )}
+                </>
               )}
             </div>
           </div>
         </div>
+      )}
+
+      {/* File Conflict Modal */}
+      {overwriteWarnings && (
+        <FileConflictModal
+          warnings={overwriteWarnings}
+          loading={loading || kbloader}
+          onOverwrite={() => showKnowledge ? toolSubmit(true) : handleSubmit(true)}
+          onDefaultFolder={() => showKnowledge ? toolSubmit(false) : handleSubmit(false, emailToFolderName(getEmailFromToken()))}
+          onCustomFolder={(f) => showKnowledge ? toolSubmit(false) : handleSubmit(false, f)}
+          onClose={() => {
+            if (partialUploadResults.length > 0) {
+              setUploadResults(partialUploadResults);
+              setSubdirectory("");
+              setFiles([]);
+              refreshFiles();
+            }
+            setOverwriteWarnings(null);
+            setPartialUploadResults([]);
+          }}
+        />
       )}
 
       {/* Document Viewer Modal */}

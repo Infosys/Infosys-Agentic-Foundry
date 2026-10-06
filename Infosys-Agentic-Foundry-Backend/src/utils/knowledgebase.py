@@ -4,7 +4,6 @@ import asyncpg
 import numpy as np
 from typing import List, Dict, Any
 from langchain_core.tools import tool
-from src.models.guardrail_aware_llm import TokenLoggingAzureChatOpenAI
 from src.utils.postgres_vector_store_jsonb import PostgresVectorStoreJSONB
 from src.utils.remote_model_client import get_remote_models
 from src.storage import get_storage_client
@@ -161,25 +160,23 @@ def download_kb_from_storage(kb_name: str):
 def knowledgebase_retriever(query: str, knowledgebase_names: list) -> str:
     """This tool retrieves information from specified knowledge bases to answer the query."""
     log.info(f"Knowledgebase retriever called with query: {query[:50]}... for KBs: {knowledgebase_names}")
-    
-    try:
-        llm = TokenLoggingAzureChatOpenAI(
-            azure_endpoint=os.getenv('AZURE_ENDPOINT'),
-            azure_deployment='gpt-4o',
-            api_version=os.getenv('OPENAI_API_VERSION'),
-            temperature=0,
-            api_key=os.getenv('AZURE_OPENAI_API_KEY')
-        )
-    except Exception as e:
-        log.error(f"Failed to initialize LLM: {e}")
-        return f"Error: Failed to initialize LLM - {str(e)}"
-    
+
     if isinstance(knowledgebase_names, str):
         kb_list = [knowledgebase_names]
     else:
         kb_list = knowledgebase_names
-    
+
     async def _async_retrieval():
+        from src.models.model_service import ModelService
+        model_name = os.getenv("DEFAULT_MODEL_NAME", "gpt-4o")
+        model_service = ModelService()
+        log.info(f"Knowledgebase retriever initializing LLM via ModelService: model={model_name}")
+        try:
+            llm = await model_service.get_llm_model(model_name, temperature=0)
+        except Exception as e:
+            log.error(f"Failed to initialize LLM: {e}")
+            return {"error": f"Failed to initialize LLM - {str(e)}"}
+
         pool = None
         try:
             pool = await get_db_pool()

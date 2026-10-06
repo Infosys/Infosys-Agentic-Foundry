@@ -59,9 +59,9 @@
 }
 
 .cardDeleteBtn:hover {
-  background: #fef2f2;
-  border-color: #fecaca;
-  color: #dc2626;
+  background: rgba(244, 63, 94, 0.12);
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 /* ========================================
@@ -348,15 +348,15 @@
    ======================================== */
 .primaryBtn {
   padding: 10px 20px;
-  background: var(--btn-color, var(--app-primary-color, #3b82f6));
+  background: var(--gradient-primary, linear-gradient(135deg, #025d8a, #041c29));
   color: var(--primary-button-color, #ffffff);
-  border: none;
-  border-radius: var(--radius, 4px);
+  border: 1px solid var(--accent, #37acea);
+  border-radius: var(--radius, 8px);
   cursor: pointer;
   font-family: var(--font-primary);
   font-size: var(--font-size-sm, 14px);
   font-weight: var(--font-weight-medium, 500);
-  transition: background-color 0.2s ease;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -364,25 +364,28 @@
 }
 
 .primaryBtn:hover:not(:disabled) {
-  background: var(--accent-hover, #2563eb);
+  box-shadow: var(--shadow-glow, 0 4px 16px rgba(55, 172, 234, 0.35));
+  transform: translateY(-1px);
 }
 
 .primaryBtn:disabled {
-  opacity: 0.5;
+  opacity: var(--disabled-opacity, 0.5);
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .secondaryBtn {
   padding: 10px 20px;
-  background: var(--hover-background, #6b7280);
-  color: var(--header-color, #ffffff);
-  border: 1px solid var(--border-color, transparent);
-  border-radius: var(--radius, 4px);
+  background: var(--secondary-bg, var(--hover-background));
+  color: var(--header-color);
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius, 8px);
   cursor: pointer;
   font-family: var(--font-primary);
   font-size: var(--font-size-sm, 14px);
   font-weight: var(--font-weight-medium, 500);
-  transition: background-color 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -390,12 +393,31 @@
 }
 
 .secondaryBtn:hover:not(:disabled) {
-  background: var(--muted-foreground, #4b5563);
+  background: var(--hover-background);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .secondaryBtn:disabled {
-  opacity: 0.5;
+  opacity: var(--disabled-opacity, 0.5);
   cursor: not-allowed;
+}
+
+:root[data-theme="dark"] .secondaryBtn {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: var(--text-primary);
+}
+
+:root[data-theme="dark"] .secondaryBtn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+:root[data-theme="dark"] .primaryBtn {
+  background: linear-gradient(135deg, var(--accent), var(--app-primary-color));
+  border-color: var(--accent);
 }
 
 /* ========================================
@@ -505,7 +527,7 @@
 
 .modal,
 .modalContainer {
-  background: var(--card-bg, #ffffff);
+  background: var(--modal-bg, var(--card-bg));
   border-radius: var(--radius-lg, 8px);
   width: 100%;
   max-width: 500px;
@@ -514,7 +536,7 @@
   display: flex;
   flex-direction: column;
   box-shadow: var(--shadow-lg, 0 4px 15px rgba(0, 0, 0, 0.1));
-  border: 1px solid var(--border-color, transparent);
+  border: 1px solid var(--border-color);
   animation: modalSlideIn 0.3s ease-out;
 }
 
@@ -534,7 +556,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
-  border-bottom: 1px solid var(--border, #e5e7eb);
+  background: var(--modal-header-bg, var(--card-bg));
+  border-bottom: 1px solid var(--border-color);
 }
 
 .modalTitle {
@@ -542,7 +565,7 @@
   font-family: var(--font-primary);
   font-size: var(--font-size-lg, 18px);
   font-weight: var(--font-weight-semibold, 600);
-  color: var(--header-color, #1a1a1a);
+  color: var(--header-color);
 }
 
 .modalSubtitle {
@@ -555,7 +578,7 @@
 .modalCloseBtn {
   background: transparent;
   border: none;
-  color: var(--header-color, #1a1a1a);
+  color: var(--header-color);
   cursor: pointer;
   padding: 8px;
   display: flex;
@@ -566,7 +589,7 @@
 }
 
 .modalCloseBtn:hover {
-  background: var(--hover-background, #f3f4f6);
+  background: var(--modal-close-hover-bg, var(--hover-background));
 }
 
 .modalCloseBtn svg {
@@ -589,7 +612,8 @@
   justify-content: space-between;
   gap: 12px;
   padding: 16px 20px;
-  border-top: 1px solid var(--border, #e5e7eb);
+  background: var(--modal-footer-bg, var(--card-bg));
+  border-top: 1px solid var(--border-color);
 }
 
 /* Toggle container for modal footer */
@@ -603,7 +627,7 @@
   font-family: var(--font-primary);
   font-size: var(--font-size-sm, 13px);
   font-weight: var(--font-weight-medium, 500);
-  color: var(--content-color, #555);
+  color: var(--content-color);
   white-space: nowrap;
 }
 
@@ -620,11 +644,15 @@
   gap: 8px;
 }
 
+.dropdownField {
+  width: 100%;
+}
+
 .fieldLabel {
   font-family: var(--font-primary);
   font-size: var(--font-size-sm, 14px);
   font-weight: var(--font-weight-medium, 500);
-  color: var(--header-color, #374151);
+  color: var(--content-color);
 }
 
 .required {
@@ -648,9 +676,9 @@
   font-family: var(--font-primary);
   font-size: var(--font-size-base, 14px);
   font-weight: var(--font-weight-normal, 400);
-  color: var(--text-primary, #111827);
-  background: var(--input-bg, transparent);
-  border: 1px solid var(--border, #e5e7eb);
+  color: var(--text-primary);
+  background: var(--input-bg);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-lg, 8px);
   cursor: text;
   transition: all 0.2s ease;
@@ -660,8 +688,8 @@
 .selectField:focus,
 .textInput:focus {
   outline: none;
-  border-color: var(--app-primary-color, #3b82f6);
-  box-shadow: 0 0 0 2px rgba(var(--app-primary-color-rgb, 59, 130, 246), 0.15);
+  border-color: var(--focus-border, var(--accent));
+  box-shadow: var(--focus-ring, 0 0 0 2px rgba(55, 172, 234, 0.15));
 }
 
 .textInput::placeholder {
@@ -693,25 +721,33 @@
   align-items: center;
   gap: 4px;
   padding: 10px 16px;
-  background: var(--app-primary-color, #3b82f6);
-  color: #ffffff;
-  border: none;
+  background: var(--gradient-primary, linear-gradient(135deg, #025d8a, #041c29));
+  color: var(--primary-button-color, #ffffff);
+  border: 1px solid var(--accent, #37acea);
   border-radius: var(--radius-lg, 8px);
   font-family: var(--font-primary);
   font-size: var(--font-size-sm, 14px);
   font-weight: var(--font-weight-medium, 500);
   cursor: pointer;
-  transition: background-color 0.2s ease;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
   white-space: nowrap;
 }
 
 .addValueBtn:hover:not(:disabled) {
-  background: var(--app-primary-color-hover, #2563eb);
+  box-shadow: var(--shadow-glow, 0 4px 16px rgba(55, 172, 234, 0.35));
+  transform: translateY(-1px);
 }
 
 .addValueBtn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+:root[data-theme="dark"] .addValueBtn {
+  background: linear-gradient(135deg, var(--accent), var(--app-primary-color));
+  border-color: var(--accent);
 }
 
 .addValueBtn svg {
@@ -751,67 +787,68 @@
   height: 16px;
 }
 
-/* Chips - Match EditAccessKeyModal style */
+/* Chips - match EditAccessKeyModal / app theme */
 .chipContainer {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   margin-top: 8px;
 }
 
 .chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  background: var(--chip-background, #e0f2fe);
-  color: var(--chip-color, #0369a1);
-  border: 1px solid var(--chip-border, #bae6fd);
-  border-radius: 16px;
+  gap: 4px;
+  padding: 2px 8px;
+  background: transparent;
+  color: var(--accent, var(--app-primary-color));
+  border: 1px solid var(--accent, var(--app-primary-color));
+  border-radius: 12px;
   font-family: var(--font-primary);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: var(--font-weight-medium, 500);
   transition: all 0.2s ease;
+  white-space: nowrap;
 }
 
 .chip:hover {
-  background: var(--chip-background-hover, #bae6fd);
+  background: var(--accent-light, rgba(55, 172, 234, 0.15));
 }
 
-/* Exclusion chip - Red variant */
+/* Exclusion chip - same outline style, danger accent */
 .chipExclusion {
-  background: var(--chip-remove-background, #fee2e2);
-  color: var(--chip-remove-color, #dc2626);
-  border-color: var(--chip-remove-border, #fecaca);
+  color: var(--danger);
+  border-color: var(--danger);
+  background: transparent;
 }
 
 .chipExclusion:hover {
-  background: var(--chip-remove-background-hover, #fecaca);
+  background: rgba(244, 63, 94, 0.12);
 }
 
 .chipExclusion .chipRemove {
-  color: var(--chip-remove-color, #dc2626);
+  color: var(--danger);
 }
 
 .chipRemove {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   padding: 0;
   background: transparent;
   border: none;
   border-radius: 50%;
-  color: var(--chip-color, #0369a1);
+  color: inherit;
   cursor: pointer;
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1;
   transition: background-color 0.2s ease;
 }
 
 .chipRemove:hover {
-  background: rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .emptyFieldText {
@@ -836,11 +873,6 @@
 
 .valuesInputRow .formInput {
   flex: 1;
-}
-
-.addValueBtn:hover {
-  background: var(--app-primary-color);
-  color: #fff;
 }
 
 .valuesList {
@@ -990,12 +1022,12 @@
   align-items: flex-start;
   gap: 10px;
   padding: 12px 16px;
-  background: var(--accent-light, #eff6ff);
-  border: 1px solid var(--app-primary-color-light, #bfdbfe);
+  background: var(--accent-light);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius, 8px);
   font-family: var(--font-primary);
   font-size: var(--font-size-sm, 14px);
-  color: var(--content-color, #374151);
+  color: var(--content-color);
 }
 
 .infoIcon {

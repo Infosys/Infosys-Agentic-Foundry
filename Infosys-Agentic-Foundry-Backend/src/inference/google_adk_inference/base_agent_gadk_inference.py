@@ -44,6 +44,172 @@ class BaseAgentGADKInference(AbstractBaseInference):
         super().__init__(inference_utils)
         self.gadk_session_service = self.chat_service.gadk_session_service
 
+    # --- Token & Query Usage Logging for Google ADK ---
+
+    async def _log_gadk_token_usage(
+        self,
+        model_name: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        total_tokens: int,
+        cached_tokens: int = 0,
+        agent_id: str = None,
+        session_id: str = None,
+        user_id: str = None,
+        agent_type: str = None,
+        call_category: str = None,  # Changed to None so categorizer is used
+        department_name: str = None,
+    ):
+        """
+        Log per-LLM-call token usage to the token_usage_logs table for Google ADK calls.
+        This mirrors the automatic logging done by TokenLoggingAzureChatOpenAI for LangGraph.
+        Uses the call_categorizer to automatically detect the category if not provided.
+        """
+        if total_tokens <= 0:
+            return
+        try:
+            from litellm_standalone_tracker import log_token_usage
+            from call_categorizer import CallCategorizer
+            
+            # Auto-categorize the call if category not provided
+            if not call_category:
+                call_category = CallCategorizer.categorize_call()['call_category']
+                log.debug(f"🔍 [GADK] Auto-categorized token usage as: {call_category}")
+            
+            await log_token_usage(
+                model_name=model_name,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                cached_tokens=cached_tokens,
+                agent_id=int(agent_id) if agent_id and str(agent_id).isdigit() else None,
+                session_id=session_id,
+                user_id=user_id,
+                call_category=call_category,
+                call_sub_category=f"{agent_type}_stream" if agent_type else "gadk_stream",
+                call_operation="chat_inference",
+                agent_type=agent_type,
+                department_name=department_name,
+            )
+            log.info(f"✅ [GADK] Token usage logged: model={model_name}, category={call_category}, "
+                      f"prompt={prompt_tokens}, completion={completion_tokens}, total={total_tokens}")
+        except Exception as e:
+            log.error(f"❌ [GADK] Failed to log token usage: {e}", exc_info=True)
+
+    async def _log_gadk_query_usage(
+        self,
+        model_name: str,
+        agent_id: str,
+        session_id: str,
+        user_id: str,
+        query: str,
+        total_prompt_tokens: int,
+        total_completion_tokens: int,
+        total_tokens: int,
+        total_cached_tokens: int = 0,
+    ):
+        """
+        Log per-query aggregated usage. This creates a query-level summary record
+        similar to what LangGraph agents produce via the accumulator.
+        """
+        if total_tokens <= 0:
+            return
+        try:
+            from litellm_standalone_tracker import _cost_service, _db_pool
+            prompt_cost, completion_cost, cached_cost, total_cost = _cost_service.calculate_cost(
+                model_name, total_prompt_tokens, total_completion_tokens, total_cached_tokens
+            )
+            async with _db_pool.acquire() as conn:
+                # Check if query_usage_logs table exists
+                has_table = await conn.fetchval("""
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.tables 
+                        WHERE table_name = 'query_usage_logs'
+                    )
+                """)
+                if has_table:
+                    await conn.execute(
+                        """
+                        INSERT INTO query_usage_logs (
+                            timestamp, agent_id, session_id, user_id, query,
+                            model_name, prompt_tokens, completion_tokens, total_tokens,
+                            cached_tokens, prompt_cost, completion_cost, cached_cost, total_cost
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                        """,
+                        __import__('datetime').datetime.now(),
+                        int(agent_id) if agent_id and str(agent_id).isdigit() else None,
+                        session_id, user_id, query,
+                        model_name, total_prompt_tokens, total_completion_tokens, total_tokens,
+                        total_cached_tokens, prompt_cost, completion_cost, cached_cost, total_cost,
+                    )
+                    log.info(f"✅ [GADK] Query usage logged: model={model_name}, "
+                              f"total_tokens={total_tokens}, total_cost=${total_cost:.8f}")
+                else:
+                    log.warning("⚠️ [GADK] query_usage_logs table not found. Skipping query-level logging.")
+        except Exception as e:
+            log.error(f"❌ [GADK] Failed to log query usage: {e}", exc_info=True)
+
+
+    # --- Tool Annotation Fixing for Google ADK ---
+    
+    @staticmethod
+    def _fix_tool_annotations_for_gadk(tool_func: Callable) -> Callable:
+        """
+        Fix function annotations for Google ADK compatibility.
+        Google ADK requires that if a parameter has type 'str', it cannot have default value None.
+        Convert 'param: str = None' to 'param: Optional[str] = None'.
+        """
+        import inspect
+        from typing import Optional, get_origin, get_args
+        
+        sig = inspect.signature(tool_func)
+        new_params = []
+        modified = False
+        
+        for param_name, param in sig.parameters.items():
+            annotation = param.annotation
+            default = param.default
+            
+            # Check if parameter has a non-Optional type with None default
+            if default is None and annotation != inspect.Parameter.empty:
+                # Check if annotation is NOT already Optional
+                origin = get_origin(annotation)
+                if origin is not Union:  # Not already Optional/Union
+                    # Wrap in Optional
+                    new_annotation = Optional[annotation]
+                    new_param = param.replace(annotation=new_annotation)
+                    new_params.append(new_param)
+                    modified = True
+                    continue
+            
+            new_params.append(param)
+        
+        if modified:
+            # Create new signature with fixed annotations
+            tool_func.__signature__ = sig.replace(parameters=new_params)
+            log.debug(f"🔧 Fixed annotations for Google ADK tool: {tool_func.__name__}")
+        
+        return tool_func
+    
+    async def _get_tools_instances(self, tool_ids: list[str], tool_versions: dict = None) -> list:
+        """
+        Override parent method to fix tool annotations for Google ADK compatibility.
+        """
+        # Call parent method to load tools normally
+        tools = await super()._get_tools_instances(tool_ids, tool_versions)
+        
+        # Fix annotations for each tool
+        fixed_tools = []
+        for tool in tools:
+            try:
+                fixed_tool = self._fix_tool_annotations_for_gadk(tool)
+                fixed_tools.append(fixed_tool)
+            except Exception as e:
+                log.warning(f"⚠️ Could not fix annotations for tool {getattr(tool, '__name__', 'unknown')}: {e}")
+                fixed_tools.append(tool)  # Use original if fixing fails
+        
+        return fixed_tools
+
 
     # --- Helper Methods ---
 
@@ -459,6 +625,15 @@ Please review the query and feedback, and provide an appropriate answer.
                 tool_context.state["tool_interrupt_old_args"] = [tool_name, args.copy()]
                 return {"status": f"Pending tool confirmation for tool '{tool_name}' with args: {args}."}
 
+            # Check if user REJECTED the tool execution
+            if not tool_context.tool_confirmation.confirmed:
+                log.info(f"[Callback] Tool '{tool_name}' was REJECTED by user. Skipping execution.")
+                tool_context.state["tool_interrupt_old_args"] = None
+                return {
+                    "status": "rejected",
+                    "message": f"Tool '{tool_name}' execution was rejected by the user. The tool was NOT executed."
+                }
+
             new_args = tool_context.tool_confirmation.payload
             if new_args:
                 new_args = convert_value_type_of_candidate_as_given_in_reference(reference=args, candidate=new_args)
@@ -508,14 +683,36 @@ Please review the query and feedback, and provide an appropriate answer.
     @staticmethod
     async def get_after_planner_agent_callback() -> Callable:
         async def _after_planner_agent_callback(callback_context: CallbackContext) -> Optional[Content]:
+            """ Simple callback that initializes the plan index in the session state after the planner agent has run.
             """
-            Simple callback that initializes the plan index in the session state after the planner agent has run.
-            """
-            # Get the session state
+            import json as _json
             state = callback_context.state
             plan = state.get("plan", {})
-            if isinstance(plan, dict):
+
+            if isinstance(plan, str):
+                _text = plan.strip()
+                if _text.startswith("```"):
+                    first_nl = _text.find("\n")
+                    if first_nl != -1:
+                        _text = _text[first_nl + 1:]
+                    if _text.rstrip().endswith("```"):
+                        _text = _text.rstrip()[:-3].rstrip()
+                try:
+                    parsed = _json.loads(_text)
+                    if isinstance(parsed, dict):
+                        plan = parsed.get("plan", [])
+                    elif isinstance(parsed, list):
+                        plan = parsed
+                    else:
+                        plan = []
+                except (ValueError, TypeError):
+                    plan = []
+            elif isinstance(plan, dict):
                 plan = plan.get("plan", [])
+
+            if not isinstance(plan, list):
+                plan = []
+
             state["plan"] = plan
             state["plan_idx"] = 0
             state["plan_feedback"] = None
@@ -580,16 +777,42 @@ Please review the query and feedback, and provide an appropriate answer.
         return _before_executor_agent_callback
 
     @staticmethod
-    async def get_after_critics_tool_callback(inference_config: AdminConfigLimits = AdminConfigLimits()) -> Callable:
-        async def _after_critics_tool_callback(tool: BaseTool, args: Dict[str, Any], tool_context: ToolContext, tool_response: Dict) -> Optional[Dict]:
-            if isinstance(tool_response, dict) and tool.name == "set_model_response":
-                response_quality_score = tool_response.get("response_quality_score", 1)
-                critic_evaluation_attempts = tool_context.state.get("critic_evaluation_attempts", 0) + 1
-                tool_context.state["critic_evaluation_attempts"] = critic_evaluation_attempts
-                parent_agent: LoopAgent = tool_context._invocation_context.agent.parent_agent
-                if response_quality_score >= inference_config.critic_score_threshold or critic_evaluation_attempts >= getattr(parent_agent, "max_iterations", inference_config.max_critic_epochs):
-                    tool_context.actions.escalate = True
-        return _after_critics_tool_callback
+    async def get_after_critic_agent_callback(inference_config: AdminConfigLimits = AdminConfigLimits()) -> Callable:
+        """
+        Returns an after_agent_callback for the critic agent that handles
+        quality-based escalation.  This replaces the after_tool_callback
+        approach which only works when ADK uses the set_model_response tool
+        workaround (Vertex AI + Gemini 2+).  For LiteLLM models, ADK uses
+        native JSON mode when the critic has no tools, so the escalation
+        must happen via an agent-level callback instead.
+        """
+        import json as _json
+        async def _after_critic_agent_callback(callback_context: CallbackContext) -> Optional[Content]:
+            state = callback_context.state
+            critic_response = state.get("critic_response", {})
+
+            # Extract score from dict or raw string
+            score = 1.0
+            if isinstance(critic_response, dict):
+                score = critic_response.get("response_quality_score", 1.0)
+            elif isinstance(critic_response, str):
+                try:
+                    parsed = _json.loads(critic_response)
+                    if isinstance(parsed, dict):
+                        score = parsed.get("response_quality_score", 1.0)
+                except (ValueError, TypeError):
+                    pass
+
+            attempts = state.get("critic_evaluation_attempts", 0) + 1
+            state["critic_evaluation_attempts"] = attempts
+
+            from google.adk.agents import LoopAgent
+            parent_agent = callback_context._invocation_context.agent.parent_agent
+            max_iter = getattr(parent_agent, "max_iterations", inference_config.max_critic_epochs)
+            if score >= inference_config.critic_score_threshold or attempts >= max_iter:
+                callback_context._event_actions.escalate = True
+            return None
+        return _after_critic_agent_callback
 
     @staticmethod
     async def get_after_critic_loop_agent_callback() -> Callable:
@@ -1020,7 +1243,11 @@ Plan:
         canvas_formatter_agent_system_prompt = f"""\
 {FORMATTER_PROMPT}
 
-**IMPORTANT**: Focus only on formatting the response the we get for the user query, ignore all other sub-agent responses like planner, critic etc if there are any.
+**IMPORTANT**:
+- Focus only on formatting the response we get for the user query, ignore all other sub-agent responses like planner, critic etc if there are any.
+- Your output MUST be a raw JSON object without any markdown code block wrappers (do NOT wrap in ```json or ```). Return ONLY the plain JSON object directly.
+- The response must be a dictionary with a single key "parts" whose value is a list of components as described in the formatting instructions above. Example structure: {{"parts": [...]}}
+- Do NOT include any text, explanation, or commentary outside of the JSON object, as it will be parsed directly using json.loads() function in python.
 """
 
         return LlmAgent(
@@ -1148,7 +1375,8 @@ Use positive examples as guidance and explicitly avoid negative examples.
             run_async_params["state_delta"] = {
                 "query": query,
                 "response": "",
-                "episodic_memory_context": episodic_memory_context
+                "episodic_memory_context": episodic_memory_context,
+                "user_id": session.user_id
             }
             log.info("No plan approval feedback provided, proceeding with user query.")
 
@@ -1156,9 +1384,18 @@ Use positive examples as guidance and explicitly avoid negative examples.
             log.info("Processing tool execution feedback.")
             function_call_event = await self.get_last_pending_function_call_event(events=session.events, function_name="adk_request_confirmation")
             function_call_part = function_call_event.content.parts[0].function_call
-            if tool_feedback.lower() == "yes":
-                tool_feedback = "null"
-            feedback_content = f'{{"confirmed": true, "payload": {tool_feedback}}}'
+
+            # Determine if this is an approval, rejection, or modification
+            _tf_lower = tool_feedback.strip().lower()
+            if _tf_lower in ("yes", "approve", "approved", "confirm", "confirmed"):
+                # Approved with original args
+                feedback_content = '{"confirmed": true, "payload": null}'
+            elif _tf_lower in ("no", "reject", "rejected", "cancel", "deny"):
+                # Rejected — do NOT execute the tool
+                feedback_content = '{"confirmed": false, "payload": null}'
+            else:
+                # Modified args — user provided new arguments
+                feedback_content = f'{{"confirmed": true, "payload": {tool_feedback}}}'
 
             run_async_params["new_message"] = await self.get_formatted_gadk_content(
                                                     function_response={
@@ -1191,11 +1428,18 @@ Use positive examples as guidance and explicitly avoid negative examples.
         response_stream = runner_app.run_async(**run_async_params)
 
         print("|"*10, " Streaming Response Started ", "|"*10, "\n")
-        async for event in response_stream:
-            if event.content:
-                print(event.content)
-                response.append(event.content)
-                print("==="*30, "\n")
+        try:
+            async for event in response_stream:
+                if event.content:
+                    print(event.content)
+                    response.append(event.content)
+                    print("==="*30, "\n")
+        except Exception as e:
+            from pydantic import ValidationError as _PydanticValidationError
+            if isinstance(e, _PydanticValidationError):
+                log.warning(f"[GADK] Output schema validation failed in _ainvoke: {e}")
+            else:
+                log.error(f"Error in _ainvoke streaming: {e}", exc_info=True)
         print("|"*10, " Streaming Response Ended ", "|"*10, "\n")
 
         if not response:
@@ -1267,7 +1511,8 @@ Use positive examples as guidance and explicitly avoid negative examples.
             run_async_params["state_delta"] = {
                 "query": query,
                 "response": "",
-                "episodic_memory_context": episodic_memory_context
+                "episodic_memory_context": episodic_memory_context,
+                "user_id": session.user_id
             }
             log.info("No plan approval feedback provided, proceeding with user query.")
 
@@ -1275,9 +1520,18 @@ Use positive examples as guidance and explicitly avoid negative examples.
             log.info("Processing tool execution feedback.")
             function_call_event = await self.get_last_pending_function_call_event(events=session.events, function_name="adk_request_confirmation")
             function_call_part = function_call_event.content.parts[0].function_call
-            if tool_feedback.lower() == "yes":
-                tool_feedback = "null"
-            feedback_content = f'{{"confirmed": true, "payload": {tool_feedback}}}'
+
+            # Determine if this is an approval, rejection, or modification
+            _tf_lower = tool_feedback.strip().lower()
+            if _tf_lower in ("yes", "approve", "approved", "confirm", "confirmed"):
+                # Approved with original args
+                feedback_content = '{"confirmed": true, "payload": null}'
+            elif _tf_lower in ("no", "reject", "rejected", "cancel", "deny"):
+                # Rejected — do NOT execute the tool
+                feedback_content = '{"confirmed": false, "payload": null}'
+            else:
+                # Modified args — user provided new arguments
+                feedback_content = f'{{"confirmed": true, "payload": {tool_feedback}}}'
 
             run_async_params["new_message"] = await self.get_formatted_gadk_content(
                                                     function_response={
@@ -1327,6 +1581,25 @@ Use positive examples as guidance and explicitly avoid negative examples.
             yield await self._create_sse_status_event("Agent", "Completed", {"content": "Response generated successfully"})
 
         except Exception as e:
+            from pydantic import ValidationError as _PydanticValidationError
+            if isinstance(e, _PydanticValidationError):
+                raw_text = None
+                try:
+                    for err_detail in e.errors():
+                        if 'input' in err_detail and isinstance(err_detail['input'], str):
+                            raw_text = err_detail['input']
+                            break
+                except Exception:
+                    pass
+                if raw_text:
+                    log.warning(f"[GADK] Output schema validation failed, yielding raw text as response")
+                    yield {
+                        "type": "text",
+                        "content": raw_text,
+                        "Node Name": "Agent",
+                        "Status": "Completed"
+                    }
+                    return
             log.error(f"Error during streaming: {e}", exc_info=True)
             error_event = {
                 "error": f"Streaming error: {str(e)}",
@@ -1367,6 +1640,124 @@ Use positive examples as guidance and explicitly avoid negative examples.
             is_plan_approved = plan_feedback = None
 
         llm = await self.model_service.get_llm_model_using_google_adk(model_name=model_name, temperature=temperature)
+
+        from src.utils.guardrail_helpers import guardrail_type_ctx, guardrail_registry, get_guardrail_response_from_exception
+        _orig_acompletion = llm.llm_client.acompletion
+        async def _patched_acompletion(model, messages, tools, **kwargs):
+            # Inject guardrail headers if agent has guardrails enabled
+            g_type = guardrail_type_ctx.get(None)
+            if g_type and g_type != "none":
+                extra_headers = kwargs.get("extra_headers") or {}
+                extra_headers["x-guardrail-type"] = g_type
+                extra_headers["x-guardrail-provider"] = guardrail_registry.get_proxy_provider(g_type)
+                kwargs["extra_headers"] = extra_headers
+                log.info(f"[GADK] Injecting guardrail headers: {extra_headers}")
+
+            for msg in (messages or []):
+                content = msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", None)
+                if isinstance(content, list) and all(
+                    isinstance(p, dict) and p.get("type") == "text" for p in content
+                ):
+                    joined = "\n".join(p["text"] for p in content)
+                    if isinstance(msg, dict):
+                        msg["content"] = joined
+                    else:
+                        msg.content = joined
+            try:
+                response = await _orig_acompletion(model, messages, tools, **kwargs)
+            except Exception as e:
+                guardrail_msg = get_guardrail_response_from_exception(e)
+                if guardrail_msg:
+                    log.warning(f"[GADK] Guardrail violation caught, returning alert as response")
+                    from litellm import ModelResponse
+                    from litellm.types.utils import Choices, Message, Usage
+                    import json as _json
+                    canvas_parts = _json.dumps([{"type": "text", "content": guardrail_msg}])
+                    universal_response = _json.dumps({
+                        "plan": [],
+                        "response": guardrail_msg,
+                        "parts": canvas_parts,
+                        "response_quality_score": 0.0,
+                        "critique_points": ["Content was blocked by content safety guardrail."]
+                    })
+                    return ModelResponse(
+                        id="guardrail-blocked",
+                        choices=[Choices(index=0, message=Message(role="assistant", content=universal_response), finish_reason="stop")],
+                        model=model or "guardrail",
+                        usage=Usage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+                    )
+                raise
+          
+            if hasattr(response, 'choices') and response.choices:
+                for choice in response.choices:
+                    if hasattr(choice, 'message') and choice.message and hasattr(choice.message, 'content'):
+                        text = choice.message.content
+                        if not text:
+                            continue
+                    
+                        if text.strip().startswith("```"):
+                            text = text.strip()
+                            first_nl = text.find("\n")
+                            if first_nl != -1:
+                                text = text[first_nl + 1:]
+                            if text.rstrip().endswith("```"):
+                                text = text.rstrip()[:-3].rstrip()
+                            choice.message.content = text
+                        
+                        try:
+                            import json as _json
+                            parsed = _json.loads(choice.message.content)
+                            if isinstance(parsed, dict) and "parts" in parsed and isinstance(parsed["parts"], list):
+                                parsed["parts"] = _json.dumps(parsed["parts"])
+                                choice.message.content = _json.dumps(parsed)
+                        except (ValueError, TypeError):
+                            pass
+            return response
+        llm.llm_client.acompletion = _patched_acompletion
+
+        from google.adk.agents.llm_agent import LlmAgent as _ADKLlmAgent
+        if not getattr(_ADKLlmAgent, '_output_save_patched', False):
+            import json as _json_mod
+            from pydantic import ValidationError as _PydanticVE
+            _orig_save = _ADKLlmAgent._LlmAgent__maybe_save_output_to_state
+
+            def _safe_save_output_to_state(self_agent, event):
+                try:
+                    _orig_save(self_agent, event)
+                except _PydanticVE:
+                    if (
+                        self_agent.output_key
+                        and event.content
+                        and event.content.parts
+                    ):
+                        result_text = ''.join(
+                            p.text for p in event.content.parts
+                            if p.text and not getattr(p, 'thought', False)
+                        )
+                        if not result_text.strip():
+                            return
+                       
+                        try:
+                            parsed = _json_mod.loads(result_text)
+                            if isinstance(parsed, dict) and self_agent.output_schema:
+                                try:
+                                    validated = self_agent.output_schema.model_validate(parsed)
+                                    event.actions.state_delta[self_agent.output_key] = validated.model_dump(exclude_none=True)
+                                    return
+                                except Exception:
+                                    pass
+                            event.actions.state_delta[self_agent.output_key] = parsed
+                        except (ValueError, TypeError):
+                            event.actions.state_delta[self_agent.output_key] = result_text
+                        log.warning(
+                            f"[GADK] output_schema validation failed for agent "
+                            f"'{self_agent.name}', stored raw output under "
+                            f"'{self_agent.output_key}'"
+                        )
+
+            _ADKLlmAgent._LlmAgent__maybe_save_output_to_state = _safe_save_output_to_state
+            _ADKLlmAgent._output_save_patched = True
+
         agent_resp = {}
 
         if reset_conversation:
@@ -1460,6 +1851,11 @@ Use positive examples as guidance and explicitly avoid negative examples.
                 log.error(f"Error occurred while retrieving agent configuration: {e}")
                 raise HTTPException(status_code=500, detail=f"Error occurred while retrieving agent configuration: {str(e)}")
 
+        from src.utils.guardrail_helpers import guardrail_type_ctx as _guardrail_type_ctx
+        agent_guardrail_type = agent_config.get("GUARDRAIL_TYPE", "none")
+        _guardrail_type_ctx.set(agent_guardrail_type)
+        log.info(f"[GADK] Agent guardrail_type='{agent_guardrail_type}'")
+
         try:
             query = inference_request.query
             session_id = inference_request.session_id
@@ -1495,6 +1891,10 @@ Use positive examples as guidance and explicitly avoid negative examples.
             )
 
             update_session_context(agent_type=agent_config["AGENT_TYPE"], agent_name=agent_name)
+            
+            # Set context for categorization with explicit call_category
+            from telemetry_wrapper import set_context
+            set_context(agent_id=agentic_application_id, agent_type=agent_config["AGENT_TYPE"], call_category="agent_inference")
 
             # For react agent, we need to add knowledge base retriever tool if knowledgebase_name is provided
             if agent_config["AGENT_TYPE"] == AgentType.REACT_AGENT and hasattr(inference_request, "knowledgebase_name") and inference_request.knowledgebase_name:
@@ -1582,6 +1982,72 @@ Use positive examples as guidance and explicitly avoid negative examples.
                     asyncio.create_task(self.evaluation_service.log_evaluation_data(session_id, agentic_application_id, agent_config, response_evaluation, model_name))
                 except Exception as e:
                     log.error(f"Error Occurred while inserting into evaluation data of Google ADK inference: {e}")
+
+            # ✅ Log token usage and query usage for Google ADK
+            # Extract token usage from the session events (Google ADK tracks usage per-event)
+            try:
+                total_prompt_tokens = 0
+                total_completion_tokens = 0
+                total_tokens_all = 0
+                total_cached_tokens = 0
+                llm_call_count = 0
+
+                for evt in current_chat_session.events:
+                    # Google ADK events may have usage_metadata on the content or event itself
+                    usage = getattr(evt, 'usage_metadata', None)
+                    if usage:
+                        pt = getattr(usage, 'prompt_token_count', 0) or 0
+                        ct = getattr(usage, 'candidates_token_count', 0) or 0
+                        tt = getattr(usage, 'total_token_count', 0) or 0
+                        cct = getattr(usage, 'cached_content_token_count', 0) or 0
+                        if tt > 0:
+                            llm_call_count += 1
+                            total_prompt_tokens += pt
+                            total_completion_tokens += ct
+                            total_tokens_all += tt
+                            total_cached_tokens += cct
+
+                            # Log per-LLM-call token usage
+                            _dept_name = None
+                            try:
+                                from src.utils.secrets_handler import current_user_department
+                                _dept_name = current_user_department.get(None)
+                            except Exception:
+                                pass
+                            await self._log_gadk_token_usage(
+                                model_name=model_name,
+                                prompt_tokens=pt,
+                                completion_tokens=ct,
+                                total_tokens=tt,
+                                cached_tokens=cct,
+                                agent_id=agentic_application_id,
+                                session_id=session_id,
+                                user_id=user_id,
+                                agent_type=agent_config.get("AGENT_TYPE", "custom"),
+                                department_name=_dept_name,
+                            )
+
+                # Log query-level aggregated usage
+                if total_tokens_all > 0:
+                    await self._log_gadk_query_usage(
+                        model_name=model_name,
+                        agent_id=agentic_application_id,
+                        session_id=session_id,
+                        user_id=user_id,
+                        query=query or "",
+                        total_prompt_tokens=total_prompt_tokens,
+                        total_completion_tokens=total_completion_tokens,
+                        total_tokens=total_tokens_all,
+                        total_cached_tokens=total_cached_tokens,
+                    )
+                    log.info(f"📊 [GADK] Total usage for query: {llm_call_count} LLM calls, "
+                              f"prompt={total_prompt_tokens}, completion={total_completion_tokens}, "
+                              f"total={total_tokens_all}")
+                else:
+                    log.warning("⚠️ [GADK] No token usage found in session events. "
+                                "Google ADK may not expose usage_metadata for this model/provider.")
+            except Exception as e:
+                log.error(f"❌ [GADK] Error logging token/query usage: {e}", exc_info=True)
 
             yield final_formatted_response
 

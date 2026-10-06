@@ -3,6 +3,7 @@ import { APIs, threshold_epoch_config, inference_config_ui } from "../../constan
 import useFetch from "../../Hooks/useAxios";
 import { useMessage } from "../../Hooks/MessageContext";
 import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
+import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
 import Loader from "../commonComponents/Loader.jsx";
 import styles from "./InferenceConfig.module.css";
 
@@ -12,11 +13,12 @@ import styles from "./InferenceConfig.module.css";
 const DEFAULT_CONFIG = threshold_epoch_config;
 
 /**
- * Get all slider keys from the UI configuration
+ * Get all config keys from the UI configuration (sliders + toggles)
  * Used to dynamically generate state and comparison logic
  */
 const getAllSliderKeys = () => {
-  return inference_config_ui.sections.flatMap((section) => section.sliders.map((slider) => slider.key));
+  const sliderKeys = inference_config_ui.sections.flatMap((section) => section.sliders.map((slider) => slider.key));
+  return [...sliderKeys, "guardrail_type"];
 };
 
 /**
@@ -52,6 +54,10 @@ const InferenceConfig = () => {
 
   // Original values for change detection
   const [originalValues, setOriginalValues] = useState(null);
+
+  // Guardrail dropdown options
+  const [guardrailTypes, setGuardrailTypes] = useState([]);
+  const [guardrailsLoading, setGuardrailsLoading] = useState(false);
 
   // Detect if values have changed from original
   const hasChanges = useMemo(() => {
@@ -119,6 +125,27 @@ const InferenceConfig = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Fetch guardrail types for dropdown
+  useEffect(() => {
+    (async () => {
+      setGuardrailsLoading(true);
+      try {
+        const data = await fetchData(APIs.GET_GUARDRAIL_TYPES);
+        if (Array.isArray(data)) {
+          setGuardrailTypes(data);
+        } else if (Array.isArray(data?.guardrail_types)) {
+          setGuardrailTypes(data.guardrail_types);
+        } else if (Array.isArray(data?.data)) {
+          setGuardrailTypes(data.data);
+        }
+      } catch {
+        setGuardrailTypes([]);
+      } finally {
+        setGuardrailsLoading(false);
+      }
+    })();
+  }, [fetchData]);
+
   // Handle Update button click
   const handleUpdate = async () => {
     if (!apiAvailable) {
@@ -147,7 +174,7 @@ const InferenceConfig = () => {
     }
     setIsResetting(true);
     try {
-      const response = await postData(APIs.RESET_INFERENCE_CONFIG_LIMITS, {});
+      const response = await postData(APIs.RESET_INFERENCE_CONFIG_LIMITS);
       if (response) {
         setValuesFromResponse(response.config);
         addMessage(response.message, "success");
@@ -233,6 +260,28 @@ const InferenceConfig = () => {
 
       {/* Dynamically rendered sections from config */}
       <div className={styles.sectionsGrid}>{inference_config_ui.sections.map(renderSection)}</div>
+
+      {/* Guardrail Type Dropdown */}
+      <div className={styles.togglesSection}>
+        <div className={styles.toggleRow}>
+          <div className={styles.toggleInfo}>
+            <span className={styles.toggleLabel}>Guardrail Type</span>
+            <span className={styles.toggleDescription}>Select the guardrail type to apply for safety and compliance checks.</span>
+          </div>
+          <div className={styles.guardrailDropdown}>
+            <NewCommonDropdown
+              options={guardrailTypes.map((g) => typeof g === "string" ? g : g.label || g.name || String(g))}
+              selected={guardrailTypes.find((g) => g.key === configValues.guardrail_type)?.label || configValues.guardrail_type}
+              onSelect={(label) => {
+                const found = guardrailTypes.find((g) => (g.label || g.name) === label);
+                updateConfigValue("guardrail_type", found ? found.key : label);
+              }}
+              placeholder={guardrailsLoading ? "Loading..." : "Select Guardrail"}
+              disabled={isLoading || isSaving || isResetting || guardrailsLoading}
+            />
+          </div>
+        </div>
+      </div>
 
       {/* Action buttons */}
       <div className={styles.actionBar}>

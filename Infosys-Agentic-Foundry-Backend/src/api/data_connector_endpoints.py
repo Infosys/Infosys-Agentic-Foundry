@@ -1,13 +1,16 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
+import re
 import os
 import uuid
 import base64
 import sqlite3 # For SQLite specific operations
-import asyncpg 
 from typing import Dict, Optional, Any, Union, List
 from bson import ObjectId # For MongoDB ObjectId handling
 from sqlalchemy import create_engine, text # For SQL Alchemy engine
 from sqlalchemy.exc import SQLAlchemyError # For SQL Alchemy exceptions
+from psycopg2 import sql as pg_sql
+
+from cryptography.fernet import Fernet
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, UploadFile, File
 
@@ -18,6 +21,7 @@ from src.api.dependencies import ServiceProvider # The dependency provider
 from src.database.services import ModelService # For generate_query endpoint
 from telemetry_wrapper import logger as log, update_session_context # Your custom logger and context updater
 from src.auth.authorization_service import AuthorizationService
+from src.utils.llm_request_tracker import with_request_tracking
 from src.auth.auth_service import AuthService
 from src.auth.dependencies import get_current_user
 from src.auth.models import User, UserRole
@@ -31,37 +35,125 @@ UPLOAD_DIR = "uploaded_sqlite_dbs"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
+# ---------------------------------------------------------------------------
+#  Credential helpers — base64 decode (from UI) & Fernet encrypt/decrypt (DB)
+# ---------------------------------------------------------------------------
+
+def _get_fernet_cipher() -> Fernet:
+    """Return a Fernet cipher initialised from ``SECRETS_MASTER_KEY``."""
+    master_key = os.getenv("SECRETS_MASTER_KEY", "")
+    if not master_key:
+        raise RuntimeError("SECRETS_MASTER_KEY is not configured — cannot encrypt/decrypt data-connector passwords")
+    return Fernet(master_key.encode()[:44].ljust(44, b'='))
+
+
+def _decode_base64_password(raw: str) -> str:
+    """Decode a base64-encoded credential sent by the UI.
+
+    If decoding fails the value is returned as-is (backward-compat with older
+    UIs that may still send plaintext).
+    """
+    if not raw:
+        return raw
+    try:
+        return base64.b64decode(raw).decode("utf-8")
+    except Exception:
+        # Not valid base64 — treat as plain text (backward-compat)
+        return raw
+
+
+def _encrypt_password(plaintext: str) -> str:
+    """Encrypt a plaintext credential with Fernet for safe DB storage."""
+    if not plaintext:
+        return plaintext
+    cipher = _get_fernet_cipher()
+    return cipher.encrypt(plaintext.encode("utf-8")).decode("utf-8")
+
+
+def _decrypt_password(encrypted: str) -> str:
+    """Decrypt a Fernet-encrypted credential read from the DB.
+
+    If decryption fails (e.g. legacy row stored as plaintext) the value is
+    returned as-is so existing connections keep working.
+    """
+    if not encrypted:
+        return encrypted
+    try:
+        cipher = _get_fernet_cipher()
+        return cipher.decrypt(encrypted.encode("utf-8")).decode("utf-8")
+    except Exception:
+        # Legacy unencrypted value — return as-is
+        return encrypted
+
+
 # Helper functions
 
 async def _build_connection_string_helper(config: dict) -> str:
+    from urllib.parse import quote_plus
     db_type = config["db_type"].lower()
+    # URL-encode username and credential to prevent connection string injection
+    # (special chars like @, /, :, ? corrupt the URL structure)
+    _user = quote_plus(str(config.get('username') or ''))
+    _pass = quote_plus(str(config.get('password') or ''))
+    _host = config.get('host', 'localhost')
+    _port = config.get('port', 0)
+    _db   = config.get('database', '')
     if db_type == "mysql":
-        return f"mysql+mysqlconnector://{config['username']}:{config['password']}@{config['host']}:{config['port']}/{config['database']}"
+        return f"mysql+mysqlconnector://{_user}:{_pass}@{_host}:{_port}/{_db}"
     if db_type == "postgresql":
-        return f"postgresql+psycopg2://{config['username']}:{config['password']}@{config['host']}:{config['port']}/{config['database']}"
+        return f"postgresql+psycopg2://{_user}:{_pass}@{_host}:{_port}/{_db}"
     if db_type == "azuresql":
-        return f"mssql+pyodbc://{config['username']}:{config['password']}@{config['host']}:{config['port']}/{config['database']}?driver=ODBC+Driver+17+for+SQL+Server"
+        return f"mssql+pyodbc://{_user}:{_pass}@{_host}:{_port}/{_db}?driver=ODBC+Driver+17+for+SQL+Server"
     if db_type == "sqlite":
         # Check if department_name is available in config for department-specific path
         department_name = config.get("department_name", None)
-        return f"sqlite:///{UPLOAD_DIR}/{department_name}/{config['database']}"
+        return f"sqlite:///{UPLOAD_DIR}/{department_name}/{_db}"
     if db_type == "mongodb":
-        host = config["host"]
-        port = config["port"]
-        db_name = config["database"]
+        _host = config.get("host", "localhost")
+        _port = config.get("port", 27017)
+        db_name = config.get("database", "")
         username = config.get("username")
         password = config.get("password")
         if username and password:
-            return f"mongodb://{username}:{password}@{host}:{port}/?authSource={db_name}"
+            return f"mongodb://{quote_plus(str(username))}:{quote_plus(str(password))}@{_host}:{_port}/?authSource={db_name}"
         else:
-            return f"mongodb://{host}:{port}/{db_name}"
+            return f"mongodb://{_host}:{_port}/{db_name}"
     raise HTTPException(status_code=400, detail=f"Unsupported database type: {config['db_type']}")
 
 
 async def _create_database_if_not_exists_helper(config: dict):
     db_type = config["db_type"].lower()
     db_name = config["database"]
-    
+
+    # Validate database name early. Rules differ by engine:
+    #   - SQLite:  the value is a *filename* on disk, so allow letters/digits/
+    #              `_`, `-`, `.` (for extensions like .db / .sqlite / .sqlite3).
+    #              Reject path separators and traversal to keep it inside the
+    #              upload directory.
+    #   - Others:  the value becomes a SQL identifier — apply the strict
+    #              allowlist so we can safely quote it.
+    if db_type == "sqlite":
+        if (
+            not db_name
+            or len(db_name) > 128
+            or "/" in db_name
+            or "\\" in db_name
+            or db_name in (".", "..")
+            or db_name.startswith(".")
+            or not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.\-]*', db_name)
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Invalid SQLite database file name: use letters, digits, "
+                    "'_', '-' or '.' (e.g. 'my_data.db'); no path separators, "
+                    "no leading dot, max 128 chars"
+                ),
+            )
+    else:
+        if not re.fullmatch(r'[a-zA-Z_][a-zA-Z0-9_]{0,63}', db_name):
+            raise HTTPException(status_code=400, detail="Invalid database name: must be alphanumeric/underscore, start with letter/underscore, max 64 chars")
+
     # SQLite DB creation not needed
     if db_type == "sqlite":
         # Get department name from config, default to "General" if not provided
@@ -81,6 +173,25 @@ async def _create_database_if_not_exists_helper(config: dict):
             conn = sqlite3.connect(db_path)
             # Close the connection immediately to keep it empty
             conn.close()
+
+            # --- Fire-and-forget blob sync for newly created SQLite DB ---
+            try:
+                import os as _os
+                _sp = _os.getenv('STORAGE_PROVIDER', '')
+                if _sp:
+                    from src.utils.workspace_blob_sync import WorkspaceBlobSync
+                    from src.storage import get_storage_client
+                    _client = get_storage_client(_sp)
+                    _syncer = WorkspaceBlobSync(
+                        storage_client=_client,
+                        workspace_root="./agent_workspaces",
+                        department=department_name,
+                        project_root=_os.path.abspath("."),
+                    )
+                    _syncer.schedule_sqlite_db_sync(department_name, db_name)
+            except Exception:
+                pass  # Non-critical
+            # ---
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error creating SQLite DB file: {str(e)}")
         return
@@ -93,31 +204,31 @@ async def _create_database_if_not_exists_helper(config: dict):
     if db_type == "postgresql":
         config_copy["database"] = "postgres"
         engine = create_engine(await _build_connection_string_helper(config_copy), isolation_level="AUTOCOMMIT")
-        with engine.connect() as conn:
-            result = conn.execute(text("SELECT 1 FROM pg_database WHERE datname = :dbname"), {"dbname": db_name})
-            if not result.fetchone():
-                # Validate database name to prevent SQL injection
-                import re
-                if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', db_name):
-                    raise HTTPException(status_code=400, detail="Invalid database name")
-                
-                # Use string concatenation since parameterized queries don't work for identifiers
-                conn.execute(text('CREATE DATABASE "' + db_name + '"'))
-            return
+        raw_conn = engine.raw_connection()
+        try:
+            cur = raw_conn.cursor()
+            # SELECT check uses %s parameterized query (safe value binding)
+            cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (db_name,))
+            if not cur.fetchone():
+                # CREATE DATABASE uses pg_sql.Identifier for safe identifier quoting
+                cur.execute(pg_sql.SQL("CREATE DATABASE {}").format(pg_sql.Identifier(db_name)))
+            cur.close()
+        finally:
+            raw_conn.close()
+        return
 
     if db_type == "mysql":
         config_copy["database"] = ""
         engine = create_engine(await _build_connection_string_helper(config_copy))
-        with engine.connect() as conn:
-            with conn.begin(): # Use begin() context to control transactions
-                 # Validate database name to prevent SQL injection
-                import re
-                if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', db_name):
-                    raise HTTPException(status_code=400, detail="Invalid database name")
-                
-                # Use string concatenation instead of f-string
-                conn.execute(text("CREATE DATABASE IF NOT EXISTS `" + db_name + "`"))
-                return
+        raw_conn = engine.raw_connection()
+        try:
+            cur = raw_conn.cursor()
+            cur.execute(f"CREATE DATABASE IF NOT EXISTS `{db_name}`")
+            cur.close()
+            raw_conn.commit()
+        finally:
+            raw_conn.close()
+        return
 
     raise HTTPException(status_code=400, detail=f"Database creation not supported for {config['db_type']}")
 
@@ -185,15 +296,12 @@ async def connect_to_database_endpoint(
 
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="data_connector_operation")
     password = password or user_pwd
 
-    # Decode base64-encoded PWD from frontend
+    # --- Decode base64 credential from UI ---
     if password:
-        try:
-            password = base64.b64decode(password).decode('utf-8')
-        except Exception:
-            raise HTTPException(status_code=400, detail="Password must be base64 encoded.")
+        password = _decode_base64_password(password)
 
     # Get restricted database name from environment variable
     RESTRICTED_DATABASE = os.getenv("DATABASE", "agentic_workflow_as_service_database")
@@ -250,9 +358,33 @@ async def connect_to_database_endpoint(
                 with open(file_path, "wb") as f:
                     content = await sql_file.read()
                     f.write(content)
+
+                # --- Fire-and-forget blob sync for uploaded SQLite DB ---
+                try:
+                    _sp = os.getenv('STORAGE_PROVIDER', '')
+                    if _sp:
+                        from src.utils.workspace_blob_sync import WorkspaceBlobSync
+                        from src.storage import get_storage_client
+                        _client = get_storage_client(_sp)
+                        _syncer = WorkspaceBlobSync(
+                            storage_client=_client,
+                            workspace_root="./agent_workspaces",
+                            department=user_department,
+                            project_root=os.path.abspath("."),
+                        )
+                        _syncer.schedule_sqlite_db_sync(user_department, filename)
+                except Exception:
+                    pass  # Non-critical
+                # ---
             else:
                 if flag_for_insert_into_db_connections_table=="1":
-                    config["database"] = config["database"] + ".db"
+                    # Only append `.db` if the user didn't already supply a
+                    # SQLite-style extension. This keeps `new` -> `new.db` and
+                    # `new.db` -> `new.db` (instead of `new.db.db`).
+                    _db_name = (config.get("database") or "").strip()
+                    if not _db_name.lower().endswith((".db", ".sqlite", ".sqlite3")):
+                        _db_name = _db_name + ".db"
+                    config["database"] = _db_name
                     await _create_database_if_not_exists_helper(config) # Create empty SQLite file
 
             manager.add_sql_database(config.get("name",""), await _build_connection_string_helper(config))
@@ -293,6 +425,9 @@ async def connect_to_database_endpoint(
                 except:
                     parsed_blocked_commands = None
             
+            # Encrypt credential before storing in DB
+            encrypted_pwd = _encrypt_password(config.get("password", ""))
+
             connection_data = {
                 "connection_id": str(uuid.uuid4()),
                 "connection_name": name,
@@ -300,7 +435,7 @@ async def connect_to_database_endpoint(
                 "connection_host": config.get("host", ""),
                 "connection_port": config.get("port", 0),
                 "connection_username": config.get("username", ""),
-                "connection_password": config.get("password", ""),
+                "connection_password": encrypted_pwd,
                 "connection_database_name": config.get("database", ""),
                 "connection_created_by": config.get("created_by", ""),
                 "blocked_sql_commands": parsed_blocked_commands,
@@ -309,28 +444,28 @@ async def connect_to_database_endpoint(
             }
             result = await db_connection_manager.insert_into_db_connections_table(connection_data)
             
-            # Auto-generate schema and samples — Temporarily disabled, will be used later
-            # schema_samples_result = None
-            # try:
-            #     from src.inference.database_tools_cache import auto_generate_schema_and_samples
-            #     schema_samples_result = await auto_generate_schema_and_samples(
-            #         connection_name=name,
-            #         db_type=db_type,
-            #         connection_manager=manager,
-            #         department=user_data.department_name
-            #     )
-            #     log.info(f"[DATA_CONNECTOR] Auto-generated schema/samples for {name}: {schema_samples_result.get('status')}")
-            # except Exception as schema_error:
-            #     log.warning(f"[DATA_CONNECTOR] Failed to auto-generate schema/samples for {name}: {schema_error}")
-            #     schema_samples_result = {"status": "error", "message": str(schema_error)}
+            # Auto-generate schema and samples
+            schema_samples_result = None
+            try:
+                from src.inference.database_tools_cache import auto_generate_schema_and_samples
+                schema_samples_result = await auto_generate_schema_and_samples(
+                    connection_name=name,
+                    db_type=db_type,
+                    connection_manager=manager,
+                    department=user_data.department_name
+                )
+                log.info(f"[DATA_CONNECTOR] Auto-generated schema/samples for {name}: {schema_samples_result.get('status')}")
+            except Exception as schema_error:
+                log.warning(f"[DATA_CONNECTOR] Failed to auto-generate schema/samples for {name}: {schema_error}")
+                schema_samples_result = {"status": "error", "message": str(schema_error)}
             
             if result.get("is_created"):
                 response_data = {
                     "message": f"Connected to {db_type} database '{database}' and saved configuration.",
                     **result
                 }
-                # if schema_samples_result:
-                #     response_data["schema_samples"] = schema_samples_result
+                if schema_samples_result:
+                    response_data["schema_samples"] = schema_samples_result
                 return response_data
             else:
                 return {
@@ -402,7 +537,7 @@ async def disconnect_database_endpoint(
 
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="data_connector_operation")
  
     name = disconnect_request.name 
     name_with_dept = disconnect_request.name + "_" + user_department
@@ -479,6 +614,34 @@ async def disconnect_database_endpoint(
                     log.info(f"Deleted connection '{name}' from database")
                 except Exception as delete_error:
                     log.warning(f"Failed to delete connection '{name}' from database: {str(delete_error)}")
+
+            # Clean up local database schema/samples files AND blob storage
+            try:
+                from src.inference.database_tools_cache import clear_database_files
+                clear_database_files(name, department=user_department)
+                log.info(f"Cleared database schema/samples for '{name}'")
+            except Exception as cleanup_err:
+                log.warning(f"Failed to clear database files for '{name}': {cleanup_err}")
+
+            # Delete uploaded SQLite .db file from blob if applicable
+            try:
+                _sp = os.getenv('STORAGE_PROVIDER', '')
+                if _sp:
+                    from src.utils.workspace_blob_sync import WorkspaceBlobSync
+                    from src.storage import get_storage_client
+                    _client = get_storage_client(_sp)
+                    _syncer = WorkspaceBlobSync(
+                        storage_client=_client,
+                        workspace_root=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "agent_workspaces"),
+                        department=user_department,
+                    )
+                    # Delete uploaded sqlite file blob if exists
+                    _syncer.schedule_blob_prefix_delete(
+                        f"{user_department}/databases/{name}/",
+                        name="disconnect_db_blob_delete",
+                    )
+            except Exception as blob_err:
+                log.warning(f"Blob delete for disconnected DB '{name}' failed: {blob_err}")
  
         # ==================== CLOSE ACTIVE CONNECTIONS ====================
         # Close active connections (whether deleting from DB or just deactivating)
@@ -514,6 +677,7 @@ async def disconnect_database_endpoint(
         log.error(f"Error while disconnecting '{name}': {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error while disconnecting: {str(e)}")
 
+@with_request_tracking("data_connector_query_generation")
 @router.post("/generate-query")
 async def generate_query_endpoint(
     request: Request, 
@@ -541,7 +705,7 @@ async def generate_query_endpoint(
 
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="data_connector_operation")
 
     try:
         model_name = model_service.default_model_name
@@ -624,7 +788,7 @@ async def run_query_endpoint(
 
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="data_connector_operation")
 
     import base64
     manager = get_connection_manager()
@@ -896,7 +1060,7 @@ async def get_connections_endpoint(
 
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="data_connector_operation")
 
     return await db_connection_manager.get_connections(user_data.department_name)
     
@@ -927,7 +1091,7 @@ async def get_sql_connections_endpoint(
 
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="data_connector_operation")
 
     return await db_connection_manager.get_connections_sql(user_data.department_name)
 
@@ -957,12 +1121,12 @@ async def get_mongodb_connections_endpoint(
 
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="data_connector_operation")
 
     return await db_connection_manager.get_connections_mongodb(user_data.department_name)
 
 
-@router.post("/mongodb-operation/")
+@router.post("/mongodb-operation")
 async def mongodb_operation_endpoint(
     request: Request, 
     mongo_op_request: MONGODBOperation, 
@@ -989,7 +1153,7 @@ async def mongodb_operation_endpoint(
 
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="data_connector_operation")
 
     manager = get_connection_manager()
     config = await db_connection_manager.get_connection_config(mongo_op_request.conn_name)
@@ -1068,7 +1232,7 @@ async def get_active_connection_names_endpoint(
 
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="data_connector_operation")
 
     manager = get_connection_manager()
  
@@ -1170,7 +1334,7 @@ async def connect_by_connection_name(
     
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=user_session, call_category="data_connector_operation")
     
     manager = get_connection_manager()
     
@@ -1184,6 +1348,10 @@ async def connect_by_connection_name(
                 detail=f"Connection '{connection_name}' not found in saved connections"
             )
         
+        # Decrypt the stored PWD before using it to build the connection string
+        if config.get("password"):
+            config["password"] = _decrypt_password(config["password"])
+
         db_type = config.get("db_type", "").lower()
         
         # Validate database type
@@ -1214,6 +1382,26 @@ async def connect_by_connection_name(
         # Handle SQLite connections
         if db_type == "sqlite":
             try:
+                # --- Auto-restore SQLite .db from blob if missing locally ---
+                try:
+                    _sp = os.getenv('STORAGE_PROVIDER', '')
+                    db_filename = config.get('database', '')
+                    _dept = config.get('department_name') or user_department or 'General'
+                    db_file_path = os.path.join(UPLOAD_DIR, _dept, db_filename)
+                    if _sp and not os.path.exists(db_file_path):
+                        from src.utils.workspace_blob_sync import WorkspaceBlobSync
+                        from src.storage import get_storage_client
+                        _client = get_storage_client(_sp)
+                        _syncer = WorkspaceBlobSync(
+                            storage_client=_client,
+                            project_root=os.path.abspath("."),
+                        )
+                        restored = _syncer.restore_sqlite_db_sync(_dept, db_filename)
+                        if restored:
+                            log.info(f"[BlobRestore] Restored SQLite DB '{db_filename}' for connect-by-name")
+                except Exception as _re:
+                    log.debug(f"[BlobRestore] SQLite DB restore skipped on connect-by-name: {_re}")
+
                 # Build connection string
                 connection_string = await _build_connection_string_helper(config)
                 
@@ -1522,10 +1710,33 @@ async def list_database_files(
     """
     try:
         from src.inference.database_tools_cache import get_database_files, list_database_connections
-        
+
         files = get_database_files(connection_name, department=user_data.department_name)
         connections = list_database_connections(department=user_data.department_name)
-        
+
+        # Auto-restore from blob if no local database files found
+        if not files and not connections:
+            try:
+                _sp = os.getenv('STORAGE_PROVIDER', '')
+                if _sp:
+                    from src.utils.workspace_blob_sync import WorkspaceBlobSync
+                    from src.storage import get_storage_client
+                    _client = get_storage_client(_sp)
+                    _dept = user_data.department_name or "General"
+                    _syncer = WorkspaceBlobSync(
+                        storage_client=_client,
+                        workspace_root="./agent_workspaces",
+                        department=_dept,
+                    )
+                    report = await _syncer.restore_database_cache()
+                    if report and report.synced > 0:
+                        log.info(f"[BlobRestore] Restored {report.synced} database cache files from blob")
+                        # Re-read after restore
+                        files = get_database_files(connection_name, department=user_data.department_name)
+                        connections = list_database_connections(department=user_data.department_name)
+            except Exception as _e:
+                log.debug(f"[BlobRestore] database cache restore skipped: {_e}")
+
         return {
             "status": "success",
             "connections": connections,
@@ -1540,80 +1751,135 @@ async def list_database_files(
         )
 
 
-# =============================================================================
-# get-db-details endpoint — Temporarily disabled, will be used later
-# =============================================================================
-# @router.get("/get-db-details/{connection_name}")
-# async def get_database_details(
-#     connection_name: str,
-#     db_connection_manager: MultiDBConnectionRepository = Depends(ServiceProvider.get_multi_db_connection_manager),
-#     authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
-#     user_data: User = Depends(get_current_user)
-# ):
-#     """
-#     Get the schema, sample data, blocked commands and default commands for a specific database connection.
-#
-#     Parameters:
-#     - connection_name: The database connection name
-#
-#     Returns:
-#     - Dict with schema content, samples content, blocked commands and default commands
-#     """
-#     try:
-#         from src.inference.database_tools_cache import get_database_directory
-#
-#         db_dir = get_database_directory(connection_name, department=user_data.department_name)
-#         schema_file = db_dir / "schema.md"
-#         samples_file = db_dir / "samples.md"
-#
-#         schema_content = None
-#         samples_content = None
-#
-#         if schema_file.exists():
-#             schema_content = schema_file.read_text(encoding="utf-8")
-#         if samples_file.exists():
-#             samples_content = samples_file.read_text(encoding="utf-8")
-#
-#         if schema_content is None and samples_content is None:
-#             raise HTTPException(
-#                 status_code=404,
-#                 detail=f"No schema or samples files found for connection '{connection_name}'"
-#             )
-#
-#         # Fetch blocked commands for this connection
-#         default_blocked_commands = [
-#             "DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "CREATE",
-#             "TRUNCATE", "EXEC", "EXECUTE", "GRANT", "REVOKE", "COMMIT", "ROLLBACK"
-#         ]
-#         blocked_commands = None
-#         try:
-#             blocked_commands = await db_connection_manager.get_blocked_sql_commands(connection_name)
-#         except Exception as bc_err:
-#             log.warning(f"Could not fetch blocked commands for {connection_name}: {bc_err}")
-#
-#         return {
-#             "status": "success",
-#             "connection_name": connection_name,
-#             "schema": schema_content,
-#             "samples": samples_content,
-#             "schema_exists": schema_content is not None,
-#             "samples_exists": samples_content is not None,
-#             "blocked_commands": blocked_commands if blocked_commands else default_blocked_commands,
-#             "is_custom_blocked": blocked_commands is not None,
-#             "default_blocked_commands": default_blocked_commands
-#         }
-#
-#     except HTTPException:
-#         raise
-#     except Exception as e:
-#         log.error(f"Error reading schema/samples for {connection_name}: {e}")
-#         raise HTTPException(
-#             status_code=500,
-#             detail=f"Failed to read schema/samples: {str(e)}"
-#         )
+@router.get("/get-db-details/{connection_name}")
+async def get_database_details(
+    connection_name: str,
+    db_connection_manager: MultiDBConnectionRepository = Depends(ServiceProvider.get_multi_db_connection_manager),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Get the schema, sample data, blocked commands and default commands for a specific database connection.
+
+    Parameters:
+    - connection_name: The database connection name
+
+    Returns:
+    - Dict with schema content, samples content, blocked commands and default commands
+    """
+    try:
+        from src.inference.database_tools_cache import get_database_directory
+
+        db_dir = get_database_directory(connection_name, department=user_data.department_name)
+        schema_file = db_dir / "schema.md"
+        samples_file = db_dir / "samples.md"
+
+        schema_content = None
+        samples_content = None
+
+        if schema_file.exists():
+            schema_content = schema_file.read_text(encoding="utf-8")
+        if samples_file.exists():
+            samples_content = samples_file.read_text(encoding="utf-8")
+
+        # --- Auto-restore from blob if schema/samples missing locally ---
+        if schema_content is None and samples_content is None:
+            try:
+                import asyncio
+                _sp = os.getenv('STORAGE_PROVIDER', '')
+                _BLOB_RESTORE_TIMEOUT = int(os.getenv('BLOB_RESTORE_TIMEOUT', '30'))
+                if _sp:
+                    from src.utils.workspace_blob_sync import WorkspaceBlobSync
+                    from src.storage import get_storage_client
+                    _client = get_storage_client(_sp)
+                    _dept = user_data.department_name or "General"
+                    _syncer = WorkspaceBlobSync(
+                        storage_client=_client,
+                        workspace_root="./agent_workspaces",
+                        department=_dept,
+                    )
+                    # Restore database cache (schema.md / samples.md) from blob with timeout
+                    try:
+                        report = await asyncio.wait_for(
+                            _syncer.restore_database_cache(connection_name=connection_name),
+                            timeout=_BLOB_RESTORE_TIMEOUT
+                        )
+                    except asyncio.TimeoutError:
+                        log.warning(f"[BlobRestore] Timed out restoring database cache for '{connection_name}' after {_BLOB_RESTORE_TIMEOUT}s")
+                        report = None
+                    if report and report.synced > 0:
+                        log.info(f"[BlobRestore] Restored {report.synced} database cache files for '{connection_name}' from blob")
+                        # Re-read after restore
+                        if schema_file.exists():
+                            schema_content = schema_file.read_text(encoding="utf-8")
+                        if samples_file.exists():
+                            samples_content = samples_file.read_text(encoding="utf-8")
+
+                    # Also restore the SQLite .db file if missing
+                    config = await db_connection_manager.get_connection_config(connection_name)
+                    if config and config.get("db_type", "").lower() == "sqlite":
+                        db_filename = config.get("database", "")
+                        _conn_dept = config.get("department_name") or _dept
+                        if db_filename:
+                            db_file_path = os.path.join(UPLOAD_DIR, _conn_dept, db_filename)
+                            if not os.path.exists(db_file_path):
+                                _syncer_for_db = WorkspaceBlobSync(
+                                    storage_client=_client,
+                                    project_root=os.path.abspath("."),
+                                )
+                                try:
+                                    restored = await asyncio.wait_for(
+                                        asyncio.to_thread(_syncer_for_db.restore_sqlite_db_sync, _conn_dept, db_filename),
+                                        timeout=_BLOB_RESTORE_TIMEOUT
+                                    )
+                                except asyncio.TimeoutError:
+                                    log.warning(f"[BlobRestore] Timed out restoring SQLite DB '{db_filename}' after {_BLOB_RESTORE_TIMEOUT}s")
+                                    restored = False
+                                if restored:
+                                    log.info(f"[BlobRestore] Restored SQLite DB '{db_filename}' for get-db-details")
+            except Exception as _restore_err:
+                log.debug(f"[BlobRestore] database cache/sqlite restore skipped for get-db-details: {_restore_err}")
+
+        if schema_content is None and samples_content is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No schema or samples files found for connection '{connection_name}'"
+            )
+
+        # Fetch blocked commands for this connection
+        default_blocked_commands = [
+            "DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "CREATE",
+            "TRUNCATE", "EXEC", "EXECUTE", "GRANT", "REVOKE", "COMMIT", "ROLLBACK"
+        ]
+        blocked_commands = None
+        try:
+            blocked_commands = await db_connection_manager.get_blocked_sql_commands(connection_name)
+        except Exception as bc_err:
+            log.warning(f"Could not fetch blocked commands for {connection_name}: {bc_err}")
+
+        return {
+            "status": "success",
+            "connection_name": connection_name,
+            "schema": schema_content,
+            "samples": samples_content,
+            "schema_exists": schema_content is not None,
+            "samples_exists": samples_content is not None,
+            "blocked_commands": blocked_commands if blocked_commands else default_blocked_commands,
+            "is_custom_blocked": blocked_commands is not None,
+            "default_blocked_commands": default_blocked_commands
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Error reading schema/samples for {connection_name}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to read schema/samples: {str(e)}"
+        )
 
 
-@router.delete("/clear-db-files/{connection_name}")
+@router.api_route("/clear-db-files/{connection_name}", methods=["DELETE", "POST"])
 async def clear_database_files(
     connection_name: str,
     authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
@@ -1647,7 +1913,7 @@ async def clear_database_files(
         )
 
 
-@router.delete("/clear-all-db-files")
+@router.api_route("/clear-all-db-files", methods=["DELETE", "POST"])
 async def clear_all_database_files_endpoint(
     authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
     user_data: User = Depends(get_current_user)
@@ -1677,87 +1943,122 @@ async def clear_all_database_files_endpoint(
         )
 
 
-# =============================================================================
-# regenerate-schema-samples endpoint — Temporarily disabled, will be used later
-# =============================================================================
-# @router.post("/regenerate-schema-samples/{connection_name}")
-# async def regenerate_schema_samples_endpoint(
-#     connection_name: str,
-#     db_connection_manager: MultiDBConnectionRepository = Depends(ServiceProvider.get_multi_db_connection_manager),
-#     authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
-#     user_data: User = Depends(get_current_user)
-# ):
-#     """
-#     Regenerate schema and sample files for an existing database connection.
-#
-#     This is useful when:
-#     - Database schema has changed (new tables, columns)
-#     - Sample data needs to be refreshed
-#     - Schema/samples files were accidentally deleted
-#
-#     Parameters:
-#     - connection_name: The database connection name
-#
-#     Returns:
-#     - Dict with regeneration status and file paths
-#     """
-#     try:
-#         # Get connection config to determine db_type
-#         config = await db_connection_manager.get_connection_config(connection_name)
-#
-#         if not config:
-#             raise HTTPException(
-#                 status_code=404,
-#                 detail=f"Connection '{connection_name}' not found"
-#             )
-#
-#         db_type = config.get("db_type", "sqlite")
-#         manager = get_connection_manager()
-#
-#         # Build department-qualified key (engines are stored as name_department)
-#         user_department = user_data.department_name
-#         name_with_dept = f"{connection_name}_{user_department}"
-#
-#         # Check if connection is active, if not try to connect
-#         if db_type.lower() == "mongodb":
-#             if connection_name not in manager.mongo_clients and name_with_dept not in manager.mongo_clients:
-#                 raise HTTPException(
-#                     status_code=400,
-#                     detail=f"Connection '{connection_name}' is not active. Please connect first using /connect-by-name"
-#                 )
-#         else:
-#             if connection_name not in manager.sql_engines and name_with_dept not in manager.sql_engines:
-#                 raise HTTPException(
-#                     status_code=400,
-#                     detail=f"Connection '{connection_name}' is not active. Please connect first using /connect-by-name"
-#                 )
-#
-#         # Regenerate schema and samples
-#         from src.inference.database_tools_cache import auto_generate_schema_and_samples
-#
-#         result = await auto_generate_schema_and_samples(
-#             connection_name=connection_name,
-#             db_type=db_type,
-#             connection_manager=manager,
-#             department=user_data.department_name
-#         )
-#
-#         return {
-#             "status": result.get("status"),
-#             "message": f"Schema and samples regenerated for {connection_name}",
-#             "connection_name": connection_name,
-#             "database_type": db_type,
-#             **result
-#         }
-#
-#     except HTTPException:
-#         raise
-#     except Exception as e:
-#         log.error(f"Error regenerating schema/samples for {connection_name}: {e}")
-#         raise HTTPException(
-#             status_code=500,
-#             detail=f"Failed to regenerate schema/samples: {str(e)}"
-#         )
+@router.post("/regenerate-schema-samples/{connection_name}")
+async def regenerate_schema_samples_endpoint(
+    connection_name: str,
+    db_connection_manager: MultiDBConnectionRepository = Depends(ServiceProvider.get_multi_db_connection_manager),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Regenerate schema and sample files for an existing database connection.
+
+    This is useful when:
+    - Database schema has changed (new tables, columns)
+    - Sample data needs to be refreshed
+    - Schema/samples files were accidentally deleted
+
+    Parameters:
+    - connection_name: The database connection name
+
+    Returns:
+    - Dict with regeneration status and file paths
+    """
+    try:
+        # Get connection config to determine db_type
+        config = await db_connection_manager.get_connection_config(connection_name)
+
+        if not config:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Connection '{connection_name}' not found"
+            )
+
+        db_type = config.get("db_type", "sqlite")
+        manager = get_connection_manager()
+
+        # Build department-qualified key (engines are stored as name_department)
+        user_department = user_data.department_name
+        name_with_dept = f"{connection_name}_{user_department}"
+
+        # Check if connection is active, if not try to connect
+        if db_type.lower() == "mongodb":
+            if connection_name not in manager.mongo_clients and name_with_dept not in manager.mongo_clients:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Connection '{connection_name}' is not active. Please connect first using /connect-by-name"
+                )
+        else:
+            if connection_name not in manager.sql_engines and name_with_dept not in manager.sql_engines:
+                # --- Auto-restore SQLite .db from blob and reconnect ---
+                reconnected = False
+                if db_type.lower() == "sqlite":
+                    try:
+                        import asyncio
+                        _sp = os.getenv('STORAGE_PROVIDER', '')
+                        _BLOB_RESTORE_TIMEOUT = int(os.getenv('BLOB_RESTORE_TIMEOUT', '30'))
+                        db_filename = config.get("database", "")
+                        _dept = config.get("department_name") or user_department or "General"
+                        db_file_path = os.path.join(UPLOAD_DIR, _dept, db_filename)
+                        if _sp and db_filename and not os.path.exists(db_file_path):
+                            from src.utils.workspace_blob_sync import WorkspaceBlobSync
+                            from src.storage import get_storage_client
+                            _client = get_storage_client(_sp)
+                            _syncer = WorkspaceBlobSync(
+                                storage_client=_client,
+                                project_root=os.path.abspath("."),
+                            )
+                            try:
+                                restored = await asyncio.wait_for(
+                                    asyncio.to_thread(_syncer.restore_sqlite_db_sync, _dept, db_filename),
+                                    timeout=_BLOB_RESTORE_TIMEOUT
+                                )
+                            except asyncio.TimeoutError:
+                                log.warning(f"[BlobRestore] Timed out restoring SQLite DB '{db_filename}' for regenerate after {_BLOB_RESTORE_TIMEOUT}s")
+                                restored = False
+                            if restored:
+                                log.info(f"[BlobRestore] Restored SQLite DB '{db_filename}' for regenerate-schema-samples")
+                        # Try to reconnect after restore (or if file already exists)
+                        if db_filename and os.path.exists(os.path.join(UPLOAD_DIR, _dept, db_filename)):
+                            conn_string = await _build_connection_string_helper(config)
+                            manager.add_sql_database(connection_name, conn_string)
+                            reconnected = True
+                            log.info(f"[Regenerate] Auto-reconnected SQLite '{connection_name}' after blob restore")
+                    except Exception as _re:
+                        log.debug(f"[BlobRestore] SQLite auto-restore/reconnect failed for regenerate: {_re}")
+
+                if not reconnected:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Connection '{connection_name}' is not active. Please connect first using /connect-by-name"
+                    )
+
+        # Regenerate schema and samples
+        from src.inference.database_tools_cache import auto_generate_schema_and_samples
+
+        result = await auto_generate_schema_and_samples(
+            connection_name=connection_name,
+            db_type=db_type,
+            connection_manager=manager,
+            department=user_data.department_name
+        )
+
+        return {
+            "status": result.get("status"),
+            "message": f"Schema and samples regenerated for {connection_name}",
+            "connection_name": connection_name,
+            "database_type": db_type,
+            **result
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Error regenerating schema/samples for {connection_name}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to regenerate schema/samples: {str(e)}"
+        )
 
 
 # =============================================================================
@@ -1803,7 +2104,7 @@ async def get_blocked_commands_endpoint(
         )
 
 
-@router.put("/blocked-commands/{connection_name}")
+@router.api_route("/blocked-commands/{connection_name}", methods=["PUT", "POST"])
 async def update_blocked_commands_endpoint(
     connection_name: str,
     blocked_commands: List[str],

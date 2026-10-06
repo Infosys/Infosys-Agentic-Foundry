@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { FullModal } from "../../iafComponents/GlobalComponents/FullModal";
 import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
-import TextareaWithActions from "../commonComponents/TextareaWithActions";
 import { getEmailFromToken, getUserNameFromToken } from "../../utils/jwtUtils";
 
 /**
@@ -12,7 +11,6 @@ import { getEmailFromToken, getUserNameFromToken } from "../../utils/jwtUtils";
 export default function CreateAccessKeyModal({ onClose, onSubmit, loading }) {
   const [formData, setFormData] = useState({
     access_key: "",
-    description: ""
   });
   const [errors, setErrors] = useState({});
   const userName = getUserNameFromToken();
@@ -105,20 +103,6 @@ export default function CreateAccessKeyModal({ onClose, onSubmit, loading }) {
                   {errors.access_key}
                 </span>
               )}
-            </div>
-
-            <div className="formGroup">
-              <TextareaWithActions
-                name="description"
-                value={formData.description}
-                onChange={handleChange}
-                label="Description"
-                required={false}
-                disabled={loading}
-                placeholder="Enter description for this access key"
-                rows={3}
-                onZoomSave={(updatedContent) => setFormData((prev) => ({ ...prev, description: updatedContent }))}
-              />
             </div>
           </div>
         </div>

@@ -40,7 +40,7 @@ from src.utils.secrets_handler import (
     current_user_role,
 )
 
-from tool_worker.kafka_tool_worker import KafkaToolWorker
+from tool_worker.mq_tool_worker import KafkaToolWorker
 from telemetry_wrapper import logger
 
 
