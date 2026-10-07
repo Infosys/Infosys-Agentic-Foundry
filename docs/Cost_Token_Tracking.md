@@ -92,6 +92,9 @@ CREATE TABLE model_costs (
     - Example: $0.15 per 1M tokens = `0.00000015` per token
     - Supports cache-read pricing for optimized costs
 
+For managing model cost configurations and viewing cost/token usage reports through the Admin UI, refer to the Reports section:
+
+[:octicons-arrow-right-24: Admin Reports — Model Costs & Token Usage](Admin_Screen.md#11-reports)
 ---
 
 ## Cost Calculation Logic

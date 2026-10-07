@@ -15,6 +15,29 @@ A knowledge base serves as an external memory for agents, enabling them to:
 
 Knowledge bases are created and managed from the **Tool Page**. This interface allows you to upload documents (PDF, TXT), enter a name for the new knowledge base, and add it to the centralized directory.
 
+**Supported File Types**
+
+| Category | Formats |
+|----------|---------|
+| Documents | PDF (`.pdf`), Text (`.txt`), Word (`.docx`) |
+| Spreadsheets | Excel (`.xlsx`), CSV (`.csv`) |
+| Presentations | PowerPoint (`.pptx`) |
+| Images | PNG (`.png`), JPEG (`.jpg`, `.jpeg`), GIF (`.gif`) |
+
+!!! note "File Upload Limits"
+    Excel and CSV uploads are subject to configurable row limits. Large-file processing uses extended timeout settings to handle high-volume data.
+
+!!! warning "Removed Formats"
+    The legacy Word format (`.doc`) is no longer supported. Use `.docx` instead.
+
+**Duplicate File Handling**
+
+If a file with the same name already exists in the knowledge base, the platform displays a conflict prompt allowing you to choose whether to overwrite or skip the upload. Duplicate uploads are routed to the authenticated user's folder.
+
+**Default LLM Model**
+
+Knowledge base queries are answered using the platform's configured default LLM model. This ensures consistent inference behaviour without requiring per-knowledge-base model configuration.
+
 ## Adding Knowledge Bases to Agents
 
 Once knowledge bases are created, they can be added to agents during the agent onboarding process. This allows agents to access domain-specific information and provide more accurate, context-aware responses.

@@ -263,7 +263,7 @@ You can create either a **standalone** batch file for LiteLLM or **integrate** i
     REM Ensure logs directory exists
     if not exist logs mkdir logs
 
-    start cmd /k "litellm --config config.yaml --host 0.0.0.0 --port 8080 --debug >> logs\server_%datetime%.log 2>&1"
+    start cmd /k "python server.py --host 0.0.0.0 --port 8080 --debug >> logs\server_%datetime%.log 2>&1"
 
     pause
     ```
@@ -293,7 +293,7 @@ You can create either a **standalone** batch file for LiteLLM or **integrate** i
     REM Ensure logs directory exists
     if not exist logs mkdir logs
 
-    start cmd /k "litellm --config config.yaml --host 0.0.0.0 --port 8080 --debug >> logs\server_%datetime%.log 2>&1"
+    start cmd /k "python server.py --host 0.0.0.0 --port 8080 --debug >> logs\server_%datetime%.log 2>&1"
 
     REM Activate Python virtual environment (replace with your venv)
     cd /d "C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Backend\venv\Scripts"
@@ -485,11 +485,11 @@ The React development server will start and automatically open [http://localhost
 
 ## How to Make the Server Run 24/7 on Windows Using NSSM
 
-**Step 1: Create a Batch File**
+### Step 1: Create a Batch File
 
 You can either create one combined batch file for both frontend and backend, or create separate batch files.
 
-**Option A: Combined Batch File (`server-start.bat`)**
+#### Option A: Combined Batch File (`server-start.bat`)
 
 ```bat
 @echo off
@@ -509,7 +509,7 @@ cd /d "C:\Infosys-Agentic-Foundry\llmproxy"
 REM Ensure logs directory exists
 if not exist logs mkdir logs
 
-start cmd /k "litellm --config config.yaml --host 0.0.0.0 --port 8080 --debug >> logs\server_%datetime%.log 2>&1"
+start cmd /k "python server.py --host 0.0.0.0 --port 8080 --debug >> logs\server_%datetime%.log 2>&1"
 
 REM Activate Python virtual environment (replace with your venv)
 cd /d "C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Backend\venv\Scripts"
@@ -543,7 +543,7 @@ start cmd /k "set PORT=<your-port-number> && npm start"
 pause
 ```
 
-**Option B: Separate Batch Files**
+#### Option B: Separate Batch Files
 
 **Frontend batch file (`ui-start.bat`):**
 
@@ -577,7 +577,7 @@ cd /d "C:\Infosys-Agentic-Foundry\llmproxy"
 REM Ensure logs directory exists
 if not exist logs mkdir logs
 
-start cmd /k "litellm --config config.yaml --host 0.0.0.0 --port 8080 --debug >> logs\server_%datetime%.log 2>&1"
+start cmd /k "python server.py --host 0.0.0.0 --port 8080 --debug >> logs\server_%datetime%.log 2>&1"
 
 REM Activate Python virtual environment (replace with your venv)
 cd /d "C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Backend\venv\Scripts"
@@ -609,7 +609,7 @@ pause
 !!! warning "Important"
     Replace file paths, `<your-postgresql-password>`, and `<your-port-number>` as required. The batch files will be referenced for NSSM service setups below (e.g., `server-start.bat`).
 
-**Step 2: Install and Configure NSSM** 
+### Step 2: Install and Configure NSSM
 
 1. **Download NSSM** if not already installed: [https://nssm.cc/download](https://nssm.cc/download)
 2. Open **Command Prompt as Administrator**. 
@@ -627,7 +627,7 @@ nssm install infy_agent.service
    - For **Application path**, browse and select your `servers.bat` file.
    - Click **Install Service**.
 
-**Step 3: Manage the Service**
+### Step 3: Manage the Service
 
 Use these commands from the terminal (as Administrator):
 

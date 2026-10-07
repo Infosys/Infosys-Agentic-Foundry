@@ -124,6 +124,55 @@ Tools are saved as files on the server during the onboarding and update process.
 
     This file management logic is synchronized with the database operations, ensuring consistency between the tool records in the database and the actual tool files on the server.
 
+## Tool Code Execution Sandboxing
+
+Tool code runs inside a **security sandbox** that restricts access to sensitive system resources. These restrictions are enforced at runtime to prevent tools from leaking secrets, accessing internal application code, or reading server configuration.
+
+**What Is Blocked**
+
+=== ":material-file-lock: .env File Access"
+
+    Tool code **cannot** read the `.env` file directly. The following pattern will fail at runtime:
+
+    ```python
+    # Blocked — .env file access is not permitted
+    with open(".env", "r") as f:
+        contents = f.read()
+    ```
+
+=== ":material-shield-lock: Environment Variables"
+
+    Tool code **cannot** read environment variables via `os.environ`. Any attempt to access secrets or configuration through the environment will be blocked:
+
+    ```python
+    # Blocked — environment variable access is not permitted
+    import os
+    api_key = os.environ["API_KEY"]
+    ```
+
+=== ":material-package-variant-closed-remove: Internal Source Imports"
+
+    Tool code **cannot** import from the application's internal `src` package. This prevents tools from accessing internal services, database connections, or application internals:
+
+    ```python
+    # Blocked — internal source imports are not permitted
+    from src import some_module
+    import src
+    ```
+
+=== ":material-folder-lock: Internal Files, Folders & Objects"
+
+    Tool code **cannot** reach into IAF's internal files and folders, or access the internal attributes of framework objects such as the data connector manager. Only the documented, public surface of an injected object may be used:
+
+    ```python
+    # Blocked — internal attributes and internal files/folders are not permitted
+    manager._connections          # internal attribute access
+    open("src/internal_config.py") # internal file/folder access
+    ```
+
+!!! warning "Security Requirement"
+    Never attempt to read API keys or credentials from `.env` or `os.environ` inside tool code. These access paths are deliberately blocked. All secrets must be stored and retrieved via the Vault.
+
 ## Python Tool to MCP Local Server Conversion
 
 The platform provides automation to convert Python-based tools into MCP (Model Context Protocol) local server tools. This feature streamlines the migration from standalone Python tools to server-based tool execution.

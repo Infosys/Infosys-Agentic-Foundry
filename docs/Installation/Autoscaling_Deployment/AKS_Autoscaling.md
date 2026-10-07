@@ -150,25 +150,40 @@ Let us start with the deployment of these services first.
 **Login to Azure VM:**
 
 1. Create a yaml file for deploying arize phoenix as a container, you can use the arize phoenix image directly in the yaml file.
-2. Now you need to use this command for creating deployment and service:
+
+2.  While creating YAML file, please include these aspects as well in your script,
+
+    - Include a Deployment definition with replica count and container configuration 
+    - Define multiple container ports for HTTP, gRPC, and metrics exposure 
+    - Configure environment variables for database connectivity and application settings 
+    - Add proper labels and selectors to ensure correct pod and service mapping 
+    - Include volume mounts and volumes for application storage requirements 
+    - Define a Service resource to expose the application externally or internally 
+    - Configure multiple service ports to match container ports 
+    - Use a LoadBalancer service type with internal access configuration or choose as per your environment.
+    - Specify a namespace for isolation and organization 
+    - Specify resource requests and limits for CPU and memory (Recommended configuration, requests: ( cpu: "500m", memory: "1Gi") and limits: ( cpu: "1CPU",  memory: "2Gi") )
+    - Consider adding secure handling of sensitive data, health probes, and scaling configurations for production readiness
+
+3. Now you need to use this command for creating deployment and service:
 
     ```bash
     kubectl apply -f filename.yaml
     ```
 
-3. You can check the pods deployed using the command below:
+4. You can check the pods deployed using the command below:
 
     ```bash
     kubectl get pods -n namespace
     ```
 
-4. You can check the services deployed using the command below:
+5. You can check the services deployed using the command below:
 
     ```bash
     kubectl get svc -n namespace
     ```
 
-5. Note down the load balancer IP for the container.
+6. Note down the load balancer IP for the container.
 
 ---
 
@@ -204,25 +219,40 @@ Let us start with the deployment of these services first.
 **Login to Azure VM:**
 
 1. Create a yaml file for deploying Grafana as a container, you can use the grafana image directly in the yaml file.
-2. Now you need to use this command for creating deployment and service:
+
+2.  While creating YAML file, please include these aspects as well in your script,
+
+    - Include a Deployment definition with replica count and container configuration 
+    - Configure container command arguments for enabling authentication (e.g., password protection) 
+    - Define the container port used by the application (Redis default port 6379) 
+    - Set environment variables for host, port, database index, password, and cache settings 
+    - Specify resource requests and limits to manage CPU and memory usage memory (Recommended configuration, requests: ( cpu: "300m", memory: "512Mi") and limits: ( cpu: "1CPU",  memory: " 2Gi") )
+    - Add proper labels and selectors for linking Deployment and Service 
+    - Define a Service resource to expose the Redis application 
+    - Configure the Service port mapping to match the container port 
+    - Use a LoadBalancer service type with internal access configuration or choose as per your environment
+    - Specify a namespace for isolation and organization 
+    - Consider adding secure credential management, persistence (volumes), and scaling strategies for production environments
+
+3. Now you need to use this command for creating deployment and service:
 
     ```bash
     kubectl apply -f filename.yaml
     ```
 
-3. You can check the pods deployed using the command below:
+4. You can check the pods deployed using the command below:
 
     ```bash
     kubectl get pods -n namespace
     ```
 
-4. You can check the services deployed using the command below:
+5. You can check the services deployed using the command below:
 
     ```bash
     kubectl get svc -n namespace
     ```
 
-5. Note down the load balancer IP for the container.
+6. Note down the load balancer IP for the container.
 
 ---
 
@@ -231,25 +261,43 @@ Let us start with the deployment of these services first.
 **Login to Azure VM:**
 
 1. Create a yaml file for deploying elastic search as a container, you can use the elastic search image directly in the yaml file.
-2. Now you need to use this command for creating deployment and service:
+
+2.  While creating YAML file, please include these aspects as well in your script,
+
+    - Include a Namespace definition for logical isolation of resources
+    - Use a StatefulSet instead of a Deployment for managing stateful applications like Elasticsearch
+    - Define replica count and stable network identity for pod management
+    - Configure multiple container ports for HTTP (9200) and internal transport (9300)
+    - Set environment variables for cluster configuration, memory settings, and security options
+    - Specify resource requests and limits for CPU and memory to handle Elasticsearch workload (Recommended configuration, requests: ( cpu: "1CPU", memory: "3Gi") and limits: ( cpu: "2CPU",  memory: " 6Gi") )
+    - Configure volume mounts and volumes for data storage
+    - Use persistent storage considerations (even if temporary storage is used in simple setups)
+    - Add proper labels and selectors to connect StatefulSet and Service
+    - Define a Service resource to expose the application
+    - Configure multiple service ports to match container ports
+    - Use a LoadBalancer service type with internal access configuration or choose as per your environment
+    - Ensure namespace consistency across all resources
+    - Consider adding persistent volumes, security settings, and scaling strategies for production readiness
+
+3. Now you need to use this command for creating deployment and service:
 
     ```bash
     kubectl apply -f filename.yaml
     ```
 
-3. You can check the pods deployed using the command below:
+4. You can check the pods deployed using the command below:
 
     ```bash
     kubectl get pods -n namespace
     ```
 
-4. You can check the services deployed using the command below:
+5. You can check the services deployed using the command below:
 
     ```bash
     kubectl get svc -n namespace
     ```
 
-5. Note down the load balancer IP for the container.
+6. Note down the load balancer IP for the container.
 
 ---
 
@@ -258,25 +306,45 @@ Let us start with the deployment of these services first.
 **Login to Azure VM:**
 
 1. Create a yaml file for deploying opentelemetry as a container, you can use the opentelemetry image directly in the yaml file.
-2. Now you need to use this command for creating deployment and service:
+
+2.  While creating YAML file, please include these aspects as well in your script,
+
+    - Include a Namespace definition to logically isolate monitoring components 
+    - Use a ConfigMap to store OpenTelemetry Collector configuration (receivers, exporters, processors, pipelines) 
+    - Define receivers for OTLP protocols (gRPC and HTTP) to ingest telemetry data 
+    - Configure exporters for debugging and external systems (e.g., Elasticsearch) 
+    - Add processors (such as batch) to optimize telemetry handling 
+    - Define service pipelines for traces, metrics, and logs with appropriate receivers, processors, and exporters 
+    - Include a Deployment definition for running the OpenTelemetry Collector 
+    - Configure container arguments to load the external configuration file from the ConfigMap 
+    - Define container ports for OTLP gRPC and HTTP ingestion 
+    - Use volume mounts and volumes to inject ConfigMap data into the container 
+    - Add proper labels and selectors to connect Deployment and Service 
+    - Define a Service resource to expose the collector endpoints 
+    - Configure multiple service ports matching OTLP protocols 
+    - Use a LoadBalancer service type with internal access configuration or choose as per your environment 
+    - Ensure namespace consistency across all resources 
+    - Consider adding secure endpoints, resources, scaling, and advanced processors/exporters for production readiness (Recommended configuration, requests: ( cpu: "500m", memory: "1CPU") and limits: ( cpu: "512Mi",  memory: " 1Gi") )
+
+3. Now you need to use this command for creating deployment and service:
 
     ```bash
     kubectl apply -f filename.yaml
     ```
 
-3. You can check the pods deployed using the command below:
+4. You can check the pods deployed using the command below:
 
     ```bash
     kubectl get pods -n namespace
     ```
 
-4. You can check the services deployed using the command below:
+5. You can check the services deployed using the command below:
 
     ```bash
     kubectl get svc -n namespace
     ```
 
-5. Note down the load balancer IP for the container.
+6. Note down the load balancer IP for the container.
 
 Once you get these IPs, you need to mention them in the `.env` of backend and frontend accordingly.
 
@@ -354,25 +422,39 @@ Now we can proceed to create backend, agent worker, tool worker and frontend ima
     ```
 
 13. Create a backend YAML file.
-14. Deploy the file using the command below:
+
+14.  While creating YAML file, please include these aspects as well in your script,
+
+    - Include a Deployment definition with replica count and container configuration 
+    - Specify the container image pulled from a private container registry 
+    - Define the container port used by the application
+    - Add proper labels and selectors to ensure correct mapping between pods and services 
+    - Optionally configure environment variables for application-specific settings 
+    - Define a Service resource to expose the application within or outside the cluster 
+    - Configure service port mapping to forward traffic to the container port 
+    - Use a LoadBalancer service type with internal access configuration or choose as per your environment 
+    - Specify a namespace for isolation and resource organization 
+    - Consider adding resource limits, health probes, and scaling configurations for production readiness (Recommended configuration, requests: ( cpu: "250m", memory: "1Gi") and limits: ( cpu: "500m",  memory: " 1.5Gi") )
+
+15. Deploy the file using the command below:
 
     ```bash
     kubectl apply -f filename.yaml
     ```
 
-15. You can check the pods deployed using the command below:
+16. You can check the pods deployed using the command below:
 
     ```bash
     kubectl get pods -n namespace
     ```
 
-16. You can check the services deployed using the command below:
+17. You can check the services deployed using the command below:
 
     ```bash
     kubectl get svc -n namespace
     ```
 
-17. Now you can access the backend service using Swagger UI from web browser. You can find the external ip by using the command mentioned in step 16.
+18. Now you can access the backend service using Swagger UI from web browser. You can find the external ip by using the command mentioned in step 16.
 
     ```
     <your external ip>:<port number>/docs
@@ -451,19 +533,32 @@ Now we can proceed to create backend, agent worker, tool worker and frontend ima
     kubectl apply -f filename.yaml
     ```
 
-15. You can check the pods deployed using the command below:
+15.  While creating YAML file, please include these aspects as well in your script,
+
+    - Include a Deployment definition with replica count and container configuration 
+    - Specify the container image pulled from a private container registry 
+    - Define the container port used by the application
+    - Add proper labels and selectors to ensure correct mapping between pods and services 
+    - Optionally configure environment variables for application-specific settings 
+    - Define a Service resource to expose the application within or outside the cluster 
+    - Configure service port mapping to forward traffic to the container port 
+    - Use a LoadBalancer service type with internal access configuration or choose as per your environment 
+    - Specify a namespace for isolation and resource organization 
+    - Consider adding resource limits, health probes, and scaling configurations for production readiness (Recommended configuration, requests: ( cpu: "250m", memory: "512Mi") and limits: ( cpu: "1CPU",  memory: " 1Gi") )
+
+16. You can check the pods deployed using the command below:
 
     ```bash
     kubectl get pods -n namespace
     ```
 
-16. You can check the services deployed using the command below:
+17. You can check the services deployed using the command below:
 
     ```bash
     kubectl get svc -n namespace
     ```
 
-17. Now you can access the backend service using Swagger UI from web browser. You can find the external ip by using the command mentioned in step 16.
+18. Now you can access the backend service using Swagger UI from web browser. You can find the external ip by using the command mentioned in step 16.
 
     ```
     <your external ip>:<port number>/docs

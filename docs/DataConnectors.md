@@ -52,7 +52,9 @@ Connection Name: my_sqlite_db
 Database Type: SQLite
 New SQLite DB File: database.db
 ```
-
+!!! info "File Name Handling"
+    SQLite file names containing dots (`.`) or hyphens (`-`) are accepted. If a duplicate file extension is detected (e.g., `database.db.db`), it is automatically stripped during upload.
+    
 ### MySQL Connection
 
 To create a new MySQL connection:

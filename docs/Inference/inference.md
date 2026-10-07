@@ -114,6 +114,9 @@ The agent receives a `run_shell_command` tool that provides access to a Unix-lik
 | `/agent/facts/` | Agent-specific learned facts (persists across sessions) |
 | `/session/` | Current session data, pending context, conversation history |
 
+!!! info "Mounted Folders & Auto-Injected Shell Tool"
+    When an agent has **mounted folders**, the `run_shell_command` tool is **automatically injected** at inference time so the agent can read and write within those folders — no manual tool wiring is required. Mount names are resolved **case-insensitively**, so references such as `/Session/` and `/session/` resolve to the same mount.
+
 **Agent Behavior - Memory-First Approach:**
 
 Before calling any other tool, the agent MUST:
@@ -148,6 +151,9 @@ Provides a comprehensive visual overview of agent interactions and workflows.
 ### 5. Context Flag
 
 When disabled, the agent operates without memory retention, treating each query as an independent interaction without access to past conversations or memory data.
+
+!!! info "Conversation Context Beyond Recent Chats"
+    When the context flag is enabled, the agent continues to receive relevant chat context even for long conversations that exceed the most recent few (4–5) chats. Context is preserved as a conversation grows rather than being limited to the latest turns.
 
 ### 6. Online Evaluator
 

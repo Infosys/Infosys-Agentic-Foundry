@@ -8,6 +8,9 @@ OpenTelemetry is a comprehensive observability framework designed to provide dee
 
 2. **Traces**: Tracks the complete chain of thought, agent decisions, and agent state transitions to observe how individual LLM tasks are executed. Traces provide end-to-end visibility into request flows, allowing developers to understand the sequence of operations, identify bottlenecks, and optimize performance across distributed components.
 
+!!! note "Stack Traces in All Environments"
+    Error logs capture full **stack traces across all environments** (local, VM, and production), so failures can be traced with complete context regardless of where the platform is running.
+
 ---
 
 ### OpenTelemetry Workflow

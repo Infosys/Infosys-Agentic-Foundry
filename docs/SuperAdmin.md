@@ -15,7 +15,7 @@ The **SuperAdmin** is the platform-wide administrator with the highest level of 
 
 ## 3. User Update
 
-- Update a user's **role** within any department.
+- Update a user's **role(s)** within any department, including assigning **multiple roles** or adding and removing several roles in a single update.
 - Set a **temporary password** for any user across all departments. The temporary password must then be shared with the user so they can log in.
 
 ## 4. User Access Management

@@ -194,6 +194,7 @@ The `Resource Management` section in the Admin tab enables administrators to con
 3. Update user-specific allowed/excluded values for fine-grained control
 4. Monitor which users have access to specific data resources
 5. Ensure proper data access governance and compliance
+6. Delete any access key within their department — the creator-only restriction does not apply to Admins
 
 For detailed information on access key creation, resource allocation workflows, tool-level decorators, and comprehensive examples, refer to the RBAC documentation:
 
@@ -582,5 +583,170 @@ GET /utility/cleanup/reports/list
 ```
 
 This returns filenames from both `cleanup_reports/` and `deletion_reports/` folders.
+
+---
+
+## 11. Reports
+
+The **Reports** section in the Admin panel provides administrators with tools to track and analyze model usage costs and token consumption across the platform. It is accessible via `Admin Panel → Reports` and is restricted to Admin and SuperAdmin roles.
+
+---
+
+**Model Cost Configuration**
+
+When LiteLLM cost tracking is disabled or unavailable (e.g., when using direct OpenAI, Azure OpenAI, or Anthropic endpoints without a LiteLLM proxy), administrators can manually define the cost per token for each model. This ensures accurate cost reporting regardless of the inference routing setup.
+
+**Capabilities:**
+
+- Add, edit, or delete model cost configurations
+- Set cost per token for input, output, and cache reads
+- Support for multiple models, providers, and version-specific pricing (e.g., `gpt-4-turbo-2024-04-09` vs `gpt-4-turbo`)
+- Configurations are persisted in the database
+
+**Adding a Model Cost Entry:**
+
+Click **"+ Add Model Cost"** to open the configuration form:
+
+The Add Model Cost form requires a unique identifier (Name), the Model Name, Provider Key, and cost-per-token values for input, output, and cache reads. Model Version is optional and allows version-specific pricing.
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| **Name** | Unique identifier for this cost entry | `gpt-4-turbo-2024-04-09` |
+| **Model Name** | The model name as used in inference calls | `GPT-4o Mini` |
+| **Model Version** | Optional version string | `2024-07-18` |
+| **Provider Key** | Provider identifier used for routing | `azure/gpt-4o-mini` |
+| **Input Cost per Token** | Cost charged per input token | `0.00000015` |
+| **Output Cost per Token** | Cost charged per output token | `0.0000006` |
+| **Cache Read Cost per Token** | Cost for cached/read tokens | `0.000000075` |
+
+**API Endpoints:**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/admin/model-costs` | Add a new model cost configuration |
+| `GET` | `/api/admin/model-costs` | List all configurations |
+| `PUT` | `/api/admin/model-costs/{id}` | Update an existing configuration |
+| `DELETE` | `/api/admin/model-costs/{id}` | Delete a configuration |
+
+---
+
+**Model Cost Reports**
+
+Generate detailed cost reports with flexible filtering and aggregation to understand spending patterns across models, users, agents, and time periods.
+
+**Endpoint:** `GET /api/reports/model-costs`
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `start_date` | ISO 8601 | Start of the date range |
+| `end_date` | ISO 8601 | End of the date range |
+| `user_id` | string (optional) | Filter by a specific user |
+| `agent_id` | string (optional) | Filter by a specific agent |
+| `model_name` | string (optional) | Filter by model |
+| `session_id` | string (optional) | Filter by session |
+| `group_by` | string (optional) | Group results by `model`, `user`, `agent`, `date`, or `session` |
+
+**Example Response:**
+
+```json
+{
+  "total_cost": 45.67,
+  "total_input_tokens": 150000,
+  "total_output_tokens": 75000,
+  "currency": "USD",
+  "date_range": {
+    "start": "2026-05-01T00:00:00Z",
+    "end": "2026-05-28T23:59:59Z"
+  },
+  "breakdown": [
+    {
+      "model_name": "gpt-4-turbo",
+      "total_cost": 25.30,
+      "input_tokens": 80000,
+      "output_tokens": 40000,
+      "request_count": 150
+    },
+    {
+      "model_name": "gpt-3.5-turbo",
+      "total_cost": 12.15,
+      "input_tokens": 50000,
+      "output_tokens": 25000,
+      "request_count": 300
+    }
+  ]
+}
+```
+
+**Use Cases:**
+
+- **Monthly cost analysis** — Track total spend over a billing period grouped by model or department
+- **Per-user billing** — Identify high-cost users and allocate charges appropriately
+- **Model cost comparison** — Compare cost efficiency between different models for similar workloads
+
+---
+
+**Token Usage Reports**
+
+Provides detailed token consumption analytics with optional trend analysis. Use this to monitor usage patterns, identify anomalies, and plan capacity.
+
+**Endpoint:** `GET /api/reports/token-usage`
+
+The Token Usage report displays total input/output tokens, unique users, sessions, and request counts. Results can be broken down by user, agent, model, or time period.
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `start_date` | ISO 8601 | Start of the date range |
+| `end_date` | ISO 8601 | End of the date range |
+| `user_id` | string (optional) | Filter by a specific user |
+| `agent_id` | string (optional) | Filter by a specific agent |
+| `model_name` | string (optional) | Filter by model |
+| `session_id` | string (optional) | Filter by session |
+| `group_by` | string (optional) | Aggregation dimension (`model`, `user`, `agent`, `date`, `session`) |
+| `include_trends` | boolean (optional) | Include time-series trend data in the response |
+
+The filter panel allows you to narrow down token usage data by date range, specific user, agent, model, or session. Apply filters to focus on the data most relevant to your analysis.
+
+**Example Response:**
+
+```json
+{
+  "summary": {
+    "total_input_tokens": 500000,
+    "total_output_tokens": 250000,
+    "total_tokens": 750000,
+    "unique_users": 45,
+    "unique_sessions": 1200,
+    "request_count": 3500
+  },
+  "breakdown": [
+    {
+      "dimension": "user_id",
+      "value": "user123",
+      "input_tokens": 25000,
+      "output_tokens": 12500,
+      "request_count": 180
+    }
+  ],
+  "trends": [
+    {
+      "date": "2026-05-01",
+      "input_tokens": 15000,
+      "output_tokens": 7500,
+      "cost": 1.25
+    }
+  ]
+}
+```
+
+**Use Cases:**
+
+- **Usage monitoring** — Track token consumption over time to detect spikes or unusual patterns
+- **Capacity planning** — Use trend data to forecast future token needs and budget accordingly
+- **User-level auditing** — Identify which users or agents are consuming the most tokens
+- **Cost correlation** — Combine with model cost data to understand the full cost picture
 
 ---

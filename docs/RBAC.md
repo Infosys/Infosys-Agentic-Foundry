@@ -40,7 +40,7 @@ Roles define the level of access a user has within a department.
 | `User` | Read and execute access on agents and workflows only (by default). |
 
 !!! Note
-    A member can have **only one role per department** but may have accounts in **multiple departments**.
+    A member can hold **one or more roles per department** and may also have accounts in **multiple departments**. When a user has multiple roles in the same department, exactly one role is **active** at a time, and the user can **switch** between their assigned roles.
 
 **3. Role Hierarchy**
 
@@ -78,6 +78,7 @@ A dedicated `Notifications tab` is available for `Admin` and `SuperAdmin` users.
 - Multiple pending user approvals can be handled at once.
 - SuperAdmin receives notifications for registrations across `all departments`.
 - Admin receives notifications only for their `own department`.
+- Registration requests are retrieved through a `paginated search` and are **sorted by creation time** for predictable ordering.
 
 **3. Login**
 
@@ -173,7 +174,24 @@ Admins have three categories of user management (accessible from the `Admin Tab`
 - Admin can disable users `within their own department only`.
 - Users `cannot disable themselves`.
 - Admin `cannot disable SuperAdmin` users.
-- SuperAdmin can disable users `globally` (across all departments).
+
+**SuperAdmin User Management Enhancements**
+
+- **Flat user listing** — SuperAdmin sees a consolidated list of all users across all departments in a single view, rather than having to switch between departments individually.
+- **Departments dropdown with "All" option** — The department filter dropdown includes an "All" option for SuperAdmin, allowing them to view users from every department at once. The dropdown uses a search-enabled paginated endpoint for efficient lookup.
+- **Department name on user cards** — Each user card displays the department name, providing clear context about which department each user belongs to when viewing the cross-department list.
+- **Department-wise `is_active` control** — The global `is_active` flag has been removed. User access is now controlled at the department level with a department-specific `is_active` flag, enabling finer-grained access control. A user can be active in one department while being disabled in another.
+
+**Multi-Role Support & Role Switching**
+
+A user can be assigned **more than one role within the same department**, allowing a single account to carry different levels of access (for example, `Developer` and `Admin`) without needing separate accounts.
+
+- **Multiple roles per department** — Admins (own department) and SuperAdmin can assign several roles to a user in a department. A single role-update request can **add and remove multiple roles** at once.
+- **Active role & switching** — When a user holds multiple roles, one role is **active** at a time. The user can switch their active role, and the platform applies the permissions of the newly selected role for subsequent actions.
+- **Remove a role** — Admins (own department) and SuperAdmin can remove one or more roles from a user, subject to the usual authorization checks. The protected `Admin` role rules still apply.
+- **Retrieve a user's roles** — A dedicated endpoint returns all roles a user holds in a specific department, with role-based access control enforced on the request.
+- **SuperAdmin role management** — SuperAdmin can manage roles for any user across all departments.
+- **Audit trail** — Role switches are recorded in the audit trail, and the user's current active role can be retrieved at any time.
 
 ---
 
@@ -213,6 +231,27 @@ These control features within the agent chat/execution interface:
 | `Canvas View` | Canvas view in UI | Requires `Execute Access (Agents)` |
 | `Context` | Context management | Requires `Execute Access (Agents)` |
 
+**Import, Export & Convert Permissions**
+
+These permissions control import/export of tools and MCP servers, as well as the ability to convert tools to MCP servers:
+
+| Permission | Description | Dependency |
+|------------|-------------|------------|
+| `Export Tools Access` | Export tools from the platform | None |
+| `Export Servers Access` | Export MCP servers from the platform | None |
+| `Import Tools Access` | Import tools into the platform | Requires `Add Access (Tools)` |
+| `Import Servers Access` | Import MCP servers into the platform | Requires `Add Access (MCP Servers)` |
+| `Import Agents Access` | Import agents into the platform | Requires `Add Access (Agents)` |
+| `Convert to MCP Access` | Convert a tool to an MCP server | Requires `Add Access (MCP Servers)` |
+
+!!! note "Import & Convert Dependencies"
+    - **Import Tools** can only be enabled when the corresponding **Add Access (Tools)** permission is enabled.
+    - **Import MCP Servers** can only be enabled when **Add Access (MCP Servers)** is enabled.
+    - **Import Agents** can only be enabled when **Add Access (Agents)** is enabled.
+    - **Convert to MCP** can only be enabled when **Add Access (MCP Servers)** is enabled.
+
+    Action buttons for Import, Export, and Convert are shown in the UI only when the respective permission is granted.
+
 **Independent Permissions**
 
 These permissions are standalone and do not depend on other permissions:
@@ -250,10 +289,14 @@ Read Access (Agents) ◄── Add Access (Agents)
                                                   ◄── File Context
                                                   ◄── Canvas View
                                                   ◄── Context
-Read Access (MCP Servers) ◄── Add Access (MCP Servers)
-                          ◄── Update Access (MCP Servers)
+Read Access (MCP Servers) ◄── Add Access (MCP Servers) ◄── Import Servers Access
+                          ◄── Update Access (MCP Servers)         ◄── Convert to MCP Access
                           ◄── Delete Access (MCP Servers)
                           ◄── Execute Access (MCP Servers)
+
+Add Access (Tools) ◄── Import Tools Access
+Add Access (MCP Servers) ◄── Import Servers Access
+                         ◄── Convert to MCP Access
 
 Read Access (Workflows) ◄── Add Access (Workflows)
                         ◄── Update Access (Workflows)
@@ -329,6 +372,8 @@ When a role is added to a department, default permissions are auto-assigned:
     | Data Connector Access | ✅ | ✅ | ❌ |
     | Knowledge Base Access | ✅ | ✅ | ❌ |
     | Export Agents Access | ✅ | ✅ | ❌ |
+    | Export Tools Access | ✅ | ✅ | ❌ |
+    | Export Servers Access | ✅ | ✅ | ❌ |
 
 **4 Managing Permissions**
 
@@ -436,14 +481,15 @@ Available to users with `tool create/update permission`:
 | `List Access Keys` | View all access keys in the department |
 | `Create Access Key` | Create a new access key |
 | `Get Access Key Details` | View details of a specific access key |
-| `Delete Access Key` | Delete an access key (creator only) |
+| `Delete Access Key` | Delete an access key (creator, or any Admin in the department) |
 | `View Tools Using Key` | View which tools are using a specific access key |
 | `Update Own Access` | Update own allowed/excluded values for an access key |
 
 `Key Rules:`
 
-- Only the `creator` of an access key can delete it.
+- The `creator` of an access key can delete it. `Admins` can delete any access key in their department **without the creator check**.
 - Cannot delete an access key if tools are still using it.
+- Access keys are returned through a `paginated search`, ordered by creation time, so large sets of keys page predictably.
 - Supports `wildcard` access: `allowed_values: ["*"]` with optional `exclusions: ["CEO001"]`.
 - Wildcard (`*`) and specific values are `mutually exclusive`.
 
@@ -520,6 +566,11 @@ All resource cards (`Tools`, `Agents`, `MCP Servers`, `Workflows`, `Knowledge Ba
 | `Servers tab` | Read Access (MCP Servers) |
 | `Workflows tab` | Read Access (Workflows) |
 | `Export Agents tab` | Export Agents Access |
+| `Export Tools` | Export Tools Access |
+| `Export Servers` | Export Servers Access |
+| `Import Tools` | Import Tools Access |
+| `Import Servers` | Import Servers Access |
+| `Convert to MCP` | Convert to MCP Access |
 | `Evaluation tab` | Evaluation Access |
 | `Vault tab` | Vault Access |
 | `Data Connectors tab` | Data Connector Access |
