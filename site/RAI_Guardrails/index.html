@@ -1,0 +1,4114 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../GZIP_Compression/">
+      
+      
+        <link rel="next" href="../onboarding/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>RAI Guardrails - Agentic Foundry</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../css/hide-footer.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#rai-guardrails" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Agentic Foundry" class="md-header__button md-logo" aria-label="Agentic Foundry" data-md-component="logo">
+      
+  <img src="../images/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Agentic Foundry
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              RAI Guardrails
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Agentic Foundry" class="md-nav__button md-logo" aria-label="Agentic Foundry" data-md-component="logo">
+      
+  <img src="../images/logo.png" alt="logo">
+
+    </a>
+    Agentic Foundry
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Introduction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Definitions
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Definitions
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Definitions/Vocabulary_Definitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vocabulary - Definitions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Definitions/hitl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Human in the loop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../core_building_blocks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Building Blocks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Installation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/windows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/linux/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/Azure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Azure Kubernetes Service
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/GCP/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Google Kubernetes Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/AWS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AWS Kubernetes Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/Database_Setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/VM_Docker-Compose/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VM installation using docker-compose
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_8" id="__nav_6_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Autoscaling Deployment
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Autoscaling Deployment
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/Autoscaling_Deployment/AKS_Autoscaling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AKS Autoscaling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/Autoscaling_Deployment/VM_Autoscaling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VM Autoscaling using Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_9" id="__nav_6_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi-Cloud CI/CD Pipeline
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Multi-Cloud CI/CD Pipeline
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/Multicloud_CICD_deployment/MultiCloudBackend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MultiCloud Backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/Multicloud_CICD_deployment/MultiCloudFrontend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MultiCloud Frontend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/linux_vm_CICD/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux vm CI/CD Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../custom_llm_models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enabling Additional LLM Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Load_Balancing_Fallback/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Load Balancing & Fallback Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Model_server/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Server Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agents Design
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Agents Design
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents_Design/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents_Design/React%20Agent%20Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    React Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents_Design/ReactCriticAgent_Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    React Critic Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents_Design/Multi%20Agent%20Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents_Design/Planner_executor_agent_design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planner Executor Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents_Design/Orchestration_Meta_Agent_Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Orchestration Meta Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents_Design/Planner_meta_agent_design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planner Meta Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents_Design/Hybrid_Agent_Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hybrid Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agent_OS_%26_Skill_Agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent OS & Skill Agent Framework
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Admin_Screen/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Admin Screen
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Time-To-Live/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Time-To-Live
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../SuperAdmin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Super Admin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../RBAC/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Role Base Access Control
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../JWT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Authentication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Keycloak_SSO/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keycloak SSO
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../MSAL_SSO/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Microsoft Authentication (MSAL SSO)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Vault/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vault
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_20" >
+        
+          
+          <label class="md-nav__link" for="__nav_20" id="__nav_20_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_20">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tools
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools_config/tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools_config/tool_creation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool Creation via Chat Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Tool_Validation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool Validation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Tool_Interrupt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool Interrupt
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools_config/tool_versioning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool Versioning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../files_upload/files/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../DataConnectors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DataConnectors
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Knowledge_Base/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Knowledge Base
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../MCP_Registry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Registry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agent_Workflows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent Workflows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_26" >
+        
+          
+          <label class="md-nav__link" for="__nav_26" id="__nav_26_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_26_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_26">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Agent Configuration
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/Overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/reactAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    React Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/reactCritic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    React Critic Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/multiAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/PlannerExecutor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planner Executor Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/metaAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Meta Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/PlannerMeta/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planner Meta Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/HybridAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hybrid Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../memory_management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Google_ADK_Framework_Support/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Google ADK Framework Support
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_29" >
+        
+          
+          <label class="md-nav__link" for="__nav_29" id="__nav_29_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Inference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_29_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_29">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Inference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/reactAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    React Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/ReactCriticAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    React Critic Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/multiAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/PlannerExecutorAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planner Executor Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/metaAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Meta Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/MetaPlanner_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planner Meta Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/HybridAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hybrid Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/Canvas_Screen/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Canvas Screen
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../SSE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Serever Sent Events
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Kafka_Message_Queue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kafka Message Queue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Cron_scheduler_functionality/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cron Scheduler
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../prompt_optimization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prompt Optimization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_34" >
+        
+          
+          <label class="md-nav__link" for="__nav_34" id="__nav_34_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Evaluation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_34_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_34">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Evaluation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Evaluation/evaluation_metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Evaluation Metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Evaluation/Groundtruth_Evaluation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Groundtruth Evaluation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Evaluation/Consistency/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Consistency Evaluation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_35" >
+        
+          
+          <label class="md-nav__link" for="__nav_35" id="__nav_35_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Telemetry
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_35_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_35">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Telemetry
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Telemetry/telemetry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Telemetry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Telemetry/Connecting_to_Grafana/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Connecting to Grafana
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Telemetry/Arize_Phoenix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arize Phoenix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Telemetry/Azure_Monitoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Azure Monitoring
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Cost_Token_Tracking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Cost and Token Tracking
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../LLM_Call_Tracing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Call Tracing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Tool_and_MCP_Export_Import/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool and MCP Export Import
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ExportAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Export Agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../GZIP_Compression/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GZIP Compression
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RAI Guardrails
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RAI Guardrails
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#guardrail-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Guardrail Checks
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Guardrail Checks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-jailbreak-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Jailbreak Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-toxicity-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Toxicity Analysis
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-profanity-filtering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Profanity Filtering
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-restricted-topic-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Restricted Topic Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-pii-personally-identifiable-information-protection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. PII (Personally Identifiable Information) Protection
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-it-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How It Works
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#user-experience" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        User Experience
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#integration-with-agent-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integration with Agent Types
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#audit-logging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Audit Logging
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#failure-handling-resilience" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Failure Handling &amp; Resilience
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hosting-rai-guardrails-on-a-vm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hosting RAI Guardrails on a VM
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick-Start Checklist
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../onboarding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prebuilt Components Auto-Onboarding
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#guardrail-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Guardrail Checks
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Guardrail Checks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-jailbreak-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Jailbreak Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-toxicity-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Toxicity Analysis
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-profanity-filtering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Profanity Filtering
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-restricted-topic-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Restricted Topic Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-pii-personally-identifiable-information-protection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. PII (Personally Identifiable Information) Protection
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-it-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How It Works
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#user-experience" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        User Experience
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#integration-with-agent-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integration with Agent Types
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#audit-logging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Audit Logging
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#failure-handling-resilience" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Failure Handling &amp; Resilience
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hosting-rai-guardrails-on-a-vm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hosting RAI Guardrails on a VM
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick-Start Checklist
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+                
+
+
+
+  
+
+
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="rai-guardrails">RAI Guardrails</h1>
+<h2 id="overview">Overview</h2>
+<p>IAF integrates <strong>Responsible AI (RAI) Guardrails</strong> to ensure all interactions between users and LLM-powered agents are safe, compliant, and privacy-preserving. The guardrails automatically screen every user input and (optionally) every LLM response for harmful content and sensitive personal information before anything reaches the model or is returned to the user.</p>
+<p>Two categories of guardrails are enforced:</p>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th>What It Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Content Moderation</strong></td>
+<td>Detects and blocks jailbreak attempts, toxic language, profanity, and restricted topics</td>
+</tr>
+<tr>
+<td><strong>PII Privacy Protection</strong></td>
+<td>Detects personally identifiable information (PII), blocks critical entities, and anonymises the rest before sending to the LLM</td>
+</tr>
+</tbody>
+</table>
+<p>These guardrails are powered by the <a href="https://github.com/Infosys/Infosys-Responsible-AI-Toolkit">Infosys Responsible AI Toolkit</a> and are transparently integrated — no changes are required to agent configurations or user workflows once enabled.</p>
+<div class="admonition important">
+<p class="admonition-title">LiteLLM Proxy Required</p>
+<p>RAI Guardrails are implemented within the <strong>LiteLLM Proxy</strong> layer. To enable or use RAI Guardrails, you <strong>must</strong> set <code>USE_LITELLM_PROXY_FLAG=true</code> in your IAF environment configuration. Without this flag, LLM requests bypass the proxy and no guardrail checks will be applied.</p>
+</div>
+<hr />
+<h2 id="guardrail-checks">Guardrail Checks</h2>
+<h3 id="1-jailbreak-detection">1. Jailbreak Detection</h3>
+<p>Identifies attempts to manipulate the LLM into bypassing its safety instructions through prompt injection or jailbreak techniques.</p>
+<ul>
+<li><strong>What it detects:</strong> Prompt injection patterns, role-play instructions designed to override system prompts, instructions asking the model to ignore previous guidelines</li>
+<li><strong>Threshold:</strong> Configurable (default: 0.7) — scores at or above this value trigger a block</li>
+<li><strong>Action on violation:</strong> Request is blocked and the user receives a Content Policy Alert</li>
+</ul>
+<hr />
+<h3 id="2-toxicity-analysis">2. Toxicity Analysis</h3>
+<p>Evaluates user input for harmful, hateful, or dangerous language across multiple dimensions.</p>
+<p><strong>Sub-checks include:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Sub-check</th>
+<th>What It Detects</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>General Toxicity</td>
+<td>Broadly harmful or negative content</td>
+</tr>
+<tr>
+<td>Severe Toxicity</td>
+<td>Extremely harmful content</td>
+</tr>
+<tr>
+<td>Obscenity</td>
+<td>Obscene or vulgar content</td>
+</tr>
+<tr>
+<td>Threats</td>
+<td>Language indicating intent to harm</td>
+</tr>
+<tr>
+<td>Insults</td>
+<td>Demeaning or degrading language</td>
+</tr>
+<tr>
+<td>Identity Attacks</td>
+<td>Content targeting specific identity groups</td>
+</tr>
+<tr>
+<td>Sexually Explicit</td>
+<td>Inappropriate sexual content</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Threshold:</strong> Configurable per sub-check (default: 0.6 for all)</li>
+<li><strong>Action on violation:</strong> Request is blocked if any sub-check exceeds its threshold</li>
+</ul>
+<hr />
+<h3 id="3-profanity-filtering">3. Profanity Filtering</h3>
+<p>Scans input text for profane or offensive words.</p>
+<ul>
+<li><strong>What it detects:</strong> Known profane words and phrases in the user's message</li>
+<li><strong>Threshold:</strong> Number of profane words allowed before triggering (default: 1 — meaning even a single profane word triggers a block)</li>
+<li><strong>Action on violation:</strong> Request is blocked and flagged words are reported</li>
+</ul>
+<hr />
+<h3 id="4-restricted-topic-detection">4. Restricted Topic Detection</h3>
+<p>Prevents the LLM from being used to discuss or generate content about topics that your organisation has deemed off-limits.</p>
+<ul>
+<li><strong>Default restricted topics:</strong> Terrorism, Explosives, Nudity, Cruelty, Cheating, Fraud, Crime, Hacking, Immoral, Unethical, Illegal, Robbery, Forgery, Misinformation</li>
+<li><strong>Threshold:</strong> Topic relevance score (default: 0.7)</li>
+<li><strong>Customisable:</strong> Administrators can add or remove topics based on organisational policies</li>
+<li><strong>Action on violation:</strong> Request is blocked and the detected topic is reported</li>
+</ul>
+<hr />
+<h3 id="5-pii-personally-identifiable-information-protection">5. PII (Personally Identifiable Information) Protection</h3>
+<p>Automatically detects sensitive personal data in user messages using a RoBERTa NLP model and applies one of three actions per entity type:</p>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Behaviour</th>
+<th>Use Case</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Block</strong></td>
+<td>Entire request is rejected</td>
+<td>For highly sensitive entities (e.g., email addresses) that should never be sent to an LLM</td>
+</tr>
+<tr>
+<td><strong>Anonymise</strong></td>
+<td>Entity is replaced with a placeholder (e.g., <code>[PHONE_NUMBER_1]</code>) before sending to the LLM, then restored in the response</td>
+<td>For entities that need privacy protection but the conversation should continue</td>
+</tr>
+<tr>
+<td><strong>Skip</strong></td>
+<td>Entity is left unchanged</td>
+<td>For entities that are acceptable to send to the LLM (e.g., location names, organisation names)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Detectable PII entity types include:</strong></p>
+<ul>
+<li>Email addresses</li>
+<li>Phone numbers</li>
+<li>Credit card numbers</li>
+<li>Social security numbers</li>
+<li>Person names</li>
+<li>Locations</li>
+<li>Dates</li>
+<li>URLs</li>
+<li>Organisation names</li>
+<li>Nationalities / Religious / Political groups (NRP)</li>
+</ul>
+<p>The classification of which entities to block, anonymise, or skip is fully configurable via environment variables.</p>
+<hr />
+<h2 id="how-it-works">How It Works</h2>
+<p><strong>Architecture</strong></p>
+<p>The guardrails operate through a <strong>proxy layer</strong> (LiteLLM Proxy) that sits between IAF and the LLM provider. This architecture ensures guardrails are applied consistently to all agent types without modifying individual agent logic.</p>
+<div class="highlight"><pre><span></span><code>┌────────────────────┐
+│  User sends        │
+│  message to agent  │
+└────────┬───────────┘
+         ▼
+┌────────────────────┐
+│  IAF Agent         │
+│  (any type)        │
+└────────┬───────────┘
+         ▼
+┌────────────────────────────────────────────────────────────┐
+│  LiteLLM Proxy — Pre-call Guardrails                        │
+│                                                             │
+│  Step 1: PII Protection                                     │
+│    • Scan for personal information                          │
+│    • Block if critical PII found                            │
+│    • Anonymise remaining PII with placeholders              │
+│                                                             │
+│  Step 2: Content Moderation                                 │
+│    • Check for jailbreak attempts                           │
+│    • Check for toxicity                                     │
+│    • Check for profanity                                    │
+│    • Check for restricted topics                            │
+│    • Block if any check fails                               │
+└────────┬────────────────────────────────────────────────────┘
+         ▼ (safe, anonymised request)
+┌────────────────────┐
+│  LLM Provider      │
+│  (Azure/OpenAI)    │
+└────────┬───────────┘
+         ▼ (LLM response)
+┌────────────────────────────────────────────────────────────┐
+│  LiteLLM Proxy — Post-call Guardrails                       │
+│                                                             │
+│  Step 3: Response Moderation (optional)                     │
+│    • Check LLM output for harmful content                   │
+│    • Replace with safe message if violated                  │
+│                                                             │
+│  Step 4: PII De-anonymisation                               │
+│    • Restore original values in place of placeholders       │
+└────────┬────────────────────────────────────────────────────┘
+         ▼
+┌────────────────────┐
+│  Response returned  │
+│  to user            │
+└─────────────────────┘
+</code></pre></div>
+<p><strong>What Gets Checked</strong></p>
+<p>Only <strong>user-provided content</strong> is moderated. System instructions and framework-generated prompts are excluded from guardrail checks to avoid false positives. The system intelligently identifies user content by looking for specific markers in the message (e.g., "User Query:" or "Input Query:").</p>
+<p><strong>Response Moderation (Optional)</strong></p>
+<p>By default, only user <strong>inputs</strong> are moderated. Optionally, you can also enable <strong>output moderation</strong> to check LLM responses for harmful content. When enabled:</p>
+<ul>
+<li>If the LLM response violates content policy, it is silently replaced with a safe message</li>
+<li>The request is not blocked (since the user's input was fine) — only the response is sanitised</li>
+</ul>
+<p>This is recommended for customer-facing applications where LLM output safety is critical.</p>
+<hr />
+<h2 id="user-experience">User Experience</h2>
+<p>When a guardrail is triggered, the user receives a clear, structured alert explaining what happened:</p>
+<p><strong>Example — Content Policy Violation:</strong></p>
+<div class="highlight"><pre><span></span><code>**Content Policy Alert**
+
+Status: FAILED
+
+Check Results:
+  ✅ JailBreak — PASSED (score: 0.12, threshold: 0.70)
+  ❌ Toxicity — FAILED (score: 0.85, threshold: 0.60)
+     • ToxicityScore: 0.85
+     • InsultScore: 0.72
+  ✅ Profanity — PASSED
+  ✅ RestrictTopic — PASSED
+</code></pre></div>
+<p><strong>Example — PII Privacy Violation:</strong></p>
+<div class="highlight"><pre><span></span><code>**Privacy Protection Alert**
+
+Your request was blocked because it contains sensitive personal information:
+
+• EMAIL_ADDRESS detected (confidence: 0.99, position: 10-26)
+
+Entities configured to block: EMAIL_ADDRESS
+
+Please remove the identified information and try again.
+</code></pre></div>
+<p>The guardrail message is returned directly to the user — no further processing or tool calls are attempted once a violation is detected.</p>
+<hr />
+<h2 id="integration-with-agent-types">Integration with Agent Types</h2>
+<p>RAI Guardrails are integrated across <strong>all agent types</strong> in IAF. Once enabled, every agent automatically benefits from guardrail protection:</p>
+<table>
+<thead>
+<tr>
+<th>Agent Type</th>
+<th>Guardrail Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>React Agent</strong></td>
+<td>Catches violations during LLM call, skips tool execution, returns guardrail alert directly</td>
+</tr>
+<tr>
+<td><strong>React Critic Agent</strong></td>
+<td>Same as React — violation detected before critic evaluation</td>
+</tr>
+<tr>
+<td><strong>Planner Executor Agent</strong></td>
+<td>Scans planner output for violations; catches executor-level violations; early exit on detection</td>
+</tr>
+<tr>
+<td><strong>Meta Agent</strong></td>
+<td>Catches violations at sub-agent delegation; skips remaining sub-agents on block</td>
+</tr>
+<tr>
+<td><strong>Planner Meta Agent</strong></td>
+<td>Combines planner scanning with meta-agent delegation protection</td>
+</tr>
+<tr>
+<td><strong>Hybrid Agent</strong></td>
+<td>Detects violations in agent response and returns formatted alert to user</td>
+</tr>
+<tr>
+<td><strong>Workflows</strong></td>
+<td>Each sub-agent within the workflow enforces guardrails independently at its own step</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Tool Onboarding</strong></p>
+<p>Guardrails also protect the <strong>tool onboarding</strong> process. When new tools are registered, their code is sent through the LLM for validation and documentation generation. If the tool code contains content that violates policy (e.g., references to restricted topics), the onboarding process returns a clear policy-violation message rather than failing silently.</p>
+<hr />
+<h2 id="audit-logging">Audit Logging</h2>
+<p>Every guardrail check (both passes and failures) is logged to a PostgreSQL database for compliance and observability purposes. The audit log captures:</p>
+<ul>
+<li>Timestamp of the check</li>
+<li>Whether it was a pre-call (input) or post-call (output) check</li>
+<li>The content that was moderated</li>
+<li>Overall pass/fail status</li>
+<li>Individual check results and scores (jailbreak, toxicity, profanity, restricted topics)</li>
+<li>PII entities detected and actions taken</li>
+<li>Full API response for debugging</li>
+</ul>
+<p>This enables security teams to review moderation activity, identify patterns, and tune thresholds over time.</p>
+<hr />
+<h2 id="failure-handling-resilience">Failure Handling &amp; Resilience</h2>
+<p>The guardrails follow a <strong>fail-open</strong> strategy — if the RAI Toolkit APIs are unreachable, requests pass through to the LLM without guardrail protection rather than blocking all traffic. This ensures service availability is not impacted by guardrail infrastructure issues.</p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>RAI Moderation API unreachable</td>
+<td>Warning logged; request passes to LLM unmoderated</td>
+</tr>
+<tr>
+<td>PII Analyze API unreachable</td>
+<td>Warning logged after retry; request passes without PII protection</td>
+</tr>
+<tr>
+<td>RAI Moderation returns <code>PASSED</code></td>
+<td>Request passes unchanged</td>
+</tr>
+<tr>
+<td>No PII entities detected</td>
+<td>Request passes unchanged</td>
+</tr>
+<tr>
+<td>Guardrail APIs not configured</td>
+<td>Guardrails are skipped entirely</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="configuration">Configuration</h2>
+<p><strong>Enabling Guardrails in IAF</strong></p>
+<p>Set the following environment variables in the IAF <code>.env</code> file:</p>
+<div class="highlight"><pre><span></span><code># Route LLM traffic through the proxy (required for guardrails)
+USE_LITELLM_PROXY_FLAG=true
+LITELLM_ENDPOINT=http://&lt;proxy-host&gt;:&lt;proxy-port&gt;
+LITELLM_API_KEY=&lt;api-key&gt;
+LITELLM_API_VERSION=&lt;azure-api-version&gt;
+LITELLM_MODELS=&lt;comma-separated-model-names&gt;
+</code></pre></div>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p><code>USE_LITELLM_PROXY_FLAG=true</code> must be set for end-to-end guardrail protection. The guardrail type is configured per agent via the <strong>Guardrail Type</strong> dropdown during agent creation.</p>
+</div>
+<p><strong>Selecting Guardrail Type per Agent</strong></p>
+<p>When creating or onboarding an agent, use the <strong>Guardrail Type</strong> dropdown to select the guardrail checks to apply for that specific agent. The selected guardrail type is sent to the LiteLLM Proxy, which uses a guardrail router to apply the appropriate checks.</p>
+<div class="admonition info">
+<p class="admonition-title">Info</p>
+<p>To remove guardrails from an agent, update the agent and select <code>None</code> from the <code>Guardrail Type</code> dropdown.</p>
+</div>
+<p><strong>Guardrail Checks for Non-Inference LLM Calls</strong></p>
+<p>To enable guardrail checks for non-inference LLM calls within the framework, navigate to the <code>Admin Screen</code>, open the <code>Config</code> tab, and select the required guardrail from the <code>Guardrail</code> dropdown.</p>
+<p><strong>Configuring the LiteLLM Proxy</strong></p>
+<p>The proxy requires the following environment variables:</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>RAI_API_URL</code></td>
+<td>URL of the RAI Moderation API</td>
+</tr>
+<tr>
+<td><code>PII_ANALYZE_URL</code></td>
+<td>URL of the PII Privacy Analyze API</td>
+</tr>
+<tr>
+<td><code>PII_ENTITIES_TO_BLOCK</code></td>
+<td>Comma-separated PII entity types to hard-block (e.g., <code>EMAIL_ADDRESS</code>)</td>
+</tr>
+<tr>
+<td><code>PII_ENTITIES_TO_SKIP</code></td>
+<td>Comma-separated PII entity types to leave unchanged (e.g., <code>LOCATION,PERSON,DATE_TIME,NRP,ORGANIZATION,URL</code>)</td>
+</tr>
+<tr>
+<td><code>DATABASE_URL</code></td>
+<td>PostgreSQL connection string for audit logging</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Guardrail Router (LiteLLM Proxy — <code>server.py</code>)</strong></p>
+<p>The LiteLLM Proxy implements a <code>GuardrailRouter</code> in <code>server.py</code> that routes each incoming LLM request to the correct guardrail provider based on the <code>x-guardrail-provider</code> HTTP header sent by the IAF server. The header value corresponds to the guardrail type selected for the agent.</p>
+<ul>
+<li>If the header is absent or empty, the request passes through without moderation (equivalent to <code>guardrail_type = "none"</code>).</li>
+<li>Currently, the <strong>Infosys RAI</strong> provider is registered by default.</li>
+<li>To integrate a custom guardrail, implement the guardrail service and register it with the router using <code>guardrail_router.register(...)</code>.</li>
+</ul>
+<p><strong>Registering a Custom Guardrail</strong></p>
+<p>Call <code>guardrail_router.register()</code> with a unique key, the service instance, a display label, and an optional description. Once registered, the new provider appears automatically in the <strong>Guardrail Type</strong> dropdown in the IAF UI.</p>
+<p><strong>Guardrail Registry (IAF Server — <code>guardrail_helper.py</code>)</strong></p>
+<p>On startup, the IAF server calls <code>GuardrailRegistry.sync_from_proxy()</code> to fetch all registered guardrail providers from the LiteLLM Proxy (<code>GET /guardrail-providers</code>). This drives the <strong>Guardrail Type</strong> dropdown in the agent creation/update UI — no hardcoded guardrail types exist in IAF.</p>
+<ul>
+<li>If the proxy is unreachable at startup, the registry stays empty and only <code>"none"</code> is valid.</li>
+<li>Any new provider registered in <code>server.py</code> is automatically surfaced to the IAF dropdown after a restart.</li>
+</ul>
+<p><strong>Customising Thresholds</strong></p>
+<p>All moderation thresholds are configurable in the proxy's <code>constants.py</code> file:</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Default Threshold</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Jailbreak</td>
+<td>0.7</td>
+<td>Score at or above triggers block</td>
+</tr>
+<tr>
+<td>Prompt Injection</td>
+<td>0.7</td>
+<td>Score at or above triggers block</td>
+</tr>
+<tr>
+<td>Toxicity (all sub-checks)</td>
+<td>0.6</td>
+<td>Score at or above triggers block</td>
+</tr>
+<tr>
+<td>Profanity</td>
+<td>1 word</td>
+<td>Number of profane words to trigger</td>
+</tr>
+<tr>
+<td>Restricted Topics</td>
+<td>0.7</td>
+<td>Topic relevance score to trigger</td>
+</tr>
+<tr>
+<td>PII Detection Confidence</td>
+<td>0.7</td>
+<td>Minimum confidence to consider a PII entity valid</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Customising Restricted Topics</strong></p>
+<p>Add or remove topics in the <code>constants.py</code> configuration:</p>
+<div class="highlight"><pre><span></span><code><span class="s2">&quot;Restrictedtopics&quot;</span><span class="p">:</span> <span class="p">[</span>
+    <span class="s2">&quot;Terrorism&quot;</span><span class="p">,</span> <span class="s2">&quot;Explosives&quot;</span><span class="p">,</span> <span class="s2">&quot;Nudity&quot;</span><span class="p">,</span> <span class="s2">&quot;Cruelty&quot;</span><span class="p">,</span> <span class="s2">&quot;Cheating&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;Fraud&quot;</span><span class="p">,</span> <span class="s2">&quot;Crime&quot;</span><span class="p">,</span> <span class="s2">&quot;Hacking&quot;</span><span class="p">,</span> <span class="s2">&quot;Immoral&quot;</span><span class="p">,</span> <span class="s2">&quot;Unethical&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;Illegal&quot;</span><span class="p">,</span> <span class="s2">&quot;Robbery&quot;</span><span class="p">,</span> <span class="s2">&quot;Forgery&quot;</span><span class="p">,</span> <span class="s2">&quot;Misinformation&quot;</span><span class="p">,</span>
+    <span class="c1"># Add your custom topics here</span>
+<span class="p">]</span>
+</code></pre></div>
+<hr />
+<h2 id="prerequisites">Prerequisites</h2>
+<ol>
+<li><strong>Infosys RAI Toolkit</strong> — The Moderation and Privacy modules must be deployed on VMs and accessible via HTTP</li>
+<li><strong>LiteLLM Proxy</strong> — Must be set up and running with guardrails registered in <code>config.yaml</code></li>
+<li><strong>PostgreSQL</strong> — Required for audit logging (shared with IAF's existing database or separate)</li>
+<li><strong>Kafka Workers</strong> — Must be running if using guardrails with scheduled (cron) agent executions</li>
+</ol>
+<hr />
+<h2 id="hosting-rai-guardrails-on-a-vm">Hosting RAI Guardrails on a VM</h2>
+<p>The RAI Guardrails rely on two open-source modules from the <strong>Infosys Responsible AI Toolkit</strong> — the Moderation Layer and the Privacy module. Both must be deployed and running as HTTP services before IAF can use guardrail protection.</p>
+<p><strong>Modules to Deploy:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Purpose</th>
+<th>Repository</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Moderation Layer</strong></td>
+<td>Provides jailbreak detection, toxicity analysis, profanity filtering, and restricted topic checks</td>
+<td><a href="https://github.com/Infosys/Infosys-Responsible-AI-Toolkit/tree/master/responsible-ai-moderationlayer">responsible-ai-moderationlayer</a></td>
+</tr>
+<tr>
+<td><strong>Privacy Module</strong></td>
+<td>Provides PII detection, entity classification, anonymisation, and de-anonymisation</td>
+<td><a href="https://github.com/Infosys/Infosys-Responsible-AI-Toolkit/tree/master/responsible-ai-privacy">responsible-ai-privacy</a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Deployment Steps (Summary):</strong></p>
+<ol>
+<li>
+<p>Clone the Infosys Responsible AI Toolkit repository on your VM:
+    <div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/Infosys/Infosys-Responsible-AI-Toolkit.git
+</code></pre></div></p>
+</li>
+<li>
+<p>Follow the setup instructions in each module's README:</p>
+<ul>
+<li><strong>Moderation Layer:</strong> <code>responsible-ai-moderationlayer/</code> — install dependencies, configure models, and start the API server</li>
+<li><strong>Privacy Module:</strong> <code>responsible-ai-privacy/</code> — install dependencies, configure PII detection models, and start the API server</li>
+</ul>
+</li>
+<li>
+<p>Once both services are running, note their URLs (e.g., <code>http://&lt;vm-ip&gt;:8081</code> for moderation, <code>http://&lt;vm-ip&gt;:8082</code> for privacy)</p>
+</li>
+<li>
+<p>Configure the LiteLLM Proxy environment variables to point to these services:
+    <div class="highlight"><pre><span></span><code>RAI_API_URL=http://&lt;vm-ip&gt;:&lt;moderation-port&gt;
+PII_ANALYZE_URL=http://&lt;vm-ip&gt;:&lt;privacy-port&gt;/analyze
+</code></pre></div></p>
+</li>
+</ol>
+<div class="admonition tip">
+<p class="admonition-title">Deployment Recommendations</p>
+<ul>
+<li>Deploy both modules on the same VM or within the same network as the LiteLLM Proxy for low-latency checks</li>
+<li>Ensure the VM has a GPU if you need faster inference for the ML models used in moderation and PII detection</li>
+<li>Monitor service health and set up restart policies (e.g., via systemd or Docker) to ensure availability</li>
+</ul>
+</div>
+<hr />
+<h2 id="quick-start-checklist">Quick-Start Checklist</h2>
+<ol>
+<li>Deploy the Infosys RAI Toolkit APIs (Moderation + Privacy modules) on VMs</li>
+<li>Set up the LiteLLM proxy with <code>.env</code>, <code>config.yaml</code>, and <code>constants.py</code></li>
+<li>Install proxy dependencies and start the proxy server</li>
+<li>Configure IAF <code>.env</code> with <code>USE_LITELLM_PROXY_FLAG=true</code></li>
+<li>Restart IAF — all agents will automatically use guardrail protection</li>
+<li>Verify by sending a test message with known policy-violating content and confirming the guardrail alert is returned</li>
+</ol>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "navigation.path"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

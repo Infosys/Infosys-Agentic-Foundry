@@ -1,14 +1,25 @@
-# Kafka Message Queue Architecture
+# Message Queue Architecture
 
 ## Overview
 
-The IAF platform supports **asynchronous, queue-based inference** using Apache Kafka. This allows you to submit agent or workflow requests without waiting for a real-time response. Requests are placed into a Kafka queue and picked up by dedicated **worker processes** that run independently of the main application.
+The IAF platform supports **asynchronous, queue-based inference** using a configurable message queue backend. This allows you to submit agent or workflow requests without waiting for a real-time response. Requests are placed into the queue and picked up by dedicated **worker processes** that run independently of the main application.
 
-This is especially useful for:
+**Supported Message Queue Backends**
 
-- **Machine-to-Machine (M2M) integrations** where a calling system doesn't need to hold an open connection.
-- **Batch processing** of multiple queries against the same or different agents.
-- **Horizontal scaling** — you can spin up as many worker instances as needed to handle load in parallel.
+| Backend | Description |
+|---------|-------------|
+| **Apache Kafka** | Default message queue. Requires a running Kafka broker, Agent Worker, and Tool Worker. |
+| **Azure Service Bus** | Alternative cloud-native backend for Azure deployments. Uses Azure Service Bus queues instead of Kafka topics. |
+
+The backend is selected via environment variables. Both backends expose the same API endpoints and worker architecture — switching between them requires no application code changes.
+
+**Managed Identity Support**
+
+When running on Azure, the message queue supports **managed identity authentication**, eliminating the need for connection string credentials. This is configured via environment variables and is recommended for production Azure deployments.
+
+**Disabling the Message Queue**
+
+The message queue can be disabled entirely by setting `KAFKA_ENABLED=false`. When disabled, M2M and batch inference endpoints are unavailable, and the Scheduler page is hidden from the UI.
 
 ---
 

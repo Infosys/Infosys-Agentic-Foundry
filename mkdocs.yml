@@ -45,7 +45,10 @@ nav:
      - Autoscaling Deployment:
          - AKS Autoscaling: Installation/Autoscaling_Deployment/AKS_Autoscaling.md
          - VM Autoscaling using Docker: Installation/Autoscaling_Deployment/VM_Autoscaling.md
-     - Multi-Cloud CI/CD Pipeline: Installation/MultiCloud_deployment/multicloud.md
+     - Multi-Cloud CI/CD Pipeline: 
+         - MultiCloud Backend: Installation/Multicloud_CICD_deployment/MultiCloudBackend.md
+         - MultiCloud Frontend: Installation/Multicloud_CICD_deployment/MultiCloudFrontend.md
+     - Linux vm CI/CD Pipeline: Installation/linux_vm_CICD.md
   - Enabling Additional LLM Models: custom_llm_models.md
   - Load Balancing & Fallback Models: Load_Balancing_Fallback.md
   - Model Server Integration: Model_server.md
@@ -58,11 +61,14 @@ nav:
      - Orchestration Meta Agent Design: Agents_Design/Orchestration_Meta_Agent_Design.md
      - Planner Meta Agent Design: Agents_Design/Planner_meta_agent_design.md
      - Hybrid Agent Design: Agents_Design/Hybrid_Agent_Design.md
+  - Agent OS & Skill Agent Framework: Agent_OS_&_Skill_Agent.md
   - Admin Screen: Admin_Screen.md
   - Time-To-Live: Time-To-Live.md
   - Super Admin: SuperAdmin.md
   - Role Base Access Control: RBAC.md
   - API Authentication: JWT.md
+  - Keycloak SSO: Keycloak_SSO.md
+  - Microsoft Authentication (MSAL SSO): MSAL_SSO.md
   - Vault: Vault.md
   - Tools:
     - Tools Configuration : tools_config/tools.md
@@ -98,6 +104,7 @@ nav:
       - Canvas Screen: Inference/Canvas_Screen.md
   - Serever Sent Events: SSE.md
   - Kafka Message Queue: Kafka_Message_Queue.md
+  - Cron Scheduler: Cron_scheduler_functionality.md
   - Prompt Optimization: prompt_optimization.md
   - Evaluation: 
       - Evaluation Metrics: Evaluation/evaluation_metrics.md
@@ -107,8 +114,11 @@ nav:
       - Open Telemetry: Telemetry/telemetry.md
       - Connecting to Grafana: Telemetry/Connecting_to_Grafana.md
       - Arize Phoenix: Telemetry/Arize_Phoenix.md
-  - Cost and Token Tracking: Cost_Token_Tracking.md
+      - Azure Monitoring: Telemetry/Azure_Monitoring.md
+  - Model Cost and Token Tracking: Cost_Token_Tracking.md
+  - LLM Call Tracing: LLM_Call_Tracing.md
   - Tool and MCP Export Import: Tool_and_MCP_Export_Import.md
   - Export Agent: ExportAgent.md
   - GZIP Compression: GZIP_Compression.md
+  - RAI Guardrails: RAI_Guardrails.md
   - Prebuilt Components Auto-Onboarding: onboarding.md

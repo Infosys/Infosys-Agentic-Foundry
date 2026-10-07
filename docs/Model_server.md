@@ -18,6 +18,9 @@ To resolve these challenges, we introduced a model server based on FastAPI. With
 3. **Centralized Model Management**:  
     All model-related operations (such as generating embeddings or reranking candidates) are handled by the server, ensuring consistency and efficiency across all environments.
 
+!!! note "Internal CA Bundle for the Model Server"
+    When the model server is reached over HTTPS with a private or self-signed certificate, the platform's **internal CA bundle** is applied to the connection. This internal CA bundle is scoped to internal services (model server and knowledge base) — calls to public LLM providers (for example, GPT / Azure OpenAI) continue to use the **default system trust store**.
+
 The model server hosts both bi-encoder and cross-encoder models, allowing clients to request embeddings and reranking results through simple API calls. The client connects to the server, requests embeddings from the bi-encoder, and performs reranking with the cross-encoder, all via HTTP endpoints.
 
 ### Example Model Server Script

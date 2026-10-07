@@ -372,3 +372,35 @@ Before using any tool, check the documentation for required vault keys and ensur
 
 ---
 
+## Azure Key Vault Integration
+
+In addition to the platform's built-in Vault, IAF supports **Azure Key Vault** as an external secrets backend. When enabled, secrets stored in Azure Key Vault are automatically loaded into the platform environment at startup, making them available to all services without manual configuration.
+
+**How It Works**
+
+1. At server startup, the Azure Key Vault loader reads all secrets from the configured vault.
+2. Each secret is injected into the platform environment as an environment variable.
+3. Services (e.g., the knowledge-base server) can retrieve database passwords and other credentials directly from Key Vault instead of relying on local `.env` files.
+
+**Configuration**
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `AZURE_KEY_VAULT_ENABLED` | Set to `true` to enable the Key Vault loader | Yes |
+| `AZURE_KEY_VAULT_URL` | The vault URL (e.g., `https://my-vault.vault.azure.net/`) | Yes |
+
+**Authentication**
+
+The Key Vault loader supports two authentication methods:
+
+| Method | When to Use |
+|--------|-------------|
+| **Managed Identity** | Recommended for production Azure deployments. No credentials required — the Azure runtime identity is used automatically. |
+| **Service Principal** | For development or non-Azure environments. Requires `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_CLIENT_SECRET`. |
+
+!!! tip "Minimal Footprint"
+    The Azure SDK is loaded only when `AZURE_KEY_VAULT_ENABLED=true`. When disabled, no Azure dependencies are imported, keeping the startup footprint minimal.
+
+**Use Case: Knowledge-Base Server Database Password**
+
+The knowledge-base server can retrieve its database password from Azure Key Vault instead of reading it from the `.env` file. This is configured by storing the database password as a secret in Key Vault and enabling the vault loader — the password is automatically available as an environment variable at startup.

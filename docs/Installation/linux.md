@@ -397,7 +397,7 @@ After=network.target
 
 [Service]
 WorkingDirectory=/home/your-username/llmproxy
-ExecStart=/home/your-username/llmproxy/venv/bin/litellm --config config.yaml --host 0.0.0.0 --port 8080 --debug
+ExecStart=/home/your-username/llmproxy/venv/bin/python server.py --host 0.0.0.0 --port 8080 --debug
 Environment=VIRTUAL_ENV=/home/your-username/llmproxy/venv
 Environment=PATH=/home/your-username/llmproxy/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Restart=always

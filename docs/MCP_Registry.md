@@ -55,6 +55,7 @@ The system exposes RESTful API endpoints for managing MCP tools and servers:
 - **Default Values:** Used if no overrides are provided.
 - **Database Settings:** PostgreSQL connection, pool size, retry logic.
 - **Application Settings:** App name, version, debug mode, host, and port.
+- **SSL / Certificates:** Internal MCP servers that use HTTPS with a private or self-signed certificate are supported. A dedicated CA bundle can be configured and is **scoped to MCP connections only** — it does not change the trust store used for other outbound calls (such as public LLM providers).
 
 ---
 
