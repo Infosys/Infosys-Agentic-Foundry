@@ -1,0 +1,4514 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../Multicloud_CICD_deployment/MultiCloudFrontend/">
+      
+      
+        <link rel="next" href="../../custom_llm_models/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Linux vm CI/CD Pipeline - Agentic Foundry</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../css/hide-footer.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#linux-server-deploy-cicd-pipeline-setup-usage-guide" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Agentic Foundry" class="md-header__button md-logo" aria-label="Agentic Foundry" data-md-component="logo">
+      
+  <img src="../../images/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Agentic Foundry
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Linux vm CI/CD Pipeline
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Agentic Foundry" class="md-nav__button md-logo" aria-label="Agentic Foundry" data-md-component="logo">
+      
+  <img src="../../images/logo.png" alt="logo">
+
+    </a>
+    Agentic Foundry
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Introduction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Definitions
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Definitions
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Definitions/Vocabulary_Definitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vocabulary - Definitions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Definitions/hitl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Human in the loop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../core_building_blocks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Building Blocks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Installation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../windows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../linux/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Azure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Azure Kubernetes Service
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../GCP/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Google Kubernetes Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../AWS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AWS Kubernetes Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Database_Setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../VM_Docker-Compose/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VM installation using docker-compose
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_8" id="__nav_6_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Autoscaling Deployment
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Autoscaling Deployment
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Autoscaling_Deployment/AKS_Autoscaling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AKS Autoscaling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Autoscaling_Deployment/VM_Autoscaling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VM Autoscaling using Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_9" id="__nav_6_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi-Cloud CI/CD Pipeline
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Multi-Cloud CI/CD Pipeline
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Multicloud_CICD_deployment/MultiCloudBackend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MultiCloud Backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Multicloud_CICD_deployment/MultiCloudFrontend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MultiCloud Frontend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux vm CI/CD Pipeline
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux vm CI/CD Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-what-this-pipeline-does" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. What This Pipeline Does
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-how-it-triggers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. How It Triggers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-configure-self-hosted-runner-on-a-vm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Configure Self-Hosted Runner on a VM
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-customize-branch-name-and-runner-labels-in-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Customize Branch Name and Runner Labels in Pipeline
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-github-secrets-variables-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. GitHub Secrets &amp; Variables Setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-pipeline-env-block-how-variables-are-mapped" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Pipeline env: Block — How Variables Are Mapped
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-workflow-file-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Workflow File Setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-full-pipeline-yaml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Full Pipeline YAML
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-how-each-step-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. How Each Step Works
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#15-troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15. Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#16-quick-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        16. Quick Checklist
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../custom_llm_models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enabling Additional LLM Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Load_Balancing_Fallback/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Load Balancing & Fallback Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Model_server/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Server Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agents Design
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Agents Design
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agents_Design/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agents_Design/React%20Agent%20Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    React Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agents_Design/ReactCriticAgent_Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    React Critic Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agents_Design/Multi%20Agent%20Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agents_Design/Planner_executor_agent_design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planner Executor Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agents_Design/Orchestration_Meta_Agent_Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Orchestration Meta Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agents_Design/Planner_meta_agent_design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planner Meta Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agents_Design/Hybrid_Agent_Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hybrid Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agent_OS_%26_Skill_Agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent OS & Skill Agent Framework
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Admin_Screen/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Admin Screen
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Time-To-Live/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Time-To-Live
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../SuperAdmin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Super Admin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../RBAC/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Role Base Access Control
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../JWT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Authentication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Keycloak_SSO/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keycloak SSO
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../MSAL_SSO/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Microsoft Authentication (MSAL SSO)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Vault/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vault
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_20" >
+        
+          
+          <label class="md-nav__link" for="__nav_20" id="__nav_20_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_20">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tools
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tools_config/tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tools_config/tool_creation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool Creation via Chat Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Tool_Validation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool Validation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Tool_Interrupt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool Interrupt
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tools_config/tool_versioning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool Versioning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../files_upload/files/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../DataConnectors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DataConnectors
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Knowledge_Base/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Knowledge Base
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../MCP_Registry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Registry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agent_Workflows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent Workflows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_26" >
+        
+          
+          <label class="md-nav__link" for="__nav_26" id="__nav_26_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_26_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_26">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Agent Configuration
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agent_config/Overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agent_config/reactAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    React Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agent_config/reactCritic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    React Critic Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agent_config/multiAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agent_config/PlannerExecutor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planner Executor Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agent_config/metaAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Meta Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agent_config/PlannerMeta/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planner Meta Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agent_config/HybridAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hybrid Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../memory_management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Google_ADK_Framework_Support/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Google ADK Framework Support
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_29" >
+        
+          
+          <label class="md-nav__link" for="__nav_29" id="__nav_29_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Inference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_29_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_29">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Inference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/reactAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    React Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/ReactCriticAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    React Critic Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/multiAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/PlannerExecutorAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planner Executor Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/metaAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Meta Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/MetaPlanner_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planner Meta Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/HybridAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hybrid Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/Canvas_Screen/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Canvas Screen
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../SSE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Serever Sent Events
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Kafka_Message_Queue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kafka Message Queue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Cron_scheduler_functionality/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cron Scheduler
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../prompt_optimization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prompt Optimization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_34" >
+        
+          
+          <label class="md-nav__link" for="__nav_34" id="__nav_34_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Evaluation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_34_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_34">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Evaluation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Evaluation/evaluation_metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Evaluation Metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Evaluation/Groundtruth_Evaluation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Groundtruth Evaluation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Evaluation/Consistency/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Consistency Evaluation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_35" >
+        
+          
+          <label class="md-nav__link" for="__nav_35" id="__nav_35_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Telemetry
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_35_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_35">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Telemetry
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Telemetry/telemetry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Telemetry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Telemetry/Connecting_to_Grafana/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Connecting to Grafana
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Telemetry/Arize_Phoenix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arize Phoenix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Telemetry/Azure_Monitoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Azure Monitoring
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Cost_Token_Tracking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Cost and Token Tracking
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../LLM_Call_Tracing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Call Tracing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Tool_and_MCP_Export_Import/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool and MCP Export Import
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../ExportAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Export Agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../GZIP_Compression/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GZIP Compression
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../RAI_Guardrails/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RAI Guardrails
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../onboarding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prebuilt Components Auto-Onboarding
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-what-this-pipeline-does" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. What This Pipeline Does
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-how-it-triggers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. How It Triggers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-configure-self-hosted-runner-on-a-vm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Configure Self-Hosted Runner on a VM
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-customize-branch-name-and-runner-labels-in-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Customize Branch Name and Runner Labels in Pipeline
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-github-secrets-variables-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. GitHub Secrets &amp; Variables Setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-pipeline-env-block-how-variables-are-mapped" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Pipeline env: Block — How Variables Are Mapped
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-workflow-file-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Workflow File Setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-full-pipeline-yaml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Full Pipeline YAML
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-how-each-step-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. How Each Step Works
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#15-troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15. Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#16-quick-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        16. Quick Checklist
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+                
+
+
+
+  
+
+
+  <nav class="md-path" aria-label="Navigation" >
+    <ol class="md-path__list">
+      
+        
+  
+  
+    <li class="md-path__item">
+      <a href="../.." class="md-path__link">
+        
+  <span class="md-ellipsis">
+    Introduction
+  </span>
+
+      </a>
+    </li>
+  
+
+      
+      
+        
+  
+  
+    
+    
+      <li class="md-path__item">
+        <a href="../windows/" class="md-path__link">
+          
+  <span class="md-ellipsis">
+    Installation
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ol>
+  </nav>
+
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="linux-server-deploy-cicd-pipeline-setup-usage-guide">Linux Server Deploy CI/CD Pipeline — Setup &amp; Usage Guide</h1>
+<blockquote>
+<p><strong>Purpose:</strong> This guide helps any team set up and use the GitHub Actions CI/CD pipeline to automatically deploy a backend or frontend Python application to a <strong>self-hosted Linux server</strong> on every push. The pipeline handles proxy and SSL configuration for corporate networks (e.g., Infosys), copies code to the server, installs Python dependencies inside a virtual environment, and restarts the application service.</p>
+</blockquote>
+<hr />
+<h2 id="1-what-this-pipeline-does">1. What This Pipeline Does</h2>
+<div class="highlight"><pre><span></span><code>Commit to GitHub  ─────────────────────────────────────────────────────────┐
+    ↓                                                                       │
+[GitHub Actions Triggered by push / workflow_dispatch]                      │
+    ↓                                                                       │
+Checkout Code from GitHub                                                   │
+    ↓                                                                       │
+Setup Proxy &amp; SSL                                                           │
+   (For corporate networks — e.g., Infosys)                                 │
+    ↓                                                                       │
+Copy Code to Deployment Folder on Server                                    │
+   + Write .env file from GitHub Secret                                     │
+    ↓                                                                       │
+Install Python Requirements                                                 │
+   (Inside a virtual environment using uv)                                  │
+    ↓                                                                       │
+Restart Application Service via systemctl                                   │
+    ↓                                                                       │
+App is Live with New Code ──────────────────────────────────────────────────┘
+</code></pre></div>
+<blockquote>
+<p>If any step fails, the pipeline automatically prints the last 50 lines of your service logs so you can diagnose the issue without manually SSH-ing into the server.</p>
+</blockquote>
+<p><strong>The Core Concept: Runner = Server</strong></p>
+<p>This is <strong>not</strong> a traditional remote deployment (no SSH, no SCP, no Docker push). The GitHub Actions <strong>self-hosted runner is installed directly on the Linux server</strong> where your app runs. So when the pipeline executes shell commands, they run <strong>locally on that server</strong> — the runner's workspace folder and your app's deployment folder are on the <strong>same machine</strong>.</p>
+<div class="highlight"><pre><span></span><code>┌─────────────────────────────────────────────────────────┐
+│                  Your Linux Server (VM)                 │
+│                                                         │
+│  ┌──────────────────────┐   ┌────────────────────────┐  │
+│  │  GitHub Actions      │   │  Your App              │  │
+│  │  Runner Process      │   │  (systemd service)     │  │
+│  │                      │   │                        │  │
+│  │  /home/runner/work/  │──►│  /home/projadmin/      │  │
+│  │  repo/  (workspace)  │cp │  CICD/MyApp/  (deploy) │  │
+│  └──────────────────────┘   └────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+</code></pre></div>
+<blockquote>
+<p>Because the runner <strong>is</strong> the server, <code>cp</code> copies files locally and <code>sudo systemctl restart</code> picks them up immediately — no network transfer, no container registry, no Kubernetes involved.</p>
+</blockquote>
+<hr />
+<h2 id="2-how-it-triggers">2. How It Triggers</h2>
+<table>
+<thead>
+<tr>
+<th>Trigger</th>
+<th>When</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Auto</strong></td>
+<td>Push to your configured branch (e.g., <code>dev</code>, <code>test-env</code>)</td>
+</tr>
+<tr>
+<td><strong>Manual</strong></td>
+<td>GitHub → Actions → Select workflow → Run workflow</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>Update the branch name in the workflow YAML to match your deployment branch before using.</p>
+</blockquote>
+<hr />
+<h2 id="3-prerequisites">3. Prerequisites</h2>
+<p>Make sure all of the following exist before setting up:</p>
+<table>
+<thead>
+<tr>
+<th>Requirement</th>
+<th>Details</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GitHub Repository</td>
+<td>With Actions enabled</td>
+</tr>
+<tr>
+<td>Self-hosted Runner</td>
+<td>Linux/X64 machine registered in GitHub</td>
+</tr>
+<tr>
+<td>Python</td>
+<td>Installed on the server (Python 3.8+)</td>
+</tr>
+<tr>
+<td>systemctl service</td>
+<td>A <code>systemd</code> service file configured to run your app</td>
+</tr>
+<tr>
+<td>SSL Certificate</td>
+<td>Required if behind a corporate proxy with SSL inspection</td>
+</tr>
+<tr>
+<td>Deployment Folder</td>
+<td>Target directory on the server (created automatically by the pipeline)</td>
+</tr>
+<tr>
+<td><code>requirements.txt</code></td>
+<td>Present at the root of your repository</td>
+</tr>
+<tr>
+<td><code>sudo</code> access</td>
+<td>Runner user must be able to run <code>systemctl restart</code> and <code>status</code> via <code>sudo</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Install Python on the Runner (Ubuntu/Debian)</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Update package list</span>
+sudo<span class="w"> </span>apt-get<span class="w"> </span>update
+
+<span class="c1"># Install Python 3 and pip</span>
+sudo<span class="w"> </span>apt-get<span class="w"> </span>install<span class="w"> </span>-y<span class="w"> </span>python3<span class="w"> </span>python3-pip<span class="w"> </span>python3-venv
+
+<span class="c1"># Verify installation</span>
+python3<span class="w"> </span>--version
+</code></pre></div>
+<p><strong>Grant sudo access for systemctl (without password prompt)</strong></p>
+<p>Add the following line to <code>/etc/sudoers</code> using <code>visudo</code> — replace <code>your-runner-user</code> with the actual user running the GitHub Actions runner:</p>
+<div class="highlight"><pre><span></span><code>your-runner-user ALL=(ALL) NOPASSWD: /bin/systemctl restart your-service.service, /bin/systemctl status your-service.service
+</code></pre></div>
+<blockquote>
+<p>This ensures the pipeline can restart and check the service without requiring a password.</p>
+</blockquote>
+<hr />
+<h2 id="4-configure-self-hosted-runner-on-a-vm">4. Configure Self-Hosted Runner on a VM</h2>
+<p>A self-hosted runner is a machine (VM or physical server) that runs your GitHub Actions jobs. This pipeline requires a runner with the labels <code>self-hosted</code>, <code>linux</code>, <code>x64</code>, and a custom label of your choice (e.g., <code>my-linux-runner</code>).</p>
+<p><strong>Step 1 — Prepare Your VM</strong></p>
+<p>Use any Linux VM (on-prem, AWS EC2, Azure VM, GCP Compute Engine, etc.). Recommended specs:</p>
+<table>
+<thead>
+<tr>
+<th>Resource</th>
+<th>Minimum</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>OS</td>
+<td>Ubuntu 20.04 / 22.04 (64-bit)</td>
+</tr>
+<tr>
+<td>CPU</td>
+<td>2 vCPUs</td>
+</tr>
+<tr>
+<td>RAM</td>
+<td>4 GB</td>
+</tr>
+<tr>
+<td>Disk</td>
+<td>20 GB</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Step 2 — Register the Runner in GitHub</strong></p>
+<ol>
+<li>Go to your <strong>GitHub Repository</strong>.</li>
+<li>Click <strong>Settings</strong> → <strong>Actions</strong> → <strong>Runners</strong>.</li>
+<li>Click <strong>New self-hosted runner</strong>.</li>
+<li>Select <strong>Linux</strong> as the operating system and <strong>X64</strong> as the architecture.</li>
+<li>Run the commands shown by GitHub on your VM:</li>
+</ol>
+<div class="highlight"><pre><span></span><code><span class="c1"># Create a folder for the runner</span>
+mkdir<span class="w"> </span>actions-runner<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>actions-runner
+
+<span class="c1"># Download the latest runner package (use the exact URL GitHub shows you)</span>
+curl<span class="w"> </span>-o<span class="w"> </span>actions-runner-linux-x64.tar.gz<span class="w"> </span>-L<span class="w"> </span>https://github.com/actions/runner/releases/download/v&lt;version&gt;/actions-runner-linux-x64-&lt;version&gt;.tar.gz
+
+<span class="c1"># Extract the package</span>
+tar<span class="w"> </span>xzf<span class="w"> </span>./actions-runner-linux-x64.tar.gz
+
+<span class="c1"># Configure the runner (use the exact token GitHub shows you)</span>
+./config.sh<span class="w"> </span>--url<span class="w"> </span>https://github.com/&lt;your-org&gt;/&lt;your-repo&gt;<span class="w"> </span>--token<span class="w"> </span>&lt;YOUR_TOKEN&gt;
+</code></pre></div>
+<p><strong>Step 3 — Set Runner Labels</strong></p>
+<p>During the <code>./config.sh</code> configuration step, GitHub will ask:</p>
+<div class="highlight"><pre><span></span><code>Enter the name of the runner group to add this runner to: [press Enter for Default]
+Enter the name of runner: [your-runner-name]
+This runner will have the following labels: &#39;self-hosted&#39;, &#39;Linux&#39;, &#39;X64&#39;
+Enter any additional labels (ex. label-1,label-2): [press Enter to skip]
+</code></pre></div>
+<p>When it asks for <strong>additional labels</strong>, enter a custom label that matches your workflow (e.g., <code>my-linux-runner</code>):</p>
+<div class="highlight"><pre><span></span><code>my-linux-runner
+</code></pre></div>
+<p>This allows the pipeline to target this runner with:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">self-hosted</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">linux</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">x64</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">my-linux-runner</span><span class="p p-Indicator">]</span>
+</code></pre></div>
+<blockquote>
+<p>If you already registered the runner without the custom label, add it from:
+<strong>GitHub → Settings → Actions → Runners → Click your runner → Edit labels</strong></p>
+</blockquote>
+<p><strong>Step 4 — Start the Runner</strong></p>
+<p><strong>Option A: Run manually (for testing)</strong></p>
+<div class="highlight"><pre><span></span><code>./run.sh
+</code></pre></div>
+<p>You will see:
+<div class="highlight"><pre><span></span><code>√ Connected to GitHub
+Listening for Jobs
+</code></pre></div></p>
+<p><strong>Option B: Run as a system service (recommended for production)</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Install as a service</span>
+sudo<span class="w"> </span>./svc.sh<span class="w"> </span>install
+
+<span class="c1"># Start the service</span>
+sudo<span class="w"> </span>./svc.sh<span class="w"> </span>start
+
+<span class="c1"># Check service status</span>
+sudo<span class="w"> </span>./svc.sh<span class="w"> </span>status
+</code></pre></div>
+<blockquote>
+<p>Running as a service ensures the runner starts automatically after a VM reboot.</p>
+</blockquote>
+<p><strong>Step 5 — Verify Runner is Online
+**
+Go to </strong>GitHub → Settings → Actions → Runners**.</p>
+<p>You should see your runner listed with status <strong>Idle</strong> (green dot):</p>
+<div class="highlight"><pre><span></span><code>✔ my-runner    Idle    self-hosted, Linux, X64, &lt;your-label&gt;
+</code></pre></div>
+<hr />
+<h2 id="5-customize-branch-name-and-runner-labels-in-pipeline">5. Customize Branch Name and Runner Labels in Pipeline</h2>
+<p><strong>How to Change the Branch Name</strong></p>
+<p>Open your workflow YAML file and find this section at the top:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">on</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">push</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">branches</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;your-branch&quot;</span><span class="w">   </span><span class="c1"># ← CHANGE THIS to your branch name e.g. dev, test-env</span>
+</code></pre></div>
+<p><strong>Example — Multiple branches:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="nt">on</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">push</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">branches</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dev</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test-env</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">staging</span>
+</code></pre></div>
+<hr />
+<p><strong>How to Change the Self-Hosted Runner Labels</strong></p>
+<p>The runner labels are defined in the <code>runs-on:</code> field of the deploy job:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">jobs</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">deploy</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">self-hosted</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">linux</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">x64</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">your-label-name</span><span class="p p-Indicator">]</span><span class="w">   </span><span class="c1"># ← CHANGE to your runner label</span>
+</code></pre></div>
+<p><strong>The labels must exactly match</strong> what is registered on your self-hosted runner.</p>
+<table>
+<thead>
+<tr>
+<th>Label</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>self-hosted</code></td>
+<td>Use a self-hosted runner (not GitHub-hosted)</td>
+</tr>
+<tr>
+<td><code>linux</code></td>
+<td>Runner OS is Linux</td>
+</tr>
+<tr>
+<td><code>x64</code></td>
+<td>Runner architecture is 64-bit</td>
+</tr>
+<tr>
+<td><code>your-label-name</code></td>
+<td>Custom label to target your specific runner</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="6-github-secrets-variables-setup">6. GitHub Secrets &amp; Variables Setup</h2>
+<p><strong>What are GitHub Secrets and GitHub Variables?</strong></p>
+<p>GitHub provides two built-in mechanisms to pass configuration and credentials into your pipeline without hardcoding them in YAML files.</p>
+<hr />
+<p><strong>GitHub Secrets</strong></p>
+<p>A <strong>GitHub Secret</strong> is an <strong>encrypted, sensitive value</strong> stored securely at the repository level. It is designed for credentials, tokens, keys, and any information that must never be exposed publicly.</p>
+<p><strong>How it works:</strong></p>
+<ul>
+<li>You create a secret once in the GitHub UI.</li>
+<li>GitHub encrypts it immediately — even repository admins cannot read it back after saving.</li>
+<li>The pipeline reads it at runtime using <code>${{ secrets.SECRET_NAME }}</code>.</li>
+<li>In logs, GitHub automatically <strong>masks</strong> the value and replaces it with <code>***</code>.</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="c1"># Example: writing the .env secret to a file</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Copy files to server</span>
+<span class="w">  </span><span class="nt">env</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">ENV_FILE_CONTENT</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ secrets.APP_ENV_FILE_TEST_VM }}</span>
+<span class="w">  </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">    </span><span class="no">printf &quot;%s&quot; &quot;$ENV_FILE_CONTENT&quot; &gt; ${{ env.DEPLOY_PATH }}/.env</span>
+</code></pre></div>
+<hr />
+<p><strong>GitHub Variables</strong></p>
+<p>A <strong>GitHub Variable</strong> is a <strong>plain-text, non-sensitive configuration value</strong> stored at the repository level. It is designed for values that are safe to see in logs but you still don't want to hardcode in YAML files.</p>
+<p><strong>How it works:</strong>
+- You create a variable once in the GitHub UI.
+- The value is stored as plain text — it is <strong>not</strong> encrypted and <strong>not</strong> masked in logs.
+- The pipeline reads it at runtime using <code>${{ vars.VARIABLE_NAME }}</code>.</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Example: using a variable in env: block</span>
+<span class="nt">env</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">DEPLOY_PATH</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ vars.DEPLOY_PATH || &#39;/home/projadmin/CICD/ABC&#39; }}</span>
+</code></pre></div>
+<hr />
+<p><strong>Key Differences at a Glance</strong></p>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>GitHub Secrets</th>
+<th>GitHub Variables</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Purpose</strong></td>
+<td>Sensitive credentials &amp; keys</td>
+<td>Non-sensitive configuration values</td>
+</tr>
+<tr>
+<td><strong>Encryption</strong></td>
+<td>Yes — encrypted at rest</td>
+<td>No — stored as plain text</td>
+</tr>
+<tr>
+<td><strong>Visible in logs</strong></td>
+<td>No — masked as <code>***</code></td>
+<td>Yes — appears in plain text</td>
+</tr>
+<tr>
+<td><strong>Readable by admins</strong></td>
+<td>No — cannot be read back after saving</td>
+<td>Yes — visible in GitHub UI</td>
+</tr>
+<tr>
+<td><strong>YAML syntax</strong></td>
+<td><code>${{ secrets.NAME }}</code></td>
+<td><code>${{ vars.NAME }}</code></td>
+</tr>
+<tr>
+<td><strong>GitHub UI location</strong></td>
+<td>Settings → Secrets and variables → <strong>Actions</strong></td>
+<td>Settings → Secrets and variables → <strong>Variables</strong></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<p><strong>How this pipeline uses both</strong></p>
+<div class="highlight"><pre><span></span><code>┌─────────────────────────────────────────────────────────────────┐
+│                      GitHub Repository                          │
+│                                                                 │
+│  ┌───────────────────────┐   ┌──────────────────────────────┐  │
+│  │   GitHub Variables    │   │    GitHub Secrets            │  │
+│  │   (non-sensitive)     │   │    (sensitive)               │  │
+│  │                       │   │                              │  │
+│  │  DEPLOY_PATH          │   │  APP_ENV_FILE_TEST_VM        │  │
+│  │  SERVICE_NAME         │   │  (full .env file content)    │  │
+│  │  SSL_CERT_PATH        │   │                              │  │
+│  │  HTTP_PROXY  ...      │   │                              │  │
+│  └──────────┬────────────┘   └─────────────┬────────────────┘  │
+│             │                              │                    │
+│             └──────────────┬───────────────┘                    │
+│                            ▼                                   │
+│                  ┌──────────────────────┐                      │
+│                  │  env: block in       │                      │
+│                  │  workflow YAML       │                      │
+│                  │  (central mapper)    │                      │
+│                  └────────┬─────────────┘                      │
+│                           ▼                                    │
+│              ${{ env.* }} used throughout pipeline             │
+└─────────────────────────────────────────────────────────────────┘
+</code></pre></div>
+<blockquote>
+<p><strong>Rule of thumb:</strong> If you would be uncomfortable posting the value in a public chat message — use a <strong>Secret</strong>. If it's just a path or a name — use a <strong>Variable</strong>.</p>
+</blockquote>
+<hr />
+<p><strong>Required GitHub Secrets</strong></p>
+<p>Go to: <strong>Repo → Settings → Secrets and variables → Actions → New repository secret</strong></p>
+<table>
+<thead>
+<tr>
+<th>Secret Name</th>
+<th>What to Put</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>APP_ENV_FILE_TEST_VM</code></td>
+<td>Full content of your application <code>.env</code> file</td>
+<td><em>(see below)</em></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>You can rename this secret to match your project (e.g., <code>APP_ENV_FILE_PROD</code>, <code>MY_APP_ENV</code>). If you rename it, update the reference in the YAML <code>Copy files to server</code> step accordingly.</p>
+</blockquote>
+<p><strong>How to set the environment file secret</strong></p>
+<p>Copy the <strong>entire content</strong> of your application <code>.env</code> file and paste it as the secret value:</p>
+<div class="highlight"><pre><span></span><code>DATABASE_URL=postgres://user:password@host:5432/dbname
+SECRET_KEY=your-secret-key
+DEBUG=False
+APP_PORT=8000
+REDIS_URL=redis://localhost:6379
+</code></pre></div>
+<blockquote>
+<p>The pipeline reads this secret and writes it directly to <code>&lt;DEPLOY_PATH&gt;/.env</code> on the server before restarting the service.</p>
+</blockquote>
+<hr />
+<p><strong>Required GitHub Variables</strong></p>
+<p>Go to: <strong>Repo → Settings → Secrets and variables → Variables → New repository variable</strong></p>
+<table>
+<thead>
+<tr>
+<th>Variable Name</th>
+<th>Description</th>
+<th>Example Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DEPLOY_PATH</code></td>
+<td>Folder on server where app will be deployed</td>
+<td><code>/home/projadmin/CICD/MyApp</code></td>
+</tr>
+<tr>
+<td><code>SERVICE_NAME</code></td>
+<td>The <code>systemctl</code> service that runs your app</td>
+<td><code>my-fastapi.service</code></td>
+</tr>
+<tr>
+<td><code>SSL_CERT_PATH</code></td>
+<td>Path to the SSL certificate file on the server</td>
+<td><code>/home/projadmin/cerifi.crt</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Optional GitHub Variables (corporate/proxy networks only)</strong></p>
+<table>
+<thead>
+<tr>
+<th>Variable Name</th>
+<th>Description</th>
+<th>Example Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>HTTP_PROXY</code></td>
+<td>Corporate proxy URL</td>
+<td><code>http://proxy.ad.corporate.com:123</code></td>
+</tr>
+<tr>
+<td><code>NO_PROXY</code></td>
+<td>Hosts that should bypass the proxy</td>
+<td><code>.corporate.com,localhost,123.0.0.1</code></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>If you are <strong>not</strong> behind a corporate proxy, you can leave <code>HTTP_PROXY</code> and <code>NO_PROXY</code> unset. The pipeline's proxy setup step will do nothing when these variables are empty.</p>
+</blockquote>
+<hr />
+<h2 id="7-pipeline-env-block-how-variables-are-mapped">7. Pipeline env: Block — How Variables Are Mapped</h2>
+<p>The <code>env:</code> block at the top of the workflow YAML is a <strong>central mapper</strong> — it reads values from GitHub Variables (<code>vars.*</code>) and exposes them as environment variables used throughout the pipeline. Default fallback values are provided in case the variables are not set.</p>
+<blockquote>
+<p><strong>You do not hardcode any values in the YAML file.</strong> Set them once in GitHub UI (Section 6 above) and the pipeline picks them up automatically.</p>
+</blockquote>
+<p><strong>How the env: block works</strong></p>
+<div class="highlight"><pre><span></span><code>GitHub Variables (vars.*)  ──►  env: block (mapper)  ──►  ${{ env.* }} used everywhere
+</code></pre></div>
+<p><strong>This pipeline's env: block</strong></p>
+<div class="highlight"><pre><span></span><code><span class="nt">env</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">DEPLOY_PATH</span><span class="p">:</span><span class="w">         </span><span class="l l-Scalar l-Scalar-Plain">${{ vars.DEPLOY_PATH      || &#39;/home/projadmin/CICD/ABC&#39; }}</span>
+<span class="w">  </span><span class="nt">SERVICE_NAME</span><span class="p">:</span><span class="w">        </span><span class="l l-Scalar l-Scalar-Plain">${{ vars.SERVICE_NAME      || &#39;CICD-fastapi.service&#39; }}</span>
+<span class="w">  </span><span class="nt">SSL_CERT</span><span class="p">:</span><span class="w">            </span><span class="l l-Scalar l-Scalar-Plain">${{ vars.SSL_CERT_PATH     || &#39;/home/projadmin/cerifi.crt&#39; }}</span>
+<span class="w">  </span><span class="nt">NODE_EXTRA_CA_CERTS</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ vars.SSL_CERT_PATH     || &#39;/home/projadmin/cerifi.crt&#39; }}</span>
+</code></pre></div>
+<p><strong>What each variable does</strong></p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Used In Step</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DEPLOY_PATH</code></td>
+<td>Copy files, Install requirements, Restart service</td>
+<td>Root folder where your app code is deployed on the server</td>
+</tr>
+<tr>
+<td><code>SERVICE_NAME</code></td>
+<td>Restart service, Debug on Failure</td>
+<td>Name of the <code>systemd</code> service that runs your app</td>
+</tr>
+<tr>
+<td><code>SSL_CERT</code></td>
+<td>Setup Proxy and SSL, Install requirements</td>
+<td>Path to the SSL certificate for HTTPS calls through corporate proxy</td>
+</tr>
+<tr>
+<td><code>NODE_EXTRA_CA_CERTS</code></td>
+<td>Node.js steps (if any)</td>
+<td>Tells Node.js to trust the custom SSL certificate</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Fallback defaults</strong></p>
+<p>The <code>||</code> operator in the <code>env:</code> block provides a <strong>fallback default</strong> if the GitHub Variable is not set:</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default fallback value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DEPLOY_PATH</code></td>
+<td><code>/home/projadmin/CICD/ABC</code></td>
+</tr>
+<tr>
+<td><code>SERVICE_NAME</code></td>
+<td><code>CICD-fastapi.service</code></td>
+</tr>
+<tr>
+<td><code>SSL_CERT</code></td>
+<td><code>/home/projadmin/cerifi.crt</code></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>Always set these as GitHub Variables in your repository — the defaults are just safety nets to prevent pipeline failures on misconfigured repos.</p>
+</blockquote>
+<hr />
+<h2 id="9-workflow-file-setup">9. Workflow File Setup</h2>
+<ol>
+<li>In your repository, create the folder <code>.github/workflows/</code> if it doesn't exist.</li>
+<li>Inside it, create a file named <code>deploy-linux.yml</code> (or any name you prefer).</li>
+<li>Paste the YAML from <a href="#10-full-pipeline-yaml">Section 10</a> into that file.</li>
+<li>Update the <code>branches</code> trigger and <code>runs-on</code> runner label to match your setup.</li>
+<li>Set all required GitHub Secrets and Variables (Section 6).</li>
+<li>Commit and push — the pipeline will trigger automatically.</li>
+</ol>
+<p><strong>Folder structure:</strong></p>
+<div class="highlight"><pre><span></span><code>your-repo/
+├── .github/
+│   └── workflows/
+│       └── deploy-linux.yml    ← Pipeline file
+├── requirements.txt             ← Required: Python dependencies
+├── main.py                      ← Your app entry point
+├── .env                         ← NOT committed — written by pipeline from secret
+└── ...
+</code></pre></div>
+<blockquote>
+<p>The <code>.env</code> file is <strong>never committed to the repository</strong>. The pipeline creates it at deploy time from the <code>APP_ENV_FILE_TEST_VM</code> secret.</p>
+</blockquote>
+<hr />
+<h2 id="10-full-pipeline-yaml">10. Full Pipeline YAML</h2>
+<div class="highlight"><pre><span></span><code><span class="c1"># =====================================================================</span>
+<span class="c1"># Build and Deploy to Self-Hosted Linux Server</span>
+<span class="c1"># =====================================================================</span>
+<span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Backend/Frontend Deploy</span>
+
+<span class="nt">on</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">push</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">branches</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;your-branch&quot;</span><span class="w">   </span><span class="c1"># Change this to your branch name e.g. dev, test-env</span>
+
+<span class="w">  </span><span class="nt">workflow_dispatch</span><span class="p">:</span>
+
+<span class="nt">env</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">DEPLOY_PATH</span><span class="p">:</span><span class="w">         </span><span class="l l-Scalar l-Scalar-Plain">${{ vars.DEPLOY_PATH      || &#39;/home/projadmin/CICD/ABC&#39; }}</span>
+<span class="w">  </span><span class="nt">SERVICE_NAME</span><span class="p">:</span><span class="w">        </span><span class="l l-Scalar l-Scalar-Plain">${{ vars.SERVICE_NAME      || &#39;CICD-fastapi.service&#39; }}</span>
+<span class="w">  </span><span class="nt">SSL_CERT</span><span class="p">:</span><span class="w">            </span><span class="l l-Scalar l-Scalar-Plain">${{ vars.SSL_CERT_PATH     || &#39;/home/projadmin/cerifi.crt&#39; }}</span>
+<span class="w">  </span><span class="nt">NODE_EXTRA_CA_CERTS</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ vars.SSL_CERT_PATH     || &#39;/home/projadmin/cerifi.crt&#39; }}</span>
+
+<span class="nt">jobs</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">deploy</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Deploy to Linux Server</span>
+<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">self-hosted</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">linux</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">x64</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">your-label-name</span><span class="p p-Indicator">]</span><span class="w">   </span><span class="c1"># ← Replace with your runner label</span>
+
+<span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Checkout code</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/checkout@v4</span>
+<span class="w">        </span><span class="nt">with</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">ref</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">main</span><span class="w">   </span><span class="c1"># Change if you want to deploy from a different branch</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Setup Proxy and SSL</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">export http_proxy=${{ vars.HTTP_PROXY }}</span>
+<span class="w">          </span><span class="no">export https_proxy=${{ vars.HTTP_PROXY }}</span>
+<span class="w">          </span><span class="no">export no_proxy=${{ vars.NO_PROXY }}</span>
+<span class="w">          </span><span class="no">export SSL_CERT_FILE=${{ env.SSL_CERT }}</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Copy files to server</span>
+<span class="w">        </span><span class="nt">env</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">ENV_FILE_CONTENT</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ secrets.APP_ENV_FILE_TEST_VM }}</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">echo &quot;Deploying to ${{ env.DEPLOY_PATH }}...&quot;</span>
+<span class="w">          </span><span class="no">mkdir -p ${{ env.DEPLOY_PATH }}</span>
+<span class="w">          </span><span class="no">cp -rfv ./* ${{ env.DEPLOY_PATH }}</span>
+<span class="w">          </span><span class="no">printf &quot;%s&quot; &quot;$ENV_FILE_CONTENT&quot; &gt; ${{ env.DEPLOY_PATH }}/.env</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Install Python Requirements</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">VENV_PATH=&quot;${{ env.DEPLOY_PATH }}/venv&quot;</span>
+
+<span class="w">          </span><span class="no">if [ ! -d &quot;$VENV_PATH&quot; ]; then</span>
+<span class="w">            </span><span class="no">echo &quot;Creating virtual environment...&quot;</span>
+<span class="w">            </span><span class="no">python -m venv &quot;$VENV_PATH&quot;</span>
+<span class="w">          </span><span class="no">fi</span>
+
+<span class="w">          </span><span class="no">source &quot;$VENV_PATH/bin/activate&quot;</span>
+
+<span class="w">          </span><span class="no">pip install uv</span>
+
+<span class="w">          </span><span class="no">export PIP_CERT=&quot;${{ env.SSL_CERT }}&quot;</span>
+
+<span class="w">          </span><span class="no">REQ_FILE=&quot;${{ env.DEPLOY_PATH }}/requirements.txt&quot;</span>
+<span class="w">          </span><span class="no">if [ -f &quot;$REQ_FILE&quot; ]; then</span>
+<span class="w">            </span><span class="no">uv pip install -r &quot;$REQ_FILE&quot;</span>
+<span class="w">          </span><span class="no">else</span>
+<span class="w">            </span><span class="no">echo &quot;WARNING: requirements.txt not found at $REQ_FILE&quot;</span>
+<span class="w">            </span><span class="no">exit 1</span>
+<span class="w">          </span><span class="no">fi</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Restart service</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">echo &quot;Restarting ${{ env.SERVICE_NAME }}...&quot;</span>
+<span class="w">          </span><span class="no">sudo systemctl restart ${{ env.SERVICE_NAME }}</span>
+<span class="w">          </span><span class="no">sudo systemctl status  ${{ env.SERVICE_NAME }} --no-pager</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Debug on Failure</span>
+<span class="w">        </span><span class="nt">if</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">failure()</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">echo &quot;=== Something went wrong. Printing service logs... ===&quot;</span>
+<span class="w">          </span><span class="no">sudo journalctl -u ${{ env.SERVICE_NAME }} --no-pager --tail=50</span>
+</code></pre></div>
+<hr />
+<h2 id="11-how-each-step-works">11. How Each Step Works</h2>
+<p><strong>Step 1 — Checkout Code</strong></p>
+<div class="highlight"><pre><span></span><code><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Checkout code</span>
+<span class="w">  </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/checkout@v4</span>
+<span class="w">  </span><span class="nt">with</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">ref</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">main</span>
+</code></pre></div>
+<p><strong>What it does:</strong></p>
+<p>Downloads the repository code onto the runner machine using the official GitHub <code>actions/checkout</code> action.</p>
+<div class="admonition note">
+<p class="admonition-title">Key note</p>
+<p>The <code>ref: main</code> setting means the pipeline always deploys from the <code>main</code> branch, even if the pipeline was triggered by a push to a different branch (e.g., a <code>dev</code> branch can trigger the pipeline, but the code deployed will always be from <code>main</code>). Change <code>ref: main</code> to <code>ref: ${{ github.ref }}</code> if you want to deploy the branch that triggered the pipeline.</p>
+</div>
+<hr />
+<p><strong>Step 2 — Setup Proxy and SSL</strong></p>
+<div class="highlight"><pre><span></span><code><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Setup Proxy and SSL</span>
+<span class="w">  </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">    </span><span class="no">export http_proxy=${{ vars.HTTP_PROXY }}</span>
+<span class="w">    </span><span class="no">export https_proxy=${{ vars.HTTP_PROXY }}</span>
+<span class="w">    </span><span class="no">export no_proxy=${{ vars.NO_PROXY  }}</span>
+<span class="w">    </span><span class="no">export SSL_CERT_FILE=${{ env.SSL_CERT }}</span>
+</code></pre></div>
+<p><strong>What it does:</strong></p>
+<p>Configures the HTTP/HTTPS proxy and SSL certificate for the current shell session. This is required in corporate networks (e.g., Infosys) where all internet traffic is routed through a proxy with SSL inspection.</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>http_proxy</code> / <code>https_proxy</code></td>
+<td>Routes outbound HTTP/HTTPS traffic through the corporate proxy</td>
+</tr>
+<tr>
+<td><code>no_proxy</code></td>
+<td>Hosts that should <strong>skip</strong> the proxy (internal servers, localhost)</td>
+</tr>
+<tr>
+<td><code>SSL_CERT_FILE</code></td>
+<td>Points tools to the custom SSL certificate for HTTPS verification</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>If you are not behind a proxy:</strong> Leave <code>HTTP_PROXY</code> and <code>NO_PROXY</code> variables unset. The exported values will be empty and have no effect.</p>
+</blockquote>
+<hr />
+<p><strong>Step 3 — Copy Files to Server</strong></p>
+<div class="highlight"><pre><span></span><code><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Copy files to server</span>
+<span class="w">  </span><span class="nt">env</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">ENV_FILE_CONTENT</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ secrets.APP_ENV_FILE_TEST_VM }}</span>
+<span class="w">  </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">    </span><span class="no">echo &quot;Deploying to ${{ env.DEPLOY_PATH }}...&quot;</span>
+<span class="w">    </span><span class="no">mkdir -p ${{ env.DEPLOY_PATH }}</span>
+<span class="w">    </span><span class="no">cp -rfv ./* ${{ env.DEPLOY_PATH }}</span>
+<span class="w">    </span><span class="no">printf &quot;%s&quot; &quot;$ENV_FILE_CONTENT&quot; &gt; ${{ env.DEPLOY_PATH }}/.env</span>
+</code></pre></div>
+<p><strong>What it does:</strong></p>
+<ol>
+<li>Creates the deployment folder if it does not already exist (<code>mkdir -p</code>).</li>
+<li>Copies all files from the GitHub Actions workspace (checked-out repo) to the deployment folder on the server.</li>
+<li>Writes the <code>.env</code> file from the <code>APP_ENV_FILE_TEST_VM</code> secret so the application gets its configuration at runtime.</li>
+</ol>
+<p><strong>Why <code>printf</code> instead of <code>echo</code> for the .env file?</strong></p>
+<p><code>printf "%s"</code> writes the content exactly as-is, preserving all newlines and special characters correctly. Using <code>echo</code> can add an extra newline or mishandle certain characters.</p>
+<hr />
+<p><strong>Step 4 — Install Python Requirements</strong></p>
+<div class="highlight"><pre><span></span><code><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Install Python Requirements</span>
+<span class="w">  </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">    </span><span class="no">VENV_PATH=&quot;${{ env.DEPLOY_PATH }}/venv&quot;</span>
+
+<span class="w">    </span><span class="no">if [ ! -d &quot;$VENV_PATH&quot; ]; then</span>
+<span class="w">      </span><span class="no">echo &quot;Creating virtual environment...&quot;</span>
+<span class="w">      </span><span class="no">python -m venv &quot;$VENV_PATH&quot;</span>
+<span class="w">    </span><span class="no">fi</span>
+
+<span class="w">    </span><span class="no">source &quot;$VENV_PATH/bin/activate&quot;</span>
+<span class="w">    </span><span class="no">pip install uv</span>
+<span class="w">    </span><span class="no">export PIP_CERT=&quot;${{ env.SSL_CERT }}&quot;</span>
+
+<span class="w">    </span><span class="no">REQ_FILE=&quot;${{ env.DEPLOY_PATH }}/requirements.txt&quot;</span>
+<span class="w">    </span><span class="no">if [ -f &quot;$REQ_FILE&quot; ]; then</span>
+<span class="w">      </span><span class="no">uv pip install -r &quot;$REQ_FILE&quot;</span>
+<span class="w">    </span><span class="no">else</span>
+<span class="w">      </span><span class="no">echo &quot;WARNING: requirements.txt not found at $REQ_FILE&quot;</span>
+<span class="w">      </span><span class="no">exit 1</span>
+<span class="w">    </span><span class="no">fi</span>
+</code></pre></div>
+<p><strong>What it does:</strong></p>
+<ol>
+<li><strong>Creates a virtual environment</strong> (<code>venv</code>) inside the deployment folder — only if one does not already exist. This avoids re-creating it on every deployment, saving time.</li>
+<li><strong>Activates the virtual environment</strong> so all subsequent <code>pip</code>/<code>uv</code> commands install into the isolated environment.</li>
+<li><strong>Installs <code>uv</code></strong> — a fast Python package installer written in Rust (much faster than plain <code>pip</code>).</li>
+<li><strong>Sets <code>PIP_CERT</code></strong> — points pip/uv to the corporate SSL certificate so package downloads succeed through the proxy.</li>
+<li><strong>Installs packages</strong> from <code>requirements.txt</code> using <code>uv pip install</code>.</li>
+<li><strong>Fails the pipeline</strong> (<code>exit 1</code>) if <code>requirements.txt</code> is not found, to prevent a silent partial deployment.</li>
+</ol>
+<hr />
+<p><strong>Step 5 — Restart Service</strong></p>
+<div class="highlight"><pre><span></span><code><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Restart service</span>
+<span class="w">  </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">    </span><span class="no">echo &quot;Restarting ${{ env.SERVICE_NAME }}...&quot;</span>
+<span class="w">    </span><span class="no">sudo systemctl restart ${{ env.SERVICE_NAME }}</span>
+<span class="w">    </span><span class="no">sudo systemctl status  ${{ env.SERVICE_NAME }} --no-pager</span>
+</code></pre></div>
+<p><strong>What it does:</strong></p>
+<ol>
+<li>Restarts your application's <code>systemd</code> service so the newly deployed code goes live.</li>
+<li>Immediately prints the service status in the pipeline logs so you can confirm the service started correctly without SSH-ing into the server.</li>
+</ol>
+<p><strong>Prerequisite:</strong> </p>
+<p>The runner user must have <code>sudo</code> access to run <code>systemctl restart</code> and <code>systemctl status</code> without a password prompt (see <a href="#3-prerequisites">Prerequisites</a>).</p>
+<hr />
+<p><strong>Step 6 — Debug on Failure</strong></p>
+<div class="highlight"><pre><span></span><code><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Debug on Failure</span>
+<span class="w">  </span><span class="nt">if</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">failure()</span>
+<span class="w">  </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">    </span><span class="no">echo &quot;=== Something went wrong. Printing service logs... ===&quot;</span>
+<span class="w">    </span><span class="no">sudo journalctl -u ${{ env.SERVICE_NAME }} --no-pager --tail=50</span>
+</code></pre></div>
+<p><strong>What it does:</strong></p>
+<p>This step runs <strong>only if any previous step fails</strong> (<code>if: failure()</code>). It automatically prints the last 50 lines of your service's <code>journald</code> logs, giving you immediate visibility into what went wrong — without needing to manually SSH into the server.</p>
+<hr />
+<p><strong>Full Deployment Flow</strong></p>
+<div class="highlight"><pre><span></span><code>Developer pushes code to GitHub
+           │
+           ▼
+GitHub notifies the self-hosted runner on your server
+           │
+           ▼
+Runner clones repo → /home/runner/work/your-repo/   (new code, not live yet)
+           │
+           ▼
+Proxy &amp; SSL configured for the shell session
+           │
+           ▼
+cp -rfv → files copied to /home/projadmin/CICD/MyApp/  (new code on disk)
+printf  → .env written from GitHub Secret              (config on disk)
+           │
+           ▼
+pip/uv installs any new packages into venv             (dependencies ready)
+           │
+           ▼
+sudo systemctl restart → old process killed, new process starts
+                       → new process reads updated files from DEPLOY_PATH
+           │
+           ▼
+App is live with new code  ✔
+</code></pre></div>
+<hr />
+<p><strong>Key Design Decisions</strong></p>
+<table>
+<thead>
+<tr>
+<th>Decision</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Runner installed on the app server</td>
+<td>Eliminates need for SSH keys, SCP, or remote agents — <code>cp</code> is enough</td>
+</tr>
+<tr>
+<td><code>venv</code> only created if missing</td>
+<td>Avoids re-creating the entire virtual environment on every deploy (saves 30–60s)</td>
+</tr>
+<tr>
+<td><code>uv</code> instead of <code>pip</code></td>
+<td>10–100x faster package installation</td>
+</tr>
+<tr>
+<td><code>printf "%s"</code> for .env</td>
+<td>Preserves exact content — <code>echo</code> can corrupt special characters or add trailing newlines</td>
+</tr>
+<tr>
+<td><code>ref: main</code> in checkout</td>
+<td>Ensures only tested/reviewed code from <code>main</code> is deployed, even if a feature branch triggered the pipeline</td>
+</tr>
+<tr>
+<td>Secrets for <code>.env</code> content</td>
+<td>The <code>.env</code> file never touches the git repository — it's injected at deploy time only</td>
+</tr>
+<tr>
+<td><code>if: failure()</code> on debug step</td>
+<td>Automatic log collection on failure without any manual intervention</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="15-troubleshooting">15. Troubleshooting</h2>
+<p><strong>Common Errors</strong></p>
+<table>
+<thead>
+<tr>
+<th>Error / Problem</th>
+<th>Cause</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>APP_ENV_FILE_TEST_VM secret is empty</code></td>
+<td>Secret not added in GitHub</td>
+<td>Go to Settings → Secrets → Actions → add <code>APP_ENV_FILE_TEST_VM</code></td>
+</tr>
+<tr>
+<td><code>.env file is malformed</code></td>
+<td>Special characters in secret value</td>
+<td>Ensure the .env content is plain text with <code>KEY=VALUE</code> pairs, no extra quotes</td>
+</tr>
+<tr>
+<td><code>requirements.txt not found</code></td>
+<td>File missing from repo or wrong deploy path</td>
+<td>Confirm <code>requirements.txt</code> is committed to the repo root</td>
+</tr>
+<tr>
+<td><code>pip install fails with SSL error</code></td>
+<td>Corporate proxy SSL inspection</td>
+<td>Set <code>SSL_CERT_PATH</code> variable to the correct cert path on the server</td>
+</tr>
+<tr>
+<td><code>uv: command not found</code></td>
+<td><code>pip install uv</code> failed due to proxy/SSL issue</td>
+<td>Fix proxy/SSL settings; verify <code>pip</code> can reach PyPI</td>
+</tr>
+<tr>
+<td><code>systemctl: command not found</code></td>
+<td>Not a systemd-based Linux system</td>
+<td>Confirm the server uses systemd (Ubuntu 18.04+ / CentOS 7+)</td>
+</tr>
+<tr>
+<td><code>sudo: systemctl: command not found</code></td>
+<td>Incorrect sudo PATH</td>
+<td>Use full path: <code>sudo /bin/systemctl restart ...</code></td>
+</tr>
+<tr>
+<td><code>Permission denied on systemctl</code></td>
+<td>Runner user lacks sudo for systemctl</td>
+<td>Add the sudoers entry from the <a href="#3-prerequisites">Prerequisites</a> section</td>
+</tr>
+<tr>
+<td><code>Service failed to start</code></td>
+<td>App error — missing env variable or port conflict</td>
+<td>Check service logs: <code>sudo journalctl -u &lt;SERVICE_NAME&gt; --no-pager --tail=100</code></td>
+</tr>
+<tr>
+<td><code>Runner offline / no jobs picked up</code></td>
+<td>Runner service stopped</td>
+<td>SSH into the server and run <code>sudo ./svc.sh status</code> then <code>sudo ./svc.sh start</code></td>
+</tr>
+<tr>
+<td><code>cp: cannot stat './*'</code></td>
+<td>Empty checkout or wrong working directory</td>
+<td>Confirm the checkout step ran successfully; check workspace path</td>
+</tr>
+<tr>
+<td><code>venv already exists but broken</code></td>
+<td>Corrupted virtual environment from a past run</td>
+<td>Delete the venv folder manually on the server: <code>rm -rf $DEPLOY_PATH/venv</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>How to check service logs manually</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Last 50 lines of service logs</span>
+sudo<span class="w"> </span>journalctl<span class="w"> </span>-u<span class="w"> </span>your-service.service<span class="w"> </span>--no-pager<span class="w"> </span>--tail<span class="o">=</span><span class="m">50</span>
+
+<span class="c1"># Follow live logs</span>
+sudo<span class="w"> </span>journalctl<span class="w"> </span>-u<span class="w"> </span>your-service.service<span class="w"> </span>-f
+
+<span class="c1"># Check service status</span>
+sudo<span class="w"> </span>systemctl<span class="w"> </span>status<span class="w"> </span>your-service.service
+</code></pre></div>
+<p><strong>How to test the pipeline manually (without a code push)</strong></p>
+<ol>
+<li>Go to your GitHub repository.</li>
+<li>Click <strong>Actions</strong> → select the workflow → click <strong>Run workflow</strong>.</li>
+<li>Choose your branch and click <strong>Run workflow</strong>.</li>
+</ol>
+<hr />
+<h2 id="16-quick-checklist">16. Quick Checklist</h2>
+<p>Use this checklist when setting up the pipeline for a new repository.</p>
+<div class="highlight"><pre><span></span><code>SERVER SETUP
+[ ] Linux server running (Ubuntu 20.04/22.04 recommended)
+[ ] Python 3.8+ installed on the server (python3 --version)
+[ ] systemd service file created for your app (/etc/systemd/system/&lt;SERVICE_NAME&gt;)
+[ ] Service enabled: sudo systemctl enable &lt;SERVICE_NAME&gt;
+[ ] SSL certificate placed at the path you will set in SSL_CERT_PATH
+[ ] Deployment folder parent directory is writable by the runner user
+
+RUNNER SETUP
+[ ] Linux/X64 runner provisioned
+[ ] Runner registered in GitHub → Settings → Actions → Runners
+[ ] Runner labels set to: self-hosted, linux, x64, &lt;your-custom-label&gt;
+[ ] Runner running as a system service (sudo ./svc.sh install &amp;&amp; sudo ./svc.sh start)
+[ ] Runner shows as Idle (green) in GitHub → Settings → Actions → Runners
+[ ] Runner user has sudo access for systemctl (sudoers entry added)
+
+GITHUB SECRETS
+[ ] APP_ENV_FILE_TEST_VM added (full .env file content pasted as secret value)
+
+GITHUB VARIABLES
+[ ] DEPLOY_PATH set (e.g. /home/projadmin/CICD/MyApp)
+[ ] SERVICE_NAME set (e.g. my-fastapi.service)
+[ ] SSL_CERT_PATH set (e.g. /home/projadmin/cerifi.crt)
+
+
+REPOSITORY SETUP
+[ ] requirements.txt present at root of repository
+[ ] .github/workflows/deploy-linux.yml created with pipeline YAML
+[ ] Branch name updated in the workflow trigger (branches: section)
+[ ] Runner label updated in jobs.deploy.runs-on
+[ ] ref: main updated if deploying from a different branch
+[ ] Code committed and pushed to trigger the pipeline
+
+VERIFY DEPLOYMENT
+[ ] Pipeline run shows green in GitHub → Actions
+[ ] All 5 steps completed successfully (Checkout, Proxy, Copy, Install, Restart)
+[ ] Service status shows &quot;active (running)&quot; in step 5 logs
+[ ] Application is reachable on the expected port/URL
+</code></pre></div>
+<hr />
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "navigation.path"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
