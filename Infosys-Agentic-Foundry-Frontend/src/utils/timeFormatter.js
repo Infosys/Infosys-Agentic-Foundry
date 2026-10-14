@@ -106,15 +106,18 @@ export function formatDate(date, pattern) {
   if (!(date instanceof Date) || isNaN(date)) return "";
   const pad = (n, l = 2) => String(n).padStart(l, "0");
   const monthShort = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][date.getMonth()];
-  return pattern
-    .replace(/YYYY/g, date.getFullYear())
-    .replace(/MM/g, pad(date.getMonth() + 1))
-    .replace(/DD/g, pad(date.getDate()))
-    .replace(/Do/g, ordinal(date.getDate()))
-    .replace(/MMM/g, monthShort)
-    .replace(/HH/g, pad(date.getHours()))
-    .replace(/mm/g, pad(date.getMinutes()))
-    .replace(/ss/g, pad(date.getSeconds()));
+  // Single-pass replacement so longer tokens (e.g. MMM) win over their prefixes (MM).
+  const tokens = {
+    YYYY: String(date.getFullYear()),
+    MMM: monthShort,
+    Do: ordinal(date.getDate()),
+    MM: pad(date.getMonth() + 1),
+    DD: pad(date.getDate()),
+    HH: pad(date.getHours()),
+    mm: pad(date.getMinutes()),
+    ss: pad(date.getSeconds()),
+  };
+  return pattern.replace(/YYYY|MMM|Do|MM|DD|HH|mm|ss/g, (token) => tokens[token]);
 }
 
 /**
