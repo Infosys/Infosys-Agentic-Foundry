@@ -1,0 +1,98 @@
+<div class="skill-card" data-skill-component="invoice_processing_ap">
+  <div class="skill-card-head">
+    <div>
+      <div class="skill-card-kicker">AP Invoice Review</div>
+      <h4>Invoice Match & Exception Review</h4>
+    </div>
+    <span class="skill-status" data-status>{{invoice_status}}</span>
+  </div>
+
+  <div class="skill-form-grid">
+    <label>
+      <span>Invoice ID</span>
+      <input type="text" value="{{invoice_id}}" readonly>
+    </label>
+
+    <label>
+      <span>Vendor Name</span>
+      <input type="text" value="{{vendor_name}}" readonly>
+    </label>
+
+    <label>
+      <span>Invoice Status</span>
+      <select data-field="invoice_status">
+        <option value="open">Open</option>
+        <option value="overdue">Overdue</option>
+        <option value="posted">Posted</option>
+        <option value="pending_correction">Pending Correction</option>
+        <option value="cleared">Cleared</option>
+      </select>
+    </label>
+
+    <label>
+      <span>Invoice Amount</span>
+      <input type="text" value="{{invoice_amount}}" readonly>
+    </label>
+
+    <label>
+      <span>Currency</span>
+      <input type="text" value="{{currency}}" readonly>
+    </label>
+
+    <label>
+      <span>PO Number</span>
+      <input type="text" value="{{po_number}}" readonly>
+    </label>
+
+    <label>
+      <span>PO Amount</span>
+      <input type="text" value="{{po_amount}}" readonly>
+    </label>
+
+    <label>
+      <span>Goods Receipt Status</span>
+      <input type="text" value="{{goods_receipt_status}}" readonly>
+    </label>
+
+    <label>
+      <span>Received Amount</span>
+      <input type="text" value="{{received_amount}}" readonly>
+    </label>
+
+    <label>
+      <span>Variance Amount</span>
+      <input type="text" value="{{variance_amount}}" readonly>
+    </label>
+
+    <div>
+      <span style="display:block; margin-bottom:6px; font-size:0.9rem; color:#555;">Match Status</span>
+      <span class="skill-status">{{match_status}}</span>
+    </div>
+
+    <label class="wide">
+      <span>Recommended Action</span>
+      <select data-field="recommended_action">
+        <option value="approve">Approve</option>
+        <option value="hold">Hold for Review</option>
+        <option value="request_correction">Request Correction</option>
+        <option value="escalate">Escalate Exception</option>
+        <option value="reject">Reject Invoice</option>
+      </select>
+    </label>
+
+    <label class="wide">
+      <span>Reviewer Note</span>
+      <textarea data-field="reviewer_note" rows="4" placeholder="Add reviewer comments or exception details">{{reviewer_note}}</textarea>
+    </label>
+  </div>
+
+  <div class="skill-card-actions">
+    <button type="button" class="btn secondary" data-action="skill-reset">Reset Draft</button>
+    <button type="button" class="btn" data-action="mark-reviewed">Mark Reviewed</button>
+    <button type="button" class="btn secondary" data-action="escalate-exception">Escalate Exception</button>
+  </div>
+
+  <div class="skill-card-note" data-message>
+    Review invoice, PO, and goods receipt details before approving or escalating exceptions.
+  </div>
+</div>

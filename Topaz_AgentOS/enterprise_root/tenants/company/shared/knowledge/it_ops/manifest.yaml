@@ -1,0 +1,23 @@
+kind: knowledge_bundle
+bundle_id: it_ops
+domain: IT Operations
+description: IT operations incident, Kubernetes, monitoring, change, and runbook knowledge bundle.
+skills:
+  - ccdops
+tags:
+  - it-ops
+  - incident
+  - kubernetes
+  - k8s
+  - monitoring
+  - alerting
+  - runbook
+write_targets:
+  rule: policies/
+  exception: runbooks/
+  workaround: runbooks/
+  pattern: runbooks/
+  correction: runbooks/
+  fact: notes/
+  metric: metrics/
+  default: notes/

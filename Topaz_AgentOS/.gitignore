@@ -1,0 +1,300 @@
+# Large files
+*.zip
+
+# Build context certs (contains private keys — NEVER commit)
+certs/
+
+# Tenant credential files with real values — never commit (use .example as schema reference)
+enterprise_root/**/shared/config/credentials.yaml
+
+# macOS
+.DS_Store
+**/.DS_Store
+Sample_sso_code/*
+reference_temp_sso/*
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.playwright-node/
+.playwright-browsers/
+
+# Logs
+*.log
+logs/
+
+# Secrets
+.env
+IAF-Agent-Skills/config/credentials.yaml
+IAF-Agent-Skills/config.env
+IAF-Agent-Studio/.env
+IAF-Agent-Studio/*.env.local
+
+# Local uv / JFrog index config (machine-specific)
+uv.toml
+**/uv.toml
+
+# SSO / UI test artifacts (Playwright screenshots, ad-hoc scripts)
+sso_*.png
+ui_*.png
+test_sso_flow.py
+test_ui_login.py
+
+# Ad-hoc local debug scripts (may contain plaintext creds, dev-machine paths)
+_dbg_*.py
+debug_*.py
+scratch_*.py
+
+# Local isolated recovery cell used for offline verification drills
+recovery/
+
+# Runtime databases & state
+*.db
+*.db-shm
+*.db-wal
+IAF-Agent-Studio/dump.rdb
+IAF-Agent-Studio/appendonlydir/
+IAF-Agent-Studio/cc_queue/ccd_tickets.json
+enterprise_root/**/databases/
+enterprise_root/recyclebin/
+enterprise_root/**/memory/
+enterprise_root/**/.audit/
+enterprise_root/**/workspace/
+
+# RL capture / fine-tune exports (runtime training data, not source)
+exports/
+
+# Runtime outputs / workspaces
+IAF-Agent-Skills/outputs/
+IAF-Agent-Studio/outputs/
+IAF-Agent-Studio/workspaces/
+IAF-Agent-Studio/static/generated/
+docs/generated/*.html
+
+# Dead code / backup
+IAF-Agent-Skills/_recycle_bin/
+**/*.bak*
+backups/
+
+# graphify internal runtime files (keep graph.json, ignore everything else)
+graphify-out/.graphify_*
+
+# Runtime user profiles — tenant-level and agent-level (accumulate at runtime)
+enterprise_root/tenants/*/users/
+enterprise_root/**/users/queue_processor:user/
+enterprise_root/**/users/service:*/
+enterprise_root/**/users/queue_*/
+
+# Per-agent per-user runtime state (accumulates at runtime; not seed data)
+enterprise_root/**/agents/*/users/
+
+# Runtime-created demo/test user profiles
+enterprise_root/**/users/*@example.com/
+
+# Workstream runtime artifacts (synthesis outputs + error/recovery backups)
+enterprise_root/**/workstreams/*.synthesis.md
+enterprise_root/**/workstreams/*.bad_followup_*
+enterprise_root/**/workstreams/*.failed_resume_*
+
+# Generated images (runtime output)
+IAF-Agent-Studio/static/generated_images/
+
+reference_sso_login/backend/keycloak_service.py
+
+# Onboarding / internal documentation packages (not part of source tree)
+onboarding/
+lgos/
+vm_data/
+# Runtime state files written by IAF server (not part of source tree)
+IAF-Agent-Studio/.llm_active_provider
+
+# Local reference / external share packages (large, not part of the source tree)
+reference/
+docs/*_share_package_*/
+*.bak.[0-9]*
+R2R_demo/
+.llm_active_provider
+.otappsec/
+*.yaml.lock
+new_agent_os/
+docs/vm_changes_code/
+
+# Deployment env files with live secrets (keys/passwords) — never commit
+docker.env
+*.env
+!*.env.example
+# ── Local-only ML training outputs (regenerable; see docs/FINANCE_ROUTER_*.md) ──
+# LoRA adapter weights: ~976MB of .safetensors, far over GitHub's 100MB file cap.
+/adapters/
+# Training run logs.
+/artifacts/
+# Synthetic router datasets (~14MB) rebuilt by the seed scripts.
+/enterprise_root/tenants/*/training_data/
+
+# ── Local backups taken before UI edits (not source) ──
+/IAF-Agent-Studio/_*_backup_*/
+/IAF-Agent-Studio/static/_*backup*.html
+
+# ── Editor / merge leftovers ──
+*.orig
+
+# ── Runtime output written beside the repo root ──
+/shared/databases/
+/enterprise_root/tenants/*/agents/*/tmp/
+
+# ---------------------------------------------------------------------------
+# Non-source artifacts kept on this VM but deliberately NOT committed.
+# These live on disk for whoever needs them; they are not part of the shipped
+# source tree, so they must never reach a feature branch or PR diff.
+# ---------------------------------------------------------------------------
+
+# clean-branch cleanup: demo-specific overlay content, external demo repos,
+# and stray root-level debug/session artifacts — moved here so a clean
+# release never carries them, kept on disk for local reference only.
+_excluded_from_release/
+
+# Compliance / deployment-approval paperwork (PIA, DEF, RAI, risk register)
+docs/DEF_VERIFICATION_REPORT.md
+docs/PIA_REPORT_FILLED.md
+docs/PIA REPORT *.docx
+docs/VM_CLEANUP_PLAYBOOK.md
+docs/Deployment Approval Required Artifacts/
+*.xlsx
+Infosys Topaz AgentOS R1*.pdf
+
+# Third-party dependency inventories exported from Artifactory
+docs/infyartifactory.*.csv
+docs/schemas/infyartifactory.*.csv
+
+# Architecture notes / specs authored alongside a change, not shipped with it
+docs/adr/0002-pyproject-per-subpackage-is-source-of-truth.md
+docs/specs/workstreams-crud-and-session-controls.md
+AgentOS_Skills_and_POC_Guide.md
+CONTEXT.md
+
+# One-off Dockerfile patches, now fully merged into the main Dockerfile and
+# source tree (PIP_INDEX_URL, Version copy, knowledge_pg_schema.py perms,
+# belt-and-braces chmod, ROOT_PATH auth fixes, demo-module code strip from
+# server.py). Kept on disk for history, never committed.
+Dockerfile.patch.taxonomy-version
+fix-taxonomy-graph-and-version.patch
+docs/docker_file_agentos/
+
+# Local dev helpers and one-off scripts
+scripts/dev_start_studio.sh
+scripts/fill_ai_risk_register.py
+
+# Throwaway browser diagnostic harnesses + Playwright suites kept out of CI
+IAF-Agent-Studio/tests/playwright/
+IAF-Agent-Studio/tests/test_session_controls_pw.py
+IAF-Agent-Studio/tests/test_workstream_detail_ui_pw.py
+
+# Vendored asset no page references
+IAF-Agent-Studio/static/vendor/tailwind-v3.4.16.js
+
+# Local scratch output
+graphify-out/
+fix-taxonomy-graph-and-version.patch
+Dockerfile.patch.taxonomy-version
+
+# Approval-document templates dropped straight into docs/
+docs/Infosys AI *.doc
+docs/Infosys AI *.docx
+docs/Infosys_AI_*.doc
+docs/Infosys_AI_*.docx
+
+# Skill version snapshots — runtime-generated per deployment by
+# shared/skill_versions.py (ensure_migrated recreates them from SKILL.md on
+# demand). Committing them just produces noisy diffs on every skill run.
+**/.versions/
+
+# Scratch API-probe output from local debugging sessions
+/b.json
+/r1.json
+/r2.json
+/r7.json
+/rr.json
+/sk.json
+/v.json
+/ws.json
+
+docs/AgentOS-MkDocs/
+docs/Agentic-Foundry-Mkdocs-main/
+docs/Agentic-Foundry-Mkdocs-main*/
+
+# --- Generated / one-off artifacts (docs, decks, generator scripts) ---
+*.pptx
+graphify-out-clean/
+IAF-Agent-Studio/graphify-out-clean/
+deploy/deploy/
+design.md
+AI_GOVERNANCE_METRICS_KPIS.md
+SECURITY_SANDBOX_SHOWCASE.md
+RAI_Guardrails_Platform_Overview*.docx
+IAF-Agent-Studio/_live_review_check.py
+_clean_cron_orphans.py
+_cron_orphans_backup.json
+defect oage
+scripts/build_guardrails_doc.py
+scripts/build_walkthrough_deck.py
+scripts/fill_test_strategy_doc.py
+
+# Generated RAI / metrics / tenet docs and images
+docs/AI_TENET_METRICS_KPIS.md
+docs/AgentOS_TENET_METRICS_KPIS.docx
+docs/AgentOS_RAI_Tenet_Compliance.png
+docs/RAI_Tenet_Compliance.png
+docs/DEFECT_CLASSIFICATION_RUBRIC.md
+docs/rai_tenet_compliance.html
+docs/rai_tenet_compliance_agentos.html
+
+# Office temp / lock files
+~$*
+**/~$*
+
+# Transient test skills + submissions from local UI testing
+*ui3_test_skill*
+enterprise_root/tenants/company/skills/defect_classifier/
+
+# Local-only end-to-end acceptance suite (verification harness; not shipped in this PR)
+/acceptance/
+
+# Scratch e2e scripts (named test_* but no test functions; manual print/HTTP harnesses)
+/IAF-Agent-Skills/test_binding_resolver.py
+/IAF-Agent-Skills/test_fetch_canonical_tool.py
+/IAF-Agent-Skills/test_finance_binding_e2e.py
+/IAF-Agent-Skills/test_finance_full_e2e.py
+/IAF-Agent-Skills/test_jev_finance_e2e.py
+/IAF-Agent-Skills/test_jev_router_provider.py
+
+# Internal handoff/planning/learnings docs (not product docs)
+/docs/ENGINEERING_LEARNINGS.md
+/docs/FINANCE_ROUTER_DIRECT_EXPERIMENT_HANDOFF.md
+/docs/FINANCE_ROUTER_NIMBLE_TRAINING_PLAN.md
+/docs/JEV_API_AGENTOS_KNOWLEDGE.md
+/docs/JEV_GRAPH_V2_MULTIWAY_BRANCHING.md

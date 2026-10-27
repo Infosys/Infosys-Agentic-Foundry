@@ -1,0 +1,1685 @@
+# CODE → DOCUMENTATION MAP
+# When you change a code file, update every doc listed under it.
+# Used by: CLAUDE.md (AI coding agent rules), .git/hooks/pre-commit (commit-time warning)
+#
+# Format:
+#   code_file: path relative to project root
+#   docs: list of doc files to update when code_file changes
+#   note: (optional) what specifically to check in those docs
+
+mappings:
+
+  - code: agent_os/openshell_runtime.py
+    docs:
+      - docs/OPENSHELL_INTEGRATION_DESIGN.md
+      - docs/SECURITY_DEVELOPER_GUIDE.md
+      - docs/PROVIDER_ARCHITECTURE.md
+    note: "Optional OpenShell sandbox kernel backend (AGENTOS_KERNEL_BACKEND=openshell). Composed design: a local SafeKernel makes policy decisions (blocked commands + tenant egress registry) while execution is delegated to the sandbox, so isolation is added without removing governance. Update the design doc when the backend, its AGENTOS_SANDBOX_* flags, or the fail-closed behaviour changes."
+
+  - code: agent_os/egress_ssrf.py
+    docs:
+      - docs/OPENSHELL_INTEGRATION_DESIGN.md
+      - docs/SECURITY_DEVELOPER_GUIDE.md
+    note: "Reusable SSRF guard: scheme allowlist + resolve-once address pinning, rejecting private/loopback/link-local/multicast/reserved/cloud-metadata targets. Consumed by routers/context_manager.py::_fetch_url and intended for the Step 2 egress chokepoint."
+
+  - code: IAF-Agent-Studio/routers/context_manager.py
+    docs:
+      - docs/SECURITY_DEVELOPER_GUIDE.md
+      - docs/OPENSHELL_INTEGRATION_DESIGN.md
+    note: "Two authorisation layers: the router-level require_context_tenant dependency (which tenant may you touch? → 403) and enforce_context_access/can_access_context (which document inside it?). Per-item posture is allow-by-default, restrict-by-folder via context:* allow + context:/shared/contexts/restricted/* deny in the tenant policies.yaml. Update Part 3 of the security guide when the rules, the restricted-folder convention, or the enforcement points change."
+
+  - code: agent_os/kernel.py
+    docs:
+      - docs/SECURITY_DEVELOPER_GUIDE.md
+      - docs/CONFIG_REFERENCE.md
+      - docs/OPENSHELL_INTEGRATION_DESIGN.md
+    note: "Hard gates. Keep Part 5 of the security guide honest about what is and is not a boundary: there is NO in-process sandbox; python3 containment depends on AGENT_PYTHON3_SANDBOX_USER / AGENTOS_UNTRUSTED_EXECUTION_GUARD / the kernel backend. Also covers _curl_targets (scheme-less, --url=, non-HTTP schemes), the entitlement-DENY-always-wins fix in _check_http_external_access, and _CRED_SUBSTITUTION_COMMANDS (credentials are injected only into credential-consuming commands)."
+
+  - code: enterprise_root/tenants/company/security/policies.yaml
+    docs:
+      - docs/SECURITY_DEVELOPER_GUIDE.md
+    note: "Entitlement rules. The context-default-allow / context-restricted-folder-deny pair implements allow-by-default, restrict-by-folder for context documents; deny beats allow regardless of order, so a principal holding both a denied and an allowed role is denied. Mirror any change into Part 3 and recipe F."
+
+  - code: agent_os/config.enterprise.env.example
+    docs:
+      - docs/CONFIG_REFERENCE.md
+      - docs/AGENTPRO_SETUP.md
+      - docs/ENTERPRISE_OPERATIONS_PROFILE.md
+    note: Dedicated-enterprise security, runtime-role, telemetry, and recovery baseline.
+
+  - code: IAF-Agent-Studio/shared/runtime_roles.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+      - docs/AGENTPRO_SETUP.md
+      - docs/ENTERPRISE_OPERATIONS_PROFILE.md
+    note: Runtime role parsing, replica safety checks, strict security validation, and the Redis scheduler leader lease (including renew_resilient, which tolerates a transient Redis blip with jittered retry so a single dropped heartbeat cannot kill the scheduler loop).
+
+  - code: IAF-Agent-Studio/shared/runtime_health.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+      - docs/AGENTPRO_SETUP.md
+      - docs/ENTERPRISE_OPERATIONS_PROFILE.md
+      - docs/03_architecture.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: Role-aware startup and readiness checks for shared API session state.
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/session_store.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+      - docs/AGENTPRO_SETUP.md
+      - docs/ENTERPRISE_OPERATIONS_PROFILE.md
+      - docs/HITL_DESIGN_GUIDE.md
+    note: Redis-backed cross-replica session persistence, health, fallback, and connection lifecycle.
+
+  - code: IAF-Agent-Studio/auth/middleware.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "JWT auth + security headers + request.state identity. Also enforces the global per-tenant API rate limit (TENANT_RATE_LIMIT_PER_MINUTE) on authenticated requests via auth/rate_limiter.is_tenant_allowed → HTTP 429; fail-open. Cache-Control: no-store applies to every response except /static/*.js|*.mjs|*.css — HTML pages reachable via the raw /static/ StaticFiles mount (e.g. /static/dashboard_v2.html) are NOT exempted, since they carry the same sensitive content as their route-handler-served equivalents. Browser JWTs carry only sub/sid/jti/type/iat/exp, so the middleware and WebSocket auth complete the identity (email, role, groups, tenant) from the user store via auth/identity.py, and authenticate_access_token runs the session gate (auth/session_registry.check, one Redis GET/MGET, fail-open): a revoked sid gets 401 SESSION_REVOKED (always; SessionRevokedError, reason cookie session_revoked) and, when AUTH_SINGLE_SESSION is on, a sid that is no longer the user's active session gets 401 SESSION_SUPERSEDED. /auth/logout and /auth/oauth/logout skip the session gate; /auth/logout-all does not, but is exempt from the temporary-password, disabled and SSO gates. GET /auth/session-policy is a public path. Agent service tokens (no sid) are exempt. SEC-4: _build_csp(nonce) replaces the old static unsafe-inline/unsafe-eval CSP string — script-src/style-src now allow only 'self' plus a fresh per-request nonce (minted in AuthMiddleware.dispatch, stashed on request.state.csp_nonce for server.py's HTML-serving routes to stamp via shared/csp_nonce.py); unsafe-eval was initially kept (superseded by Round 7 below: it is now denied by default and granted only to Alpine.js pages; Tailwind never needed it); unsafe-inline is narrowed to the CSP3 script-src-attr/style-src-attr directives only, covering existing onclick=/style= attributes without a large addEventListener rewrite. Round 4 (2026-10-13): also added base-uri 'self' (Burp 'missing base-uri', Low) and object-src 'none' (companion hardening; no <object>/<embed> used anywhere). Round 6 (2026-10-14), SEC-4b progress: font-src tightened from the wildcard '*' to 'self' data: (the wildcard matched no real dependency — the only external font stylesheet is already refused by style-src — and notably did NOT match the data: URLs vendored PDF.js emits for PDF-embedded @font-face, so that path was silently broken); _build_strict_csp(nonce) added as the SEC-4b target policy (nonce-only, no unsafe-eval, no -attr directives) and is now ENFORCED on two classes of response: paths listed in _STRICT_CSP_PATHS (markup verified clean) and every nonce-less response (all such call sites are JSON error/gate responses or redirects, which embed no inline script/style, so error responses no longer carry any unsafe-* token). Elsewhere the strict policy can be emitted as an extra Content-Security-Policy-Report-Only header via CSP_STRICT_REPORT_ONLY=true to measure remaining violations without enforcing them. _is_strict_csp_path() matches exactly, not by prefix, so one clean /static page does not exempt its siblings. Round 7 (2026-10-15), SEC-4b tier 2: 'unsafe-eval' is now DENY-BY-DEFAULT. _build_csp()'s allow_eval keyword defaults to False and is set True only for paths in _EVAL_CSP_PATHS (matched by _needs_eval()), which is _EVAL_CSP_ROUTES (the 14 named server.py routes that serve an Alpine page, including stacked decorators such as /studio + /customize) union /static/<page> for each of the 19 files in _ALPINE_PAGES. Everything else - every API route, every non-Alpine page, and any path added in future - loses the token automatically. The grant exists for exactly one dependency: Alpine.js compiles every directive expression with new Function, so without eval its bindings throw EvalError (measured: 21-1410 uncaught EvalErrors per page). The previous claim that the vendored Tailwind build also required eval is FALSE and was disproved in a real browser - with eval blocked, the v4.2.2 JIT still compiles arbitrary-value utilities (w-[137px]) on 11/11 Tailwind pages - so removing the remaining grant is blocked only on migrating to the @alpinejs/csp build, not on precompiling a stylesheet. Replaces the earlier _NO_EVAL_CSP_PATHS/_is_no_eval_csp_path denylist, which was fail-open (a new page silently got eval)."
+
+  - code: IAF-Agent-Studio/shared/csp_nonce.py
+    docs: []
+    note: "SEC-4: generate_nonce() mints a per-request CSP nonce; inject_nonce(html, nonce) stamps it onto inline <script>/<style> tags (skips external script src= and is idempotent). Used by auth/middleware.py (header) and server.py/_serve_html + BasePathStaticFiles (HTML body) so the header and markup always agree. Mirrors shared/base_path.py's dependency-free, side-effect-free style. Also inserts a <script nonce=\"...\">window.__CSP_NONCE__=\"...\";</script> bootstrap right after <head> (idempotent, no-op without a <head> tag) so vendored/first-party scripts that create <style>/<script> elements at runtime (not reachable by server-side stamping) can read window.__CSP_NONCE__ and nonce themselves before appending to the DOM — see static/vendor/tailwind.min.js, static/ask-twin.js, static/privacy-gate.js, static/vendor/pdf.min.js, static/vendor/mermaid.min.js,'s post-Round-3 regression entry."
+
+  - code: IAF-Agent-Studio/shared/static_cors.py
+    docs: []
+    note: "SEC-9: StaticExemptCORSMiddleware subclasses Starlette's CORSMiddleware and passes exempt path prefixes (default /static) straight through to the inner app, so no Access-Control-* header is attached for public, non-credentialed assets. Burp's CORS check flags the mere presence of those headers regardless of allowlist strictness, and 16 of 23 reported instances were /static assets. Behaviour for every non-exempt path is unchanged (same allowlist/credentials/methods/headers args, so /auth/* and /api/* keep correct CORS + preflight + Vary: Origin). Safe because CORS is only consulted by fetch/XHR reads from a foreign origin — <script src>/<link rel=stylesheet>/<img src> loads are not CORS-gated and same-origin requests ignore CORS entirely. _route_path() mirrors auth/middleware.py so exempt prefixes stay un-prefixed under ROOT_PATH sub-path deployments; non-HTTP (WebSocket) scopes are never exempt. Wired in server.py in place of CORSMiddleware."
+
+  - code: IAF-Agent-Studio/shared/static_guard.py
+    docs: []
+    note: "SEC-14: is_backup_artifact(path) returns True when any segment of a static path looks like an editor/backup leftover (.bak/.orig/.old/.save/.swp/.swo/.tmp/.rej substrings, or a trailing ~). BasePathStaticFiles.get_response in server.py raises 404 for matches, because StaticFiles otherwise publishes timestamped copies like index.html.bak_optionA_20260822_085311 that contain the pre-SEC-6 localStorage auth interceptor and WebSocket ?token= pattern — a readable map of weaknesses the live pages no longer have. Their unknown suffix also means they're served as application/octet-stream, bypassing the CSP-nonce and base-path stamping that HTML gets. Blocking at the mount is preferred over deleting the files so later artefacts stay covered. Dependency-free and side-effect-free like shared/base_path.py and shared/csp_nonce.py, so it is unit-testable without importing server.py (which boots logging/engine bridge/storage)."
+
+  - code: IAF-Agent-Studio/auth/tokens.py
+    docs:
+      - docs/07_auth_and_users.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Studio access/refresh JWT minting and validation plus the jti blacklist. create_access_token(user_id, sid) / create_refresh_token(user_id, sid): payload is only sub, type, jti, iat, exp and sid (no email/role/tenant/groups readable in the browser). The refresh token's sid is carried forward on every refresh. create_refresh_token(..., auth_time) also stores auth_time (original login, refresh token only) for the AUTH_SESSION_MAX_HOURS absolute session lifetime."
+
+  - code: IAF-Agent-Studio/auth/identity.py
+    docs:
+      - docs/07_auth_and_users.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Token -> IdentityContext resolution. Minimal browser tokens resolve to a sub/sid identity that is completed server-side from the user store; agent service tokens (agent_os/self_auth.py) still carry their claims and never reach the browser."
+
+  - code: IAF-Agent-Studio/auth/session_registry.py
+    docs:
+      - docs/07_auth_and_users.md
+      - docs/CONFIG_REFERENCE.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Interactive session registry. Session index (always on): hash auth:sessions:<user_id>, field sid -> JSON {id (random public handle), sid, created_at, last_seen_at, ip, user_agent (200 chars), provider}, no tokens; register adds on login, touch updates last_seen_at on refresh (adds a missing, non-revoked session), clear removes on logout, entries older than the refresh TTL or AUTH_SESSION_MAX_HOURS are pruned; list_sessions/public_view back GET /auth/sessions. Revocation (always on): revoke (by public id) / revoke_all write auth:revoked_session:<sid> (TTL = refresh TTL + 60s) and drop the index entry; is_revoked (refresh) and check (per request: revoked + superseded in one GET/MGET) reject it. Single active session (AUTH_SINGLE_SESSION, default off): auth:active_session:<user_id> holds the current sid; register sets it and trims the index to the new login, touch extends TTL only (never rewrites the sid), clear writes a logged-out marker if still current. clear (logout / absolute-lifetime expiry) always writes the revocation marker too, so the refresh cookie logout never receives and pre-refresh access tokens die. Request-time checks fail open with a rate-limited warning; a connection/timeout error opens a 30 s circuit breaker (per client object) that skips Redis; revoke/list raise SessionStoreError. Defines SESSION_SUPERSEDED / SESSION_REVOKED and the iaf_logout_reason values session_superseded / session_revoked."
+
+  - code: IAF-Agent-Studio/auth/sso_session.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Keycloak SSO session bounds: refresh-token revalidation when IdP is reachable; KEYCLOAK_OFFLINE_SESSION_TTL_MINUTES ceiling when offline; KEYCLOAK_SESSION_MAX_TTL_MINUTES absolute cap."
+
+  - code: IAF-Agent-Studio/tests/test_sso_session_enforcement.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+    note: "Offline SSO TTL expiry and logout cookie blacklist regression tests."
+
+  - code: IAF-Agent-Studio/auth/rate_limiter.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+    note: "Redis sliding-window rate limiter via the shared shared.state.redis_client (fleet-shared across instances); in-process per-instance fallback ONLY when Redis is unavailable. Keys: ip:/user:/login: (auth) and tenant: (global per-tenant API limit via is_tenant_allowed)."
+
+  - code: IAF-Agent-Studio/tests/test_tenant_rate_limit.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+    note: "Per-tenant rate-limit gate: blocks after the limit, tenants independent, limit<=0 disables; uses the in-process fallback (no Redis needed)."
+    note: Public authentication bypass list, including minimal liveness and readiness probes.
+
+  - code: IAF-Agent-Studio/security/signed_urls.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+      - docs/AGENTPRO_SETUP.md
+      - docs/ENTERPRISE_OPERATIONS_PROFILE.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: Short-lived tenant/agent/user-bound signatures for browser file access.
+
+  - code: IAF-Agent-Studio/scheduler_worker.py
+    docs:
+      - docs/AGENTPRO_SETUP.md
+      - docs/ENTERPRISE_OPERATIONS_PROFILE.md
+    note: Standalone scheduler-candidate entry point for split-role deployments.
+
+  - code: IAF-Agent-Studio/queue_worker.py
+    docs:
+      - docs/AGENTPRO_SETUP.md
+      - docs/ENTERPRISE_OPERATIONS_PROFILE.md
+    note: Standalone single queue-worker entry point for split-role deployments.
+
+  - code: enterprise_root/tenants/company/security/policies.yaml
+    docs:
+      - docs/CONFIG_REFERENCE.md
+    note: "Sample tenant entitlement defaults, including demo workstream skill/component access"
+
+  # ─────────────────────────────────────────
+  # IAF-AGENT-SKILLS — core engine
+  # ─────────────────────────────────────────
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/agent.py
+    docs:
+      - docs/03_architecture.md
+      - docs/PROVIDER_ARCHITECTURE.md
+      - docs/04_skill_authoring.md
+      - docs/06_memory_and_learning.md
+      - IAF-Agent-Skills/docs/execution_modes.md
+      - IAF-Agent-Skills/docs/memory_schema.md
+      - IAF-Agent-Skills/docs/HOOK_SYSTEM_DESIGN.md
+    note: "Request lifecycle, session compaction, hook points, memory integration"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/providers/
+    docs:
+      - docs/PROVIDER_ARCHITECTURE.md
+      - docs/03_architecture.md
+      - docs/CONFIG_REFERENCE.md
+    note: "Provider Protocol contracts, factory env vars, and partner adapter guidance"
+
+  - code: IAF-Agent-Skills/agentos_contracts/
+    docs:
+      - docs/PROVIDER_ARCHITECTURE.md
+      - docs/03_architecture.md
+      - docs/CONFIG_REFERENCE.md
+      - docs/COMPOSABLE_ADOPTION_SPEC.md
+    note: "Dependency-free extension SDK: provider Protocols, host-service contracts (EvidenceSink, MissionRuntimeBridge), Skill descriptor, and React runtime selector"
+
+  # ─────────────────────────────────────────
+  # STORAGE BACKEND LAYER (SQLite default / PostgreSQL enterprise)
+  # ─────────────────────────────────────────
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/sqlite_util.py
+    docs:
+      - docs/STORAGE_BACKENDS.md
+      - docs/CONFIG_REFERENCE.md
+    note: "Hardened sqlite3.connect() with WAL + busy_timeout=30000; the single place SQLite pragmas are set"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/storage/
+    docs:
+      - docs/STORAGE_BACKENDS.md
+      - docs/CONFIG_REFERENCE.md
+      - docs/03_architecture.md
+    note: "StorageEngine factory + SqliteEngine/PostgresEngine; backend selection from DB_BACKEND/DATABASE_URL via runtime bridge"
+
+  - code: IAF-Agent-Skills/agentos_contracts/storage.py
+    docs:
+      - docs/STORAGE_BACKENDS.md
+      - docs/CONFIG_REFERENCE.md
+    note: "StorageEngine + KnowledgeStore Protocols and backend identifiers"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/vector_backend.py
+    docs:
+      - docs/STORAGE_BACKENDS.md
+      - docs/CONFIG_REFERENCE.md
+    note: "VectorBackend abstraction; BruteForce/SqliteVec/PgVector; VECTOR_BACKEND selection. BruteForceBackend hydrates from Postgres via scoped_connect (bytes() for memoryview). PgVectorBackend takes namespace=kn_<tenant>_<agent> to prefix the collection in the shared agentos_vectors table = per-agent isolation on the global flag (else cross-agent recall leak)."
+
+  - code: IAF-Agent-Skills/tests/test_pgvector_namespace_isolation.py
+    docs:
+      - docs/STORAGE_BACKENDS.md
+    note: "Per-agent isolation gate for PgVectorBackend: two namespaces holding the same record_id do not leak across search/count/delete; PG-only, auto-skips without DATABASE_URL + pgvector."
+
+  - code: agent_os/pgbouncer/pgbouncer.ini
+    docs:
+      - docs/STORAGE_BACKENDS.md
+      - docs/CONFIG_REFERENCE.md
+    note: "PgBouncer transaction-pooling config for fleet scale: caps total PG server conns (< max_connections). Requires >=1.21 (max_prepared_statements for psycopg3 auto-prepare). Point DATABASE_URL at :6432. Codebase audited txn-pool-safe (SET LOCAL only, no LISTEN/advisory/named-cursors)."
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/storage/engine.py
+    docs:
+      - docs/STORAGE_BACKENDS.md
+    note: "Storage engine (sqlite/postgres) + psycopg_pool. Pool uses reset=_pool_reset (RESET ALL on return) so a scoped `SET LOCAL search_path` never leaks to the next borrower — without it, pooled conns kept a kn_<schema> search_path and pgvector's `vector` type (in public) failed to resolve."
+
+  - code: IAF-Agent-Studio/trace_emitter.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+      - docs/STORAGE_BACKENDS.md
+    note: "Execution-trace emitter (async fire-and-forget). TRACE_BACKEND=sqlite (per-instance traces.db) | postgres (shared `trace` schema traces+spans, tenant-discriminator, via pooled engine). Seam: _flush/_flush_postgres, _connect/_cursor/_tbl/_rowid; PG flush uses per-row SAVEPOINT + ON CONFLICT(trace_id) DO NOTHING."
+
+  - code: IAF-Agent-Studio/tests/test_trace_backend_parity.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+    note: "SQLite↔Postgres parity gate for traces (begin/spans/end + query/get/count + dup-safety); PG run isolated-schema (TRACE_PG_SCHEMA) dropped on teardown, auto-skips without DATABASE_URL."
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/conversation_manager.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+      - IAF-Agent-Skills/docs/memory_schema.md
+    note: "Conversation session index + transcript tiering. conversation_turns table (durable turn store in the kn_<tenant>_<agent> schema / sqlite knowledge_index.db); append_turn (dual-write, gated on TRANSCRIPT_HOT_DAYS>0), load_session_turns falls back to the store when the JSONL is pruned, tier_cold_files prunes cold archived history files (recent stay grep-able)."
+
+  - code: IAF-Agent-Skills/tests/test_transcript_tiering.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+    note: "Transcript tiering gate: read-from-file (recent), fallback-to-store (pruned), safe pruning (cold+archived only), default-off no-op. SQLite + PG (isolated schema, auto-skip without DATABASE_URL)."
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/knowledge_query.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+    note: "knowledge.jsonl is append-only (edits/tombstones appended, last-write-wins on read). compact_knowledge_jsonl collapses superseded duplicates — on-demand (dashboard) + scheduled by the server maintenance loop when bloat >= KNOWLEDGE_COMPACT_BLOAT_PCT. NOT a per-edit rewrite."
+
+  - code: IAF-Agent-Skills/tests/test_knowledge_jsonl_append_only.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+    note: "Guards append-only last-write-wins + tombstone (status=archived) + compaction collapse/archive semantics for knowledge.jsonl."
+
+  - code: IAF-Agent-Studio/server.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+    note: "Lifespan leader-gated maintenance loop (_maintenance_loop/_run_maintenance): daily, Redis NX day-key via shared.state.redis_client (one instance/window; runs single-node if Redis unavailable — the leader-key lookup is isolated in its own try so it NEVER skips the run), runs transcript pruning (tier_cold_files) + knowledge.jsonl compaction + trace retention (purge_old_traces). Also per-tenant rate limit + scheduler leader loop; closes the shared Redis client on graceful shutdown."
+
+  - code: IAF-Agent-Skills/tests/test_pool_search_path_reset.py
+    docs:
+      - docs/STORAGE_BACKENDS.md
+    note: "Regression: pooled PG connection must not leak a scoped search_path (RESET ALL on return); PG-only, auto-skips without DATABASE_URL/psycopg_pool."
+
+  - code: ops/start.sh
+    docs:
+      - docs/START_STOP.md
+    note: "Local start/stop/restart/status scripts (ops/*.sh). Order: Postgres→Redis→server; graceful SIGTERM only (never -9); starts Redis if down; server via ../.venv/bin/python3 on :8081."
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/knowledge_indexer.py
+    docs:
+      - docs/STORAGE_BACKENDS.md
+      - docs/06_memory_and_learning.md
+    note: "Non-destructive reindex_all/reindex_episodes; busy_timeout on the shared knowledge index. KNOWLEDGE_BACKEND seam (sqlite/postgres, schema-per-agent via _scoped_connect); public accessors connect()/placeholder/backend/get_episode_reasoning_row for external consumers."
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/entity_registry.py
+    docs:
+      - docs/STORAGE_BACKENDS.md
+      - IAF-Agent-Skills/docs/entity_registry.md
+    note: "Backend-agnostic via the KnowledgeIndexer seam (scoped_connect/ph/backend); FTS5→tsvector, recursive CTEs, routing_signal_log IDENTITY. collect_context now feeds process_relationships to the planner (was a dead undefined-cur block). upsert_relationship() writes world-model edges into process_relationships (idempotent, both backends)."
+
+  - code: IAF-Agent-Skills/scripts/knowledge_pg_schema.py
+    docs:
+      - docs/STORAGE_BACKENDS.md
+    note: "Postgres DDL for the knowledge index (generated tsvector+GIN FTS, bytea embeddings, FK order, GENERATED IDENTITY). Applied per-agent by KnowledgeIndexer._init_db_postgres. Also grants SELECT on the graph tables (entity_registry/process_relationships) to agentos_graph_ro, guarded on role existence — the world-model read-only isolation boundary."
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/tool_factory.py
+    docs:
+      - agent_os/docs/tools_reference.md
+      - docs/CONFIG_REFERENCE.md
+    note: "run_sql_query is a backend-aware gateway: resolves a SQLite file path OR a named Postgres db resource; PG path connects via the KnowledgeIndexer seam with SET LOCAL statement_timeout + SET LOCAL ROLE for read_only resources; writes commit on non-read_only resources gated by sql_write_allowed; DDL always blocked."
+
+  - code: agent_os/external_access.py
+    docs:
+      - agent_os/docs/tools_reference.md
+    note: "db resource model extended: backend/name/schema/allowed_tables/read_only fields; resource_for_database matches named (non-file) resources by name/resource_id so run_sql_query(database='graph') resolves."
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/entity_guide_seeder.py
+    docs:
+      - IAF-Agent-Skills/docs/entity_registry.md
+    note: "Also parses a Relationships table in entity_guide.md (_parse_relationships) and seeds process_relationships via upsert_relationship after entities (FK order); idempotent, background thread, mtime-guarded. Seeder stamps status='curated', source='entity_guide' (Phase 2a)."
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/world_model.py
+    docs:
+      - docs/06_memory_and_learning.md
+      - docs/CONFIG_REFERENCE.md
+    note: "Phase 2b per-turn relationship learning (default-off WORLD_MODEL_LEARN). record_relationships confidence-gates + FK-resolves LLM-extracted triples and writes pending_review edges via EntityRegistryStore.upsert_relationship. Fed by memory._extract_reasoning_and_entities (emits triples when the flag is on) + memory.log_episode. Domain-neutral. Auto-confirm knob: _autoconfirm_threshold() reads WORLD_MODEL_AUTOCONFIRM_CONFIDENCE — an edge at/above it is written 'confirmed' (skips review), else 'pending_review' (default OFF). Phase 2c: append_event/record_outcome_event write an append-only world_events.jsonl (log-is-truth); rebuild_graph_from_events replays it into process_relationships (projector, for recovery/audit). Phase 2d: promote_relationship/reject_relationship/list_pending (governance) + resolve_graph_backend (GRAPH_BACKEND seam: relational default / AGE opt-in)."
+
+  - code: IAF-Agent-Skills/agentos_contracts/world_model.py
+    docs:
+      - docs/06_memory_and_learning.md
+    note: "WorldModelProvider Protocol (Phase 2d) — domain-neutral graph contract (upsert_relationship / set_relationship_status / list_relationships). EntityRegistryStore satisfies it; the active impl is chosen by GRAPH_BACKEND (relational default; Apache AGE opt-in, not yet implemented)."
+
+  - code: IAF-Agent-Skills/scripts/bootstrap_graph_ro_role.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+    note: "One-time: create agentos_graph_ro (NOLOGIN), grant it to the app role, grant SELECT on the graph tables across existing kn_ schemas. Needs a privileged (CREATEROLE) DATABASE_URL."
+
+  - code: IAF-Agent-Studio/routers/world_model.py
+    docs:
+      - docs/06_memory_and_learning.md
+    note: "Graph-review router (Phase 2d governance UI). GET /api/world-model/pending lists pending_review edges; POST /api/world-model/promote and /reject flip an edge to confirmed/rejected via world_model.promote_relationship/reject_relationship (logged to world_events.jsonl). Scoped identity + state.get_or_create → agent.memory.knowledge_indexer.entity_registry (mirrors routers/knowledge.py). Served at /world-model (static/world_model_review.html)."
+
+  - code: IAF-Agent-Studio/static/world_model_review.html
+    docs:
+      - docs/06_memory_and_learning.md
+    note: "World-Model Graph Review UI — lists pending edges (from/relation/to, confidence, provenance) with Promote/Reject actions calling the /api/world-model/* endpoints. Bearer-token auth (iaf_access_token). Route: /world-model or /graph-review."
+
+  - code: IAF-Agent-Skills/tests/test_graph_gateway.py
+    docs:
+      - agent_os/docs/tools_reference.md
+    note: "Writer idempotency+FK, seeder parser, gateway read-only/DDL/PG-routing/SQLite-path units, and a live-PG read-only-role isolation test (skips without CREATEROLE)."
+
+  - code: IAF-Agent-Skills/tests/test_knowledge_index_parity.py
+    docs:
+      - docs/STORAGE_BACKENDS.md
+    note: "Parametrized SQLite↔Postgres parity gate for the knowledge index; Postgres run auto-skips without a reachable DATABASE_URL."
+
+  - code: IAF-Agent-Skills/scripts/reindex_knowledge.py
+    docs:
+      - docs/STORAGE_BACKENDS.md
+      - docs/POSTGRES_MIGRATION.md
+    note: "Rebuild/bootstrap the knowledge+episode index from authoritative JSONL"
+
+  - code: IAF-Agent-Skills/scripts/migrate_sqlite_to_postgres.py
+    docs:
+      - docs/STORAGE_BACKENDS.md
+      - docs/POSTGRES_MIGRATION.md
+    note: "Generic SQLite→Postgres table copy (skips FTS/virtual tables; vectors rebuilt via reindex)"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/runtime_bridge.py
+    docs:
+      - docs/PROVIDER_ARCHITECTURE.md
+      - docs/03_architecture.md
+    note: "Engine-local runtime bridge: host registers trace/cost/evidence/mission/provider-config/identity services here; engine reads via accessors and degrades gracefully when unset"
+
+  - code: IAF-Agent-Studio/shared/engine_bridge.py
+    docs:
+      - docs/PROVIDER_ARCHITECTURE.md
+      - docs/03_architecture.md
+    note: "Studio-side implementations of host-service contracts (StudioEvidenceSink, StudioMissionBridge) and register_runtime_services() wiring into the engine runtime bridge"
+
+  - code: IAF-Agent-Skills/agentos_model/
+    docs:
+      - docs/PROVIDER_ARCHITECTURE.md
+      - docs/03_architecture.md
+      - docs/CONFIG_REFERENCE.md
+      - docs/COMPOSABLE_ADOPTION_SPEC.md
+      - IAF-Agent-Skills/docs/execution_modes.md
+    note: "Composable model package for ModelRegistry, model provider adapter, provider chat adapters, and reasoning metadata"
+
+  - code: IAF-Agent-Skills/agentos_engine/
+    docs:
+      - docs/PROVIDER_ARCHITECTURE.md
+      - docs/03_architecture.md
+      - docs/CONFIG_REFERENCE.md
+      - docs/COMPOSABLE_ADOPTION_SPEC.md
+    note: "Composable engine facade re-exporting the historical iaf_agent_skills runtime"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/providers_default/
+    docs:
+      - docs/PROVIDER_ARCHITECTURE.md
+      - docs/03_architecture.md
+    note: "Default wrappers around SkillLoader, SkillRouter, tool factory, HookRunner, and TraceEmitter"
+
+  - code: partner_adapters/
+    docs:
+      - docs/PROVIDER_ARCHITECTURE.md
+    note: "Starter examples for external provider integrations"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/hook_runner.py
+    docs:
+      - IAF-Agent-Skills/docs/HOOK_SYSTEM_DESIGN.md
+      - docs/04_skill_authoring.md
+      - docs/03_architecture.md
+    note: "Hook manifest fields, lifecycle events, and blocking/HITL semantics"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/capture_events.py
+    docs:
+      - docs/RL_EVAL_CAPTURE.md
+      - docs/03_architecture.md
+      - docs/05_agent_config.md
+    note: "Neutral capture event bridge and the single import boundary into rl_capture"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/model_call_pipeline.py
+    docs:
+      - IAF-Agent-Skills/docs/HOOK_SYSTEM_DESIGN.md
+      - IAF-Agent-Skills/docs/execution_modes.md
+      - docs/03_architecture.md
+      - docs/04_skill_authoring.md
+      - docs/05_agent_config.md
+    note: "PolicyChatModel wrapper, model-call pipeline contracts, and MODEL_CALL_PIPELINE_ENABLED flag"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/model_call_policy_hooks.py
+    docs:
+      - IAF-Agent-Skills/docs/HOOK_SYSTEM_DESIGN.md
+      - docs/04_skill_authoring.md
+      - docs/05_agent_config.md
+    note: "Central policy registry integration for in-process model-call hooks"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/hook_approval.py
+    docs:
+      - IAF-Agent-Skills/docs/HOOK_SYSTEM_DESIGN.md
+      - IAF-Agent-Skills/docs/memory_schema.md
+      - IAF-Agent-Skills/docs/execution_modes.md
+      - docs/03_architecture.md
+    note: "Conversion of blocking hook results into approval_pending checkpoints"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/tool_governance.py
+    docs:
+      - IAF-Agent-Skills/docs/HOOK_SYSTEM_DESIGN.md
+      - docs/03_architecture.md
+    note: "PreToolUse governance and hook-triggered tool approvals"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/tool_gating.py
+    docs:
+      - docs/03_architecture.md
+    note: "Per-skill runtime tool gating policy. tool_allowed_for_skill intersects powerful tools (shell/write_file/query_memory) with the skill's declared SKILL.md tools: list, not just the agent-level tools.allowed. A skill that declares a non-empty tools list is authoritative (only what it names is granted); a skill that declares none inherits the agent allowlist. Consumed by SkillAgent._create_agent; mirrors the existing run_sql_query intersection. Tests: IAF-Agent-Skills/tests/test_tool_gating.py."
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/platform_hooks/
+    docs:
+      - IAF-Agent-Skills/docs/HOOK_SYSTEM_DESIGN.md
+    note: "Platform-owned hook manifest preservation and runtime fields"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/react_runtime/
+    docs:
+      - IAF-Agent-Skills/docs/execution_modes.md
+      - IAF-Agent-Skills/docs/HOOK_SYSTEM_DESIGN.md
+    note: "Native/LangGraph ReAct tool governance interruption behavior; reasoning-trace extraction"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/model_registry.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+      - docs/COMPOSABLE_ADOPTION_SPEC.md
+      - IAF-Agent-Skills/docs/execution_modes.md
+    note: "Compatibility shim re-exporting ModelRegistry from agentos_model"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/model_provider.py
+    docs:
+      - docs/PROVIDER_ARCHITECTURE.md
+      - docs/CONFIG_REFERENCE.md
+      - docs/COMPOSABLE_ADOPTION_SPEC.md
+    note: "Compatibility shim re-exporting ModelProviderAdapter from agentos_model"
+
+  - code: IAF-Agent-Skills/agentos_model/model_provider.py
+    docs:
+      - docs/PROVIDER_ARCHITECTURE.md
+      - docs/CONFIG_REFERENCE.md
+      - docs/COMPOSABLE_ADOPTION_SPEC.md
+      - docs/PRIVATE_LEARNING_LOOP.md
+    note: "ModelProviderAdapter implementation, including opt-in eval-router role redirection"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/model_reasoning_meta.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+      - docs/COMPOSABLE_ADOPTION_SPEC.md
+      - IAF-Agent-Skills/docs/execution_modes.md
+    note: "Compatibility shim re-exporting reasoning capability metadata from agentos_model"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/azure_responses_chat.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+      - docs/COMPOSABLE_ADOPTION_SPEC.md
+      - IAF-Agent-Skills/docs/execution_modes.md
+    note: "Compatibility shim re-exporting Azure/OpenAI Responses adapter from agentos_model"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/anthropic_thinking_chat.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+      - docs/COMPOSABLE_ADOPTION_SPEC.md
+      - IAF-Agent-Skills/docs/execution_modes.md
+    note: "Compatibility shim re-exporting Anthropic Claude thinking adapter from agentos_model"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/vertex_chat.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+      - docs/COMPOSABLE_ADOPTION_SPEC.md
+      - IAF-Agent-Skills/docs/execution_modes.md
+    note: "Compatibility shim re-exporting Vertex/Gemini raw adapter from agentos_model"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/router.py
+    docs:
+      - docs/03_architecture.md
+      - docs/04_skill_authoring.md
+      - IAF-Agent-Skills/docs/entity_registry.md
+      - docs/AGENTPRO_SKILL_AUTHOR.md
+    note: "Routing pipeline, keyword/semantic/entity signals, confidence scoring"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/memory.py
+    docs:
+      - docs/06_memory_and_learning.md
+      - docs/03_architecture.md
+      - IAF-Agent-Skills/docs/memory_schema.md
+      - enterprise_root/docs/data_schemas.md
+    note: "Three-layer memory, retrieval tiers, knowledge CRUD, learnings"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/execution.py
+    docs:
+      - IAF-Agent-Skills/docs/execution_modes.md
+      - docs/04_skill_authoring.md
+      - docs/03_architecture.md
+      - docs/AGENTPRO_SKILL_AUTHOR.md
+      - docs/HARNESS_CONFIGURATION_CATALOG.md
+    note: "Execution mode implementations: react, workflow, parallel, supervisor. HARNESS_CONFIGURATION_CATALOG §2 lists the execution_mode enum + engine-selection knobs (update it if a mode is added/removed)."
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/loader.py
+    docs:
+      - docs/04_skill_authoring.md
+      - docs/AGENTPRO_SKILL_AUTHOR.md
+      - docs/02_quick_start.md
+      - docs/HARNESS_CONFIGURATION_CATALOG.md
+    note: "SKILL.md frontmatter field names, defaults, parsing behaviour. HARNESS_CONFIGURATION_CATALOG Appendix B is the authoritative per-skill field list (update it if a frontmatter field is added/removed). Parses the `profile:` field."
+
+  - code: IAF-Agent-Skills/agentos_contracts/profile.py
+    docs:
+      - docs/HARNESS_PROFILES.md
+    note: "Harness execution profile contract: ProfileSelection + resolve_profile (precedence request>skill>config>env>tenant-default), the 5 built-in preset vectors (BUILTIN_PROFILES), available_profiles (tenant overlay + extends), and the one-way safety ratchet (locked→auto_run False). Update the preset table in HARNESS_PROFILES.md when a preset changes."
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/harness_profiles.py
+    docs:
+      - docs/HARNESS_PROFILES.md
+    note: "Loads the tenant harness_profiles.yaml registry (default_profile + profiles with extends/override), cached by mtime. Absent/malformed → {} (built-ins are the fallback)."
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/agent.py
+    docs:
+      - docs/HARNESS_PROFILES.md
+    note: "_apply_profile / _restore_profile_overrides apply a resolved profile's dimensions per run (verification+primary verifier, auto_run ratchet, light_mode, knowledge_retrieval, recursion budget); default 'standard' is a no-op (parity). Also threads the `profile` param through run()/_run_impl."
+
+  - code: IAF-Agent-Studio/routers/settings.py
+    docs:
+      - docs/HARNESS_PROFILES.md
+      - docs/CONFIG_REFERENCE.md
+    note: "DEFAULT_PROFILE admin registry entry (category 'profiles') reads/writes config.yaml default_profile and hot-reloads the live agent, mirroring the CONTEXT_LOADING_MODE pattern."
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/self_evolution.py
+    docs:
+      - docs/06_memory_and_learning.md
+      - docs/help/evolution_ui.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Tier definitions (1/2/3a/3b/4), analysis pipeline, improvement schema"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/tools/
+    docs:
+      - docs/04_skill_authoring.md
+      - docs/AGENTPRO_SKILL_AUTHOR.md
+      - agent_os/docs/tools_reference.md
+    note: "Tool names, signatures, parameters, shell command capabilities"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/queue_manager.py
+    docs:
+      - IAF-Agent-Studio/docs/cc_queue.md
+      - docs/03_architecture.md
+      - docs/help/dashboard_ui.md
+    note: "Queue state machine, lane concurrency, DLQ, retry logic"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/workstream_store.py
+    docs:
+      - docs/MISSION_MODE_GUIDE.md
+      - docs/WORKSTREAM_SKILL_CONTRACT_GUIDE.md
+      - docs/DETERMINISTIC_AUTOMATIONS.md
+    note: "Workstream YAML lifecycle, item updates, and runtime business_lens refresh"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/mission_engine.py
+    docs:
+      - docs/MISSION_MODE_GUIDE.md
+      - docs/WORKSTREAM_SKILL_CONTRACT_GUIDE.md
+      - docs/DETERMINISTIC_AUTOMATIONS.md
+      - docs/RL_EVAL_CAPTURE.md
+    note: "Mission Mode item loop, skill/automation worker dispatch, runtime traces, and outcome labels"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/automation.py
+    docs:
+      - docs/DETERMINISTIC_AUTOMATIONS.md
+      - docs/04_skill_authoring.md
+      - docs/AGENTPRO_SKILL_AUTHOR.md
+    note: "No-LLM AutomationEngine over WorkflowEngine; allowed actions and skill-step rejection"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/workstream_business_lens.py
+    docs:
+      - docs/MISSION_MODE_GUIDE.md
+      - docs/WORKSTREAM_SKILL_CONTRACT_GUIDE.md
+    note: "Generic business_lens aggregation from case_summary, status, approval, and value metadata"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/scheduler/scheduler.py
+    docs:
+      - IAF-Agent-Studio/docs/CRON_SCHEDULER.md
+      - docs/03_architecture.md
+      - docs/help/dashboard_ui.md
+    note: "Job scheduling, cron expressions, distributed lock, job lifecycle"
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/scheduler/models.py
+    docs:
+      - IAF-Agent-Studio/docs/CRON_SCHEDULER.md
+      - docs/CONFIG_REFERENCE.md
+    note: "Job fields, retry policy fields, default values"
+
+  - code: IAF-Agent-Skills/skills/_index.yaml
+    docs:
+      - docs/02_quick_start.md
+      - docs/AGENTPRO_SETUP.md
+      - docs/AGENTPRO_SKILL_AUTHOR.md
+    note: "Skill registry format, category labels, category_order, default_skill"
+
+  - code: enterprise_root/tenants/company/skills/_index.yaml
+    docs:
+      - docs/04_skill_authoring.md
+      - enterprise_root/tenants/company/shared/docs/help/skill_builder_ui.md
+      - enterprise_root/tenants/company/shared/docs/help/dashboard_ui.md
+    note: "Tenant skill registry entries, including platform skills such as policy_authoring and component_authoring"
+
+  - code: enterprise_root/tenants/company/skills/policy_authoring/SKILL.md
+    docs:
+      - IAF-Agent-Studio/docs/api_reference.md
+      - IAF-Agent-Skills/docs/HOOK_SYSTEM_DESIGN.md
+      - enterprise_root/tenants/company/shared/docs/help/dashboard_ui.md
+    note: "LLM-backed Policy Control YAML authoring contract"
+
+  - code: enterprise_root/tenants/company/skills/component_authoring/SKILL.md
+    docs:
+      - docs/04_skill_authoring.md
+      - docs/AGENTPRO_SKILL_AUTHOR.md
+      - IAF-Agent-Studio/docs/api_reference.md
+      - enterprise_root/tenants/company/shared/docs/help/skill_builder_ui.md
+    note: "LLM-backed component.html authoring contract and safety rules"
+
+  - code: IAF-Agent-Skills/skills/
+    docs:
+      - docs/AGENTPRO_SKILL_AUTHOR.md
+      - docs/WORKSTREAM_SKILL_CONTRACT_GUIDE.md
+    note: "SKILL.md authoring patterns, workstream item output contracts, case metadata guidance"
+
+  # ─────────────────────────────────────────
+  # IAF-AGENT-STUDIO — server & API
+  # ─────────────────────────────────────────
+
+  - code: rl_capture/
+    docs:
+      - docs/RL_EVAL_CAPTURE.md
+      - docs/03_architecture.md
+      - docs/05_agent_config.md
+      - docs/06_memory_and_learning.md
+    note: "Framework-neutral RL/eval capture schema, store, redaction, exporters, and AgentPro adapter"
+
+  - code: rl_capture/evals/
+    docs:
+      - docs/PRIVATE_LEARNING_LOOP.md
+      - docs/RL_EVAL_CAPTURE.md
+      - docs/03_architecture.md
+      - docs/06_memory_and_learning.md
+    note: "Framework-neutral Private Learning Loop eval registry, rubric assertions, runner, and recommender"
+
+  - code: rl_capture/evals/evaluators.py
+    docs:
+      - docs/PRIVATE_LEARNING_LOOP.md
+      - docs/RL_EVAL_CAPTURE.md
+      - docs/03_architecture.md
+      - docs/06_memory_and_learning.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Allowlisted Python evaluator manifests, JSON contract, and constrained subprocess execution"
+
+  - code: rl_capture/evals/recommender.py
+    docs:
+      - docs/PRIVATE_LEARNING_LOOP.md
+      - docs/RL_EVAL_CAPTURE.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Framework-neutral advisory model recommender over eval result rows"
+
+  - code: rl_capture/store/eval_store.py
+    docs:
+      - docs/PRIVATE_LEARNING_LOOP.md
+      - docs/RL_EVAL_CAPTURE.md
+      - docs/STORAGE_BACKENDS.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "StorageEngine-backed eval run/case persistence for Private Learning Loop suites"
+
+  - code: rl_capture/adapters/agentpro/evals_paths.py
+    docs:
+      - docs/PRIVATE_LEARNING_LOOP.md
+      - docs/RL_EVAL_CAPTURE.md
+      - docs/03_architecture.md
+    note: "AgentPro adapter for tenant eval/golden-set/evaluator paths under enterprise_root"
+
+  - code: rl_capture/adapters/agentpro/eval_candidates.py
+    docs:
+      - docs/PRIVATE_LEARNING_LOOP.md
+      - docs/RL_EVAL_CAPTURE.md
+      - docs/03_architecture.md
+    note: "AgentPro candidate producers for eval targets: skill, automation, and model role"
+
+  - code: enterprise_root/tenants/company/evals/
+    docs:
+      - docs/PRIVATE_LEARNING_LOOP.md
+      - docs/RL_EVAL_CAPTURE.md
+    note: "Sample tenant Private Learning Loop suite YAML definitions"
+
+  - code: enterprise_root/tenants/company/golden_sets/
+    docs:
+      - docs/PRIVATE_LEARNING_LOOP.md
+      - docs/RL_EVAL_CAPTURE.md
+    note: "Sample tenant golden-set JSONL answer keys"
+
+  - code: enterprise_root/tenants/company/eval_evaluators/
+    docs:
+      - docs/PRIVATE_LEARNING_LOOP.md
+      - docs/RL_EVAL_CAPTURE.md
+      - docs/06_memory_and_learning.md
+    note: "Sample tenant allowlisted Python evaluator manifests and modules"
+
+  - code: IAF-Agent-Studio/server.py
+    docs:
+      - docs/02_quick_start.md
+      - docs/03_architecture.md
+      - docs/AGENTPRO_SETUP.md
+      - docs/CONFIG_REFERENCE.md
+      - docs/STANDALONE_CRON_JOBS.md
+      - docs/DETERMINISTIC_AUTOMATIONS.md
+    note: "Startup command, env var loading order, background service startup/reconciliation, router registration, and module-owned static route compatibility"
+
+  - code: IAF-Agent-Studio/kernel_worker.py
+    docs:
+      - docs/02_quick_start.md
+      - docs/03_architecture.md
+      - docs/AGENTPRO_SETUP.md
+      - docs/CONFIG_REFERENCE.md
+      - docs/ENTERPRISE_OPERATIONS_PROFILE.md
+      - agent_os/docs/kernel_internals.md
+      - agent_os/docs/tools_reference.md
+    note: "Signed remote AgentOS kernel worker for shell, write_file, Python, credential-bound execution, and readiness"
+
+  - code: IAF-Agent-Studio/shared/approval_scoping.py
+    docs:
+      - docs/README.md
+    note: "Role- and tenant-scoped filtering for Command Center approval reads and HITL stats (OPS-1/OPS-5)."
+
+  - code: IAF-Agent-Studio/shared/config.py
+    docs:
+      - docs/05_agent_config.md
+      - docs/AGENTPRO_SETUP.md
+      - docs/CONFIG_REFERENCE.md
+      - docs/ENTERPRISE_OPERATIONS_PROFILE.md
+      - docs/PROVIDER_ARCHITECTURE.md
+      - docs/STORAGE_BACKENDS.md
+      - docs/HARNESS_CONFIGURATION_CATALOG.md
+    note: "Runtime env vars, default values, feature flags, recovery verification controls, trace-value router controls, storage backend config registered into the runtime bridge, and ROOT_PATH (sub-path / base-path deployment behind a gateway). HARNESS_CONFIGURATION_CATALOG Appendix A is the full env-var inventory grouped by concern (keep it + CONFIG_REFERENCE.md in sync when a var is added). SEC-12: CORS_ALLOWED_ORIGINS defaults to \"\" (deny), NOT \"*\" — it previously fell back to the wildcard both when unset and when set empty, so any non-strict-mode deployment that omitted the var trusted every origin (Burp 'CORS: arbitrary origin trusted', Assessment-22311631). An empty allowlist makes CORSMiddleware match no origin and emit no Access-Control-* header, which is correct by default because the UI is same-origin with the API and same-origin requests never consult CORS. '*' is still settable for local dev but logs a boot warning, is rejected by runtime_roles.validate_enterprise_security_config under strict mode, and can never pair with allow_credentials (computed in server.py)."
+
+  - code: IAF-Agent-Studio/shared/base_path.py
+    docs:
+      - deploy/k8s/README.md
+      - docs/CONFIG_REFERENCE.md
+    note: "Sub-path / base-path support: ROOT_PATH normalization; the inline HTML bootstrap that shims fetch/WebSocket/window.open, exposes window.apiUrl/window.wsUrl/window.navigate, rewrites root-absolute <a>/<form>/<img> on DOMContentLoaded and intercepts anchor clicks; PLUS a server-side attribute rewrite (rewrite_root_absolute_attrs) that prefixes root-absolute src/href/action so <script src>/<link href> assets in <head> (unreachable by any runtime shim) and declarative links resolve under the gateway prefix. Empty ROOT_PATH => byte-for-byte no-op. server.py injects it into every served HTML page (via _serve_html AND the BasePathStaticFiles /static mount so statically-served pages like the Mission-Mode workstream pages are covered too) and sets FastAPI/uvicorn root_path. Hard JS navigations (location.href='/...') are fixed per page with window.__BASE_PATH__ across ALL UI surfaces. Requires a paired gateway route (/qlabs/* -> agentos:8081 with WebSocket upgrade on /qlabs/ws/*)."
+
+  - code: IAF-Agent-Studio/shared/recovery_verifier.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+      - docs/ENTERPRISE_OPERATIONS_PROFILE.md
+      - docs/STORAGE_BACKENDS.md
+    note: "Recovery manifest checksums, isolated-root safety, structured-file and SQLite integrity checks, drill evidence promotion, RPO/RTO evidence, and JSON reports"
+
+  - code: IAF-Agent-Studio/shared/recovery_readiness_service.py
+    docs:
+      - docs/ENTERPRISE_OPERATIONS_PROFILE.md
+      - IAF-Agent-Studio/docs/api_reference.md
+      - enterprise_root/tenants/company/shared/docs/help/dashboard_ui.md
+    note: "Configured recovery root catalog, tenant report/evidence store, summaries, and verification orchestration"
+
+  - code: IAF-Agent-Studio/shared/recovery_live_probe.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+      - docs/ENTERPRISE_OPERATIONS_PROFILE.md
+      - IAF-Agent-Studio/docs/api_reference.md
+      - enterprise_root/tenants/company/shared/docs/help/dashboard_ui.md
+    note: "Explicitly confirmed recovery-cell HTTP probes, drill evidence consumption, and production Redis endpoint reuse rejection"
+
+  - code: IAF-Agent-Studio/routers/recovery_readiness.py
+    docs:
+      - docs/ENTERPRISE_OPERATIONS_PROFILE.md
+      - IAF-Agent-Studio/docs/api_reference.md
+      - enterprise_root/tenants/company/shared/docs/help/dashboard_ui.md
+    note: "Admin and entitlement-governed Recovery Readiness summary, report, root, drill evidence, and verify APIs"
+
+  - code: IAF-Agent-Studio/shared/evidence_store.py
+    docs:
+      - docs/STORAGE_BACKENDS.md
+      - docs/CONFIG_REFERENCE.md
+      - docs/SHARED_STORAGE_CUTOVER_RUNBOOK.md
+    note: "Evidence store: SQLite (WAL/busy_timeout) by default; EVIDENCE_BACKEND=postgres → per-tenant schema ev_<tenant> via shared engine seam (BLOB→BYTEA, FK-safe delete order, SET LOCAL search_path)"
+
+  - code: IAF-Agent-Studio/tests/test_evidence_backend_parity.py
+    docs:
+      - docs/STORAGE_BACKENDS.md
+      - docs/CONFIG_REFERENCE.md
+    note: "SQLite↔Postgres parity gate for the evidence store (store_bundle/get_bundle/get_item/get_blob, BYTEA round-trip, ON CONFLICT re-store); PG run isolated-schema + auto-skip without DATABASE_URL"
+
+  - code: IAF-Agent-Studio/shared/standalone_crons.py
+    docs:
+      - docs/STANDALONE_CRON_JOBS.md
+      - docs/CONFIG_REFERENCE.md
+      - docs/03_architecture.md
+    note: "Standalone cron YAML source of truth under enterprise_root and startup reconciliation into Redis"
+
+  - code: IAF-Agent-Studio/scripts/export_standalone_crons.py
+    docs:
+      - docs/STANDALONE_CRON_JOBS.md
+      - docs/AGENTPRO_SETUP.md
+    note: "Export existing Redis-only standalone cron jobs to enterprise_root scheduler/jobs YAML"
+
+  - code: IAF-Agent-Studio/scripts/migrate_command_center_to_postgres.py
+    docs:
+      - IAF-Agent-Studio/docs/cc_queue.md
+      - docs/STORAGE_BACKENDS.md
+      - docs/ENTERPRISE_OPERATIONS_PROFILE.md
+    note: "Bounded Command Center queue migration from SQLite command_center.db to the Postgres claim store"
+
+  - code: IAF-Agent-Studio/scripts/soak_command_center_queue.py
+    docs:
+      - IAF-Agent-Studio/docs/cc_queue.md
+      - docs/ENTERPRISE_OPERATIONS_PROFILE.md
+    note: "Staging Command Center queue soak helper for multi-worker failover verification"
+
+  - code: IAF-Agent-Studio/cc_queue/db.py
+    docs:
+      - IAF-Agent-Studio/docs/cc_queue.md
+      - docs/STORAGE_BACKENDS.md
+      - docs/CONFIG_REFERENCE.md
+    note: "Command Center queue backend factory, SQLite default path, claim leases, worker metrics, and CC_QUEUE_DB_PATH override"
+
+  - code: IAF-Agent-Studio/cc_queue/postgres.py
+    docs:
+      - IAF-Agent-Studio/docs/cc_queue.md
+      - docs/STORAGE_BACKENDS.md
+      - docs/CONFIG_REFERENCE.md
+      - docs/ENTERPRISE_OPERATIONS_PROFILE.md
+    note: "Postgres Command Center claim backend with fenced leases, stale reclaim, DLQ, and worker registry"
+
+  - code: IAF-Agent-Studio/workstream_runtime/db.py
+    docs:
+      - docs/STORAGE_BACKENDS.md
+      - docs/CONFIG_REFERENCE.md
+      - docs/03_architecture.md
+    note: "Workstream runtime DB default path and WORKSTREAM_RUNTIME_DB_PATH override"
+
+  - code: IAF-Agent-Studio/automation_runtime/db.py
+    docs:
+      - docs/DETERMINISTIC_AUTOMATIONS.md
+      - docs/CONFIG_REFERENCE.md
+      - docs/03_architecture.md
+      - docs/STORAGE_BACKENDS.md
+    note: "Automation runtime DB default path, AUTOMATION_RUNTIME_DB_PATH override, and run/step trace tables"
+
+  - code: IAF-Agent-Studio/auth/users_sqlite.py
+    docs:
+      - docs/STORAGE_BACKENDS.md
+      - docs/07_auth_and_users.md
+    note: "SQLite user store; WAL + busy_timeout hardening"
+
+  - code: IAF-Agent-Studio/shared/models.py
+    docs:
+      - IAF-Agent-Studio/docs/api_reference.md
+      - IAF-Agent-Studio/docs/websocket_protocol.md
+    note: "Request/response model fields, optional vs required, defaults"
+
+  - code: IAF-Agent-Studio/shared/state.py
+    docs:
+      - docs/HITL_DESIGN_GUIDE.md
+      - docs/03_architecture.md
+      - docs/RL_EVAL_CAPTURE.md
+      - docs/DETERMINISTIC_AUTOMATIONS.md
+      - docs/STANDALONE_CRON_JOBS.md
+    note: "Global state singletons, HITL checkpoint persistence, shared approval helpers, automation/eval_suite cron bridges. Also binds the shared async redis_client singleton (module scope) used by the auth token blacklist + rate-limit counters + audit stream + maintenance leader-key — the symbol MUST exist here or those `from shared.state import redis_client` call-sites silently degrade to per-instance in-process state."
+
+  - code: IAF-Agent-Studio/shared/automations_service.py
+    docs:
+      - docs/DETERMINISTIC_AUTOMATIONS.md
+      - docs/CONFIG_REFERENCE.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Automation YAML CRUD, SafeKernel execution orchestration, and run trace persistence"
+
+  - code: IAF-Agent-Studio/shared/evals_service.py
+    docs:
+      - docs/PRIVATE_LEARNING_LOOP.md
+      - docs/RL_EVAL_CAPTURE.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Thin Studio service delegating eval suite/golden-set CRUD and trajectory promotion to rl_capture/evals"
+
+  - code: IAF-Agent-Studio/shared/eval_dashboard_store.py
+    docs:
+      - docs/PRIVATE_LEARNING_LOOP.md
+      - docs/RL_EVAL_CAPTURE.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Read-only Private Learning Loop dashboard summary over eval suites and run traces"
+
+  - code: IAF-Agent-Studio/shared/capability_bootstrap.py
+    docs:
+      - docs/PROVIDER_ARCHITECTURE.md
+      - docs/03_architecture.md
+    note: "Capability registry adapter boundaries and startup diagnostics"
+
+  - code: IAF-Agent-Studio/routers/chat.py
+    docs:
+      - docs/03_architecture.md
+      - IAF-Agent-Studio/docs/api_reference.md
+      - IAF-Agent-Studio/docs/websocket_protocol.md
+      - docs/help/chat_ui.md
+    note: "Chat request fields, WebSocket event types, streaming protocol, and non-blocking post-capture assessment hooks. safe_send latches a closed-socket flag (via shared/ws_utils.ws_is_sendable) so a client that navigated away mid-turn stops receiving send attempts for the rest of the turn."
+
+  - code: IAF-Agent-Studio/shared/ws_utils.py
+    docs:
+      - IAF-Agent-Studio/docs/websocket_protocol.md
+    note: "Dependency-light WebSocket helpers. ws_is_sendable reports whether both peers are still CONNECTED (fails open when unknowable); WsSendGate latches closed after the first failed/not-connected send so a streaming turn short-circuits once the client is gone."
+
+  - code: IAF-Agent-Studio/shared/cron_read_cache.py
+    docs:
+      - IAF-Agent-Studio/docs/CRON_SCHEDULER.md
+    note: "Shared cron read model used by BOTH the /api/cron router and the dashboard ops-summary provider: offloaded (to_thread) + short TTL + single-flight + generation-guarded (discards a pre-mutation read) + cancellation-safe. invalidate() is called by every scheduler mutation path (cron router, workstream reconcile, standalone reconcile) for read-your-write."
+
+  - code: IAF-Agent-Studio/routers/rl_capture.py
+    docs:
+      - docs/RL_EVAL_CAPTURE.md
+      - docs/03_architecture.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "RL/eval health, drill-down, server-side Trace Value assessment/destination/score/promotion filtering with preview badges, timeseries, correction, trace-route-filtered export, and auto-evaluate endpoints"
+
+  - code: IAF-Agent-Studio/routers/trace_value.py
+    docs:
+      - docs/RL_EVAL_CAPTURE.md
+      - IAF-Agent-Studio/docs/api_reference.md
+      - docs/06_memory_and_learning.md
+    note: "Trace Value Router summary, assessment, evaluate, and bulk-promotion endpoints"
+
+  - code: IAF-Agent-Studio/shared/trace_value_service.py
+    docs:
+      - docs/RL_EVAL_CAPTURE.md
+      - docs/CONFIG_REFERENCE.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Trace Value Router orchestration, evidence packet construction, SkillAgent invocation, idempotency, and reconciliation"
+
+  - code: IAF-Agent-Studio/shared/trace_value_promotion_service.py
+    docs:
+      - docs/RL_EVAL_CAPTURE.md
+      - docs/06_memory_and_learning.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Bulk promotion delegation to golden sets, pending-review knowledge, model-training pool, and debug archive decisions"
+
+  - code: rl_capture/cli.py
+    docs:
+      - docs/RL_EVAL_CAPTURE.md
+    note: "Shared run_export() runner + CLI; materializes, eval/trace-route filters, redacts (PII gate), quality-checks, and writes RL/eval exports"
+
+  - code: rl_capture/core/trace_value.py
+    docs:
+      - docs/RL_EVAL_CAPTURE.md
+      - docs/06_memory_and_learning.md
+    note: "Deterministic Trace Value eligibility, redacted evidence packets, input hashes, and strict JSON normalization"
+
+  - code: rl_capture/core/schema.py
+    docs:
+      - docs/RL_EVAL_CAPTURE.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Neutral RL/eval capture contracts including TraceValueAssessment and TraceRouteDecision"
+
+  - code: rl_capture/store/sqlite_store.py
+    docs:
+      - docs/RL_EVAL_CAPTURE.md
+      - IAF-Agent-Studio/docs/api_reference.md
+      - docs/STORAGE_BACKENDS.md
+    note: "SQLite RL capture store tables, migrations, trajectory drill-down, trace-value assessment/route decision persistence, and latest-assessment joined filtering by destination score and route status"
+
+  - code: enterprise_root/tenants/company/skills/trace_value_router/SKILL.md
+    docs:
+      - docs/RL_EVAL_CAPTURE.md
+      - docs/06_memory_and_learning.md
+    note: "Semantic trace-value destination scoring rubric and strict JSON output contract"
+
+  - code: rl_capture/core/redaction.py
+    docs:
+      - docs/RL_EVAL_CAPTURE.md
+    note: "Structure-preserving redaction: secrets + PII (email/phone/IBAN/Luhn card/SSN); redact_rows() summary; token\\b rule preserves token counts/ids"
+
+  - code: rl_capture/core/quality.py
+    docs:
+      - docs/RL_EVAL_CAPTURE.md
+    note: "Export-row quality checks (empty text, residual-secret detection, empty preference sides)"
+
+  - code: rl_capture/core/reward_shaping.py
+    docs:
+      - docs/RL_EVAL_CAPTURE.md
+    note: "Phase-3 reward shaping: channel classification (judgement vs operational), weights, label->value map, bounded confidence-weighted reward"
+
+  - code: rl_capture/exporters/rft.py
+    docs:
+      - docs/RL_EVAL_CAPTURE.md
+    note: "RFT exporter: per-trajectory state + shaped scalar reward, components, and shaping meta"
+
+  - code: rl_capture/core/auto_evaluator.py
+    docs:
+      - docs/RL_EVAL_CAPTURE.md
+    note: "Auto-evaluator: rule-based score_trajectory() + pluggable LLM judge_fn; build_judge_prompt()/parse_judge_response(); evaluate_trajectories() writes evaluator-channel judge rewards"
+
+  - code: enterprise_root/tenants/company/skills/trajectory_judge/SKILL.md
+    docs:
+      - docs/RL_EVAL_CAPTURE.md
+    note: "LLM judge skill (tools: []) invoked by the auto-evaluator LLM mode; grades a trajectory and returns strict JSON (score/verdict/rationale)"
+
+  - code: IAF-Agent-Studio/routers/workstreams.py
+    docs:
+      - docs/MISSION_MODE_GUIDE.md
+      - docs/WORKSTREAM_SKILL_CONTRACT_GUIDE.md
+      - docs/RL_EVAL_CAPTURE.md
+      - docs/DETERMINISTIC_AUTOMATIONS.md
+    note: "Workstream item context, Analyst Case Workbench metadata, governed item actions"
+
+  - code: IAF-Agent-Studio/routers/automations.py
+    docs:
+      - docs/DETERMINISTIC_AUTOMATIONS.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Deterministic Automation REST endpoints for YAML CRUD, run, and trace history"
+
+  - code: IAF-Agent-Studio/routers/evals.py
+    docs:
+      - docs/PRIVATE_LEARNING_LOOP.md
+      - docs/RL_EVAL_CAPTURE.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Private Learning Loop eval suite and golden-set REST endpoints"
+
+  - code: IAF-Agent-Studio/workstream_runtime/db.py
+    docs:
+      - docs/MISSION_MODE_GUIDE.md
+      - docs/WORKSTREAM_SKILL_CONTRACT_GUIDE.md
+      - docs/CONFIG_REFERENCE.md
+    note: "Durable Workstream execution and step trace storage"
+
+  - code: IAF-Agent-Studio/routers/auth.py
+    docs:
+      - docs/07_auth_and_users.md
+      - IAF-Agent-Studio/docs/api_reference.md
+      - docs/CONFIG_REFERENCE.md
+    note: "Auth endpoints, JWT flow, registration modes, lockout behaviour, role->permission projection on /auth/me and login, and dynamic RBAC role management (/auth/rbac/roles). GET /auth/session-policy is public (no auth) and returns SEC-7 idle-timeout minutes from shared/config.py for the client-side idle timer. Every new login (register/login/sso/microsoft) mints a fresh sid and registers it; /auth/refresh renews with the refresh token's sid unchanged (tabs share one refresh cookie), and with AUTH_SINGLE_SESSION on a superseded sid gets 401 SESSION_SUPERSEDED plus cleared auth cookies and the iaf_logout_reason cookie; legacy refresh tokens without sid start a new session. New logins stamp auth_time=now in the refresh token and /auth/refresh carries it forward; once older than AUTH_SESSION_MAX_HOURS (0 disables; legacy tokens use iat) the refresh gets 401 SESSION_EXPIRED, the refresh jti is blacklisted, auth cookies are cleared and iaf_logout_reason=session_expired is set. /auth/logout clears its own sid from the registry and always revokes it (the iaf_refresh cookie is path-scoped to /auth/refresh and never reaches /auth/logout). Session management: _token_response records IP/user agent/provider in the session index (login/register/sso pass request); /auth/refresh rejects a revoked sid with 401 SESSION_REVOKED (refresh jti blacklisted, cookies cleared, iaf_logout_reason=session_revoked) and the expiry branch drops the sid from the index; GET /auth/sessions, DELETE /auth/sessions/{id}, POST /auth/logout-all (?keep_current=true), admin GET /auth/users/{id}/sessions and POST /auth/users/{id}/revoke-sessions; admin disable/lock, reset-password and delete revoke all of the user's sessions; every revocation is audited as SESSION_REVOKED; 503 when Redis is unavailable."
+
+  - code: IAF-Agent-Studio/routers/oauth.py
+    docs:
+      - docs/07_auth_and_users.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Keycloak SSO endpoints. The /auth/callback login issues Studio tokens through _issue_iaf_tokens, which mints and registers a fresh sid (single-session control), stamps auth_time=now in the refresh token (AUTH_SESSION_MAX_HOURS) and sets the refresh cookie plus the short-lived iaf_sso_token/iaf_sso_user handoff cookies."
+
+  - code: IAF-Agent-Studio/auth/factory.py
+    docs:
+      - docs/07_auth_and_users.md
+    note: "Builds the active user store from AUTH_BACKEND; fails closed on shared-store (postgres/redis) outage when AUTH_STORE_STRICT, else falls back to SQLite for local dev"
+
+  - code: IAF-Agent-Studio/auth/seed_admin.py
+    docs:
+      - docs/07_auth_and_users.md
+    note: "Admin bootstrap; honors AUTH_STORE_STRICT so the admin is never seeded into a different backend than the one serving requests. Also warns (hash comparison only, no literal in source) if IAF_ADMIN_PASSWORD matches a known published/demo default."
+
+  - code: IAF-Agent-Studio/shared/user_display.py
+    docs:
+      - docs/07_auth_and_users.md
+    note: "Owner display-name resolution; adds a separate <key>_display field and preserves created_by as the stable identity for ownership checks"
+
+  - code: IAF-Agent-Studio/shared/protected_files.py
+    docs:
+      - docs/07_auth_and_users.md
+    note: "Central protected-browser-file policy: exact protected paths (credentials.yaml) + key-material extensions (.key/.pem/…), with canonicalizing norm_vpath so ./, .., //, trailing-slash variants cannot bypass the check. Enforced by routers/files.py and routers/context_manager.py on every list/read/serve/write/upload/delete/convert surface, role-independent."
+
+  - code: IAF-Agent-Studio/shared/skill_versions.py
+    docs:
+      - docs/07_auth_and_users.md
+      - docs/04_skill_authoring.md
+    note: "Skill version manifests/snapshots; immutable manifest-level created_by so editing a version author never transfers ownership; record_promotion() snapshots an approved personal-skill submission with the submitter as created_by (bypasses ensure_migrated, which would stamp admin@iaf.local)"
+
+  - code: IAF-Agent-Studio/security/roles.py
+    docs:
+      - docs/07_auth_and_users.md
+    note: "Role->permission catalog and per-tenant roles.yaml registry; computes effective UI permissions, validates assignable/dynamic roles, and compiles role permissions into entitlement allow-rules (compile_role_policies) for dynamic engine enforcement"
+
+  - code: IAF-Agent-Studio/security/yaml_provider.py
+    docs:
+      - docs/07_auth_and_users.md
+    note: "YAML entitlement engine; _load_policy merges curated policies.yaml with role-derived allow-rules compiled from roles.yaml so UI-created roles gain matching runtime access automatically (deny-wins preserved; built-in user/admin stay curated). _suppress_curated_access gives curated rules precedence: a hand-authored allow scoping a curated class (skill/agent) for a role/group drops that selector's broad auto-compiled <class>:* grant (single-dimension ownership only; plumbing tool:*/context:* and the admin wildcard baseline always kept)"
+
+  - code: IAF-Agent-Studio/routers/approvals.py
+    docs:
+      - IAF-Agent-Studio/docs/api_reference.md
+      - docs/HITL_DESIGN_GUIDE.md
+      - docs/03_architecture.md
+      - docs/RL_EVAL_CAPTURE.md
+    note: "HITL approval resolution, resume injection, approval store state, admin delete/discard of pending and history approvals, and workstream resume behavior"
+
+  - code: IAF-Agent-Studio/routers/policy_control.py
+    docs:
+      - IAF-Agent-Studio/docs/api_reference.md
+      - enterprise_root/tenants/company/shared/docs/help/dashboard_ui.md
+    note: "Policy Control endpoints, event catalog, drafting, validation, simulation, and publish behavior"
+
+  - code: IAF-Agent-Studio/shared/policy_control.py
+    docs:
+      - IAF-Agent-Studio/docs/api_reference.md
+      - IAF-Agent-Skills/docs/HOOK_SYSTEM_DESIGN.md
+      - enterprise_root/tenants/company/shared/docs/help/dashboard_ui.md
+    note: "Policy schema normalization, supported events, generated hook fields, HITL on_block semantics, and prompt drafting"
+
+  - code: IAF-Agent-Studio/routers/skills.py
+    docs:
+      - IAF-Agent-Studio/docs/api_reference.md
+      - docs/04_skill_authoring.md
+      - enterprise_root/tenants/company/shared/docs/help/skill_builder_ui.md
+    note: "Skill CRUD endpoints, test endpoint, personal skill promotion flow, component source/save/draft APIs. MULTI-COMPONENT: a skill may ship many named UI components — default component.html (id 'component') + components/<id>.html. Endpoints take optional ?name=<id> (get/serve/source GET+PUT/draft); GET /api/skills/{skill}/components lists them. Component ids validated (^[A-Za-z0-9_-]{1,64}$) + path-jailed under SKILLS_PATH; named save auto-creates components/. Chat renderer (index.html) selects via the `component` key in the skill_component block; Skill Builder has a component selector. NOTE: personal_skills.py submission flow + the 4 workstream renderers still handle only the default component.html (frontend consolidation deferred)."
+
+  - code: IAF-Agent-Studio/routers/personal_skills.py
+    docs:
+      - IAF-Agent-Studio/docs/api_reference.md
+      - enterprise_root/tenants/company/shared/docs/help/skill_builder_ui.md
+    note: "Personal skill save/submit/review workflow, including component.html drafts; approval records the submitter as skill owner via skill_versions.record_promotion"
+
+  - code: IAF-Agent-Studio/routers/email.py
+    docs:
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Email and SAP governed action connector endpoints"
+
+  - code: IAF-Agent-Studio/routers/agents.py
+    docs:
+      - docs/05_agent_config.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Agent config schema, tools_allowed list, skills_mode values"
+
+  - code: IAF-Agent-Studio/routers/knowledge.py
+    docs:
+      - docs/06_memory_and_learning.md
+      - IAF-Agent-Studio/docs/api_reference.md
+      - enterprise_root/tenants/company/shared/docs/help/dashboard_ui.md
+    note: "Knowledge record CRUD, status lifecycle, bulk actions, and Learning Signals aggregation endpoint"
+
+  - code: IAF-Agent-Studio/shared/learning_inbox_store.py
+    docs:
+      - docs/PRIVATE_LEARNING_LOOP.md
+      - docs/06_memory_and_learning.md
+      - IAF-Agent-Studio/docs/api_reference.md
+      - enterprise_root/tenants/company/shared/docs/help/dashboard_ui.md
+    note: "Read-only Learning Signals aggregation over pending knowledge, captured feedback, eval failures, and trace-value recommendations"
+
+  - code: IAF-Agent-Studio/knowledge_dashboard_store.py
+    docs:
+      - docs/06_memory_and_learning.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Lightweight read-only Knowledge Dashboard store for list, stats, and extraction cursor endpoints"
+
+  - code: IAF-Agent-Studio/knowledge_file_router.py
+    docs:
+      - docs/AUTHORING_GUIDE.md
+      - docs/06_memory_and_learning.md
+      - IAF-Agent-Skills/docs/memory_schema.md
+      - IAF-Agent-Studio/docs/api_reference.md
+      - enterprise_root/tenants/company/shared/docs/help/dashboard_ui.md
+    note: "Knowledge confirm routing across context files, MEMORY.md topic files, and Knowledge Bundle pages"
+
+  - code: IAF-Agent-Studio/knowledge_bundle_registry.py
+    docs:
+      - docs/AUTHORING_GUIDE.md
+      - docs/06_memory_and_learning.md
+      - IAF-Agent-Skills/docs/memory_schema.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Convention-based /shared/knowledge/* bundle discovery, manifest fields, and skill/tag matching"
+
+  - code: IAF-Agent-Studio/routers/evolution.py
+    docs:
+      - docs/06_memory_and_learning.md
+      - docs/help/evolution_ui.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Tier routing, request params, response schema, new tier additions"
+
+  - code: IAF-Agent-Studio/routers/cron.py
+    docs:
+      - IAF-Agent-Studio/docs/CRON_SCHEDULER.md
+      - IAF-Agent-Studio/docs/api_reference.md
+      - docs/help/dashboard_ui.md
+    note: "Cron job CRUD endpoints, run history, manual trigger. OWNER-SCOPED RBAC: create stamps created_by/user_id/tenant_id from the authenticated identity (client body cannot impersonate); list + per-job get/update/delete/run/enable/disable are require_auth and return only the caller's own jobs (created_by==user_id), while a tenant admin sees ALL of the tenant's jobs. Everything tenant-isolated (tenant from identity); inaccessible/cross-tenant/legacy(created_by empty) jobs return 404 (no existence leak). Scheduler start/stop are require_admin (fleet-wide control). Helpers: _is_admin/_owns/_can_access/_get_accessible_job_or_404."
+
+  - code: IAF-Agent-Studio/routers/twin.py
+    docs:
+      - docs/help/optimization_ui.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Digital twin telemetry endpoints, metric names, data shapes"
+
+  - code: IAF-Agent-Studio/routers/finops.py
+    docs:
+      - docs/help/optimization_ui.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "FinOps cost endpoints, breakdown categories, alert config"
+
+  - code: IAF-Agent-Studio/routers/queue.py
+    docs:
+      - IAF-Agent-Studio/docs/cc_queue.md
+      - IAF-Agent-Studio/docs/api_reference.md
+      - enterprise_root/tenants/company/shared/docs/help/dashboard_ui.md
+      - docs/RL_EVAL_CAPTURE.md
+    note: "Queue REST API, item states, priority values, HITL endpoints"
+
+  - code: IAF-Agent-Studio/routers/metrics.py
+    docs:
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Dependency-free Prometheus /metrics text exposition (public, no auth). Gauges: agentos_up, agentos_build_info (backend labels), agentos_db_pool_* (psycopg pool stats via PostgresEngine.pool_stats), agentos_postgres_up/_connections, agentos_traces_24h, agentos_redis_up (fresh REDIS_URL ping). Best-effort per metric; never errors; sampled in a worker thread."
+
+  - code: IAF-Agent-Studio/cc_queue/processor.py
+    docs:
+      - IAF-Agent-Studio/docs/cc_queue.md
+      - docs/03_architecture.md
+      - docs/RL_EVAL_CAPTURE.md
+    note: "Queue execution context, lifecycle hooks, and HITL checkpoint persistence"
+
+  - code: IAF-Agent-Studio/shared/hooks_validation.py
+    docs:
+      - IAF-Agent-Skills/docs/HOOK_SYSTEM_DESIGN.md
+      - docs/04_skill_authoring.md
+    note: "Hook config validation fields and UI/API save contract"
+
+  - code: IAF-Agent-Studio/routers/context_manager.py
+    docs:
+      - docs/04_skill_authoring.md
+      - docs/06_memory_and_learning.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Virtual path resolution, context file CRUD, vpath_to_absolute mapping"
+
+  - code: IAF-Agent-Studio/routers/traces.py
+    docs:
+      - IAF-Agent-Studio/docs/api_reference.md
+      - docs/help/dashboard_ui.md
+    note: "Trace schema, filter params, span detail fields"
+
+  - code: IAF-Agent-Studio/static/index.html
+    docs:
+      - docs/help/chat_ui.md
+    note: "Chat UI features, keyboard shortcuts, session management, HITL flow, skill_component hydration"
+
+  - code: IAF-Agent-Studio/static/ask-twin.js
+    docs:
+      - docs/help/chat_ui.md
+      - docs/help/IAF_GUIDE.md
+      - IAF-Agent-Studio/docs/api_reference.md
+      - IAF-Agent-Studio/docs/websocket_protocol.md
+    note: "Shared AskTwin FAB, page context payload, compact response rendering. SEC-8: the fetch target is the CHAT_ENDPOINT='/api/chat' constant (same-origin literal — this is what makes Burp's 'DOM-based open redirection' finding a false positive, since URL-derived values reach the request body as context metadata, never the destination); the widget no longer reads location.* into the request body at all (commit 1c576f9) - getPageContext() returns only what the page supplies via AgentProPageContext(), and no page context function may read location.* (pinned by test_no_page_context_function_reads_the_browser_url). SEC-10 (commit 1a42201): the Ask Twin transcript is kept in memory only - saveMessages() is a no-op, loadMessages() starts empty and purges the legacy iaf_ask_twin_messages:shared sessionStorage entry, so the widget never calls sessionStorage.setItem (closes Burp 'HTML5 storage manipulation: textarea.value -> sessionStorage value'); the typed message is rebuilt code point by code point by rebuildText() (control characters dropped, length-capped) before it enters the /api/chat payload."
+
+  - code: IAF-Agent-Studio/static/session-controls.js
+    docs:
+      - docs/specs/workstreams-crud-and-session-controls.md
+      - docs/07_auth_and_users.md
+    note: >-
+      Shared session controls (WS-3/REV-5): user menu rendered into a
+      [data-session-controls] mount, and the SEC-7 idle timeout installed
+      unconditionally. Warn/logout minutes (default 15/20) are fetched from
+      GET /auth/session-policy (shared/config.py SESSION_IDLE_WARN_MINUTES /
+      SESSION_IDLE_LOGOUT_MINUTES) with a hardcoded 15/20 fallback if that
+      fetch fails; index.html's own inline idle timer fetches the same
+      endpoint so both stay in sync. Security-sensitive: before this the
+      idle timeout existed only inside index.html, so any other authenticated
+      page never signed an idle operator out. The user menu also offers
+      "Active sessions" (modal over GET /auth/sessions with a per-session Sign
+      out via DELETE /auth/sessions/{id}) and "Sign out of all devices" (POST
+      /auth/logout-all, then the normal logout redirect).
+      SEC-4b (2026-10-14): the user menu, sessions dialog and idle banner used
+      to be built from innerHTML strings carrying inline style attributes,
+      which only render while the CSP keeps style-src-attr 'unsafe-inline'.
+      Those rules now live in a single stylesheet injected once by
+      injectStyles() and stamped with window.__CSP_NONCE__ (same idiom as
+      ask-twin.js / privacy-gate.js), so any page loading this module can be
+      served the strict CSP. Element .style.cssText/.style.display writes are
+      left as-is — CSSOM is not governed by CSP.
+
+  - code: IAF-Agent-Studio/tests/test_ask_twin_context.py
+    docs:
+      - docs/help/chat_ui.md
+    note: "AskTwin page-context request model and shared script mount coverage"
+
+  - code: IAF-Agent-Studio/tests/test_kernel_file_cache.py
+    docs:
+      - agent_os/docs/kernel_internals.md
+      - agent_os/docs/tools_reference.md
+      - docs/CONFIG_REFERENCE.md
+    note: "AGENTOS_KERNEL_FILE_CACHE read-through cache: OFF=fresh, ON=mtime-validated hit + invalidate-on-write (cat/grep/wc/semgrep)"
+
+  - code: IAF-Agent-Studio/static/dashboard_v2.html
+    docs:
+      - enterprise_root/tenants/company/shared/docs/help/dashboard_ui.md
+    note: "Dashboard tabs, Recovery Readiness reports, panel features, Learning Signals panel/deep links, Ask Twin context, and WebSocket events displayed. User management table has a per-user Revoke Sessions action (POST /auth/users/{id}/revoke-sessions)."
+
+  - code: IAF-Agent-Studio/static/rl_capture.html
+    docs:
+      - docs/RL_EVAL_CAPTURE.md
+      - enterprise_root/tenants/company/shared/docs/help/dashboard_ui.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Agent Training Studio (Part of Topaz Fabric) as a stage-based pipeline (Capture → Evaluate → Curate → Test → Export) with shared light/hybrid/dark themes, selectable Trace Value queues, contextual governed bulk promotion and next-step links, sidebar + pipeline spine, /api/rl-capture/*, /api/evals/*, and /api/trace-value/* wiring."
+
+  - code: IAF-Agent-Studio/static/rl_workbench.html
+    docs:
+      - docs/RL_EVAL_CAPTURE.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Agent Training Workbench (Part of Topaz Fabric) served at /rl-capture/workbench; server-side Trace Value filters and row badges; deep-links via ?traj=<id>&stage=evaluate; contextual single-trace promotion with duplicate prevention and next-step links; direct dataset export; shared light/hybrid/dark themes"
+
+  - code: IAF-Agent-Studio/static/skill-builder-v2.html
+    docs:
+      - enterprise_root/tenants/company/shared/docs/help/skill_builder_ui.md
+      - docs/05_agent_config.md
+      - docs/04_skill_authoring.md
+      - docs/DETERMINISTIC_AUTOMATIONS.md
+    note: "Skill Builder UI fields, execution mode options, Component tab, Agent Config UI"
+
+  - code: IAF-Agent-Studio/static/studio.html
+    docs:
+      - enterprise_root/tenants/company/shared/docs/help/skill_builder_ui.md
+    note: "Studio/customize skill workspace, review state, selected skill context, AskTwin page context"
+
+  - code: IAF-Agent-Studio/static/skill-creator.html
+    docs:
+      - enterprise_root/tenants/company/shared/docs/help/skill_builder_ui.md
+    note: "Skill Creator wizard steps, generated skill draft, AskTwin page context"
+
+  - code: IAF-Agent-Studio/static/twin.html
+    docs:
+      - docs/help/optimization_ui.md
+    note: "Digital Twin dashboard sections, metric cards, drill-down behaviour"
+
+  - code: IAF-Agent-Studio/static/optimization.html
+    docs:
+      - docs/help/optimization_ui.md
+    note: "ESAA optimization UI, FinOps charts, cost reduction options"
+
+  - code: IAF-Agent-Studio/static/finops.html
+    docs:
+      - docs/help/optimization_ui.md
+    note: "FinOps dashboard filters, cost cards, top models/users/skills, AskTwin page context"
+
+  - code: IAF-Agent-Studio/static/workstreams.html
+    docs:
+      - docs/MISSION_MODE_GUIDE.md
+    note: "Workstreams index filters, summaries, actions, inline Workstream Copilot, WebSocket chat context"
+
+  - code: enterprise_root/tenants/company/agents/enterprise_agent/config.yaml
+    docs:
+      - docs/MISSION_MODE_GUIDE.md
+      - docs/WORKSTREAM_SKILL_CONTRACT_GUIDE.md
+    note: "Tenant hook registration for CCD Operations agent governance"
+
+  - code: IAF-Agent-Studio/static/workstream_new.html
+    docs:
+      - docs/MISSION_MODE_GUIDE.md
+    note: "Workstream creation wizard fields, source modes, AskTwin page context"
+
+  - code: IAF-Agent-Studio/static/workstream_detail.html
+    docs:
+      - docs/MISSION_MODE_GUIDE.md
+      - docs/WORKSTREAM_SKILL_CONTRACT_GUIDE.md
+    note: "Workstream detail cockpit, Analyst Case Workbench, Research Pack and auto-resolution callouts, approvals, inline chat, AskTwin page context"
+
+  # ─────────────────────────────────────────
+  # AGENT_OS — kernel and safety layer
+  # ─────────────────────────────────────────
+
+  - code: agent_os/pyproject.toml
+    docs:
+      - docs/03_architecture.md
+      - docs/CONFIG_REFERENCE.md
+      - agent_os/README.md
+      - agent_os/docs/DEVELOPER_GUIDE.md
+      - docs/COMPOSABLE_ADOPTION_SPEC.md
+    note: "agentos-kernel distribution metadata, optional extras, and embeddable install story"
+
+  - code: agent_os/kernel.py
+    docs:
+      - docs/03_architecture.md
+      - agent_os/docs/kernel_internals.md
+      - agent_os/docs/safe_path_design.md
+      - agent_os/docs/tools_reference.md
+      - docs/CONFIG_REFERENCE.md
+    note: "BLOCKED_COMMANDS, resource limits, RBAC roles, rate limiting, confirmation protocol"
+
+  - code: agent_os/kernel_runtime.py
+    docs:
+      - docs/02_quick_start.md
+      - docs/03_architecture.md
+      - docs/05_agent_config.md
+      - docs/AGENTPRO_SETUP.md
+      - docs/CONFIG_REFERENCE.md
+      - docs/ENTERPRISE_OPERATIONS_PROFILE.md
+      - docs/PROVIDER_ARCHITECTURE.md
+      - agent_os/docs/kernel_internals.md
+      - agent_os/docs/tools_reference.md
+    note: "KernelRuntime protocol, local SafeKernel adapter, signed remote client, and runtime factory"
+
+  - code: agent_os/safe_path.py
+    docs:
+      - agent_os/docs/safe_path_design.md
+      - docs/03_architecture.md
+    note: "Virtual namespace table, resolve() algorithm, permission zones"
+
+  - code: agent_os/vector_store.py
+    docs:
+      - docs/06_memory_and_learning.md
+      - agent_os/docs/kernel_internals.md
+      - docs/CONFIG_REFERENCE.md
+    note: "Vector index config, embedding dimension, indexing triggers"
+
+  - code: agent_os/self_auth.py
+    docs:
+      - docs/03_architecture.md
+      - docs/CONFIG_REFERENCE.md
+      - agent_os/docs/DEVELOPER_GUIDE.md
+    note: "Service JWT minting, required JWT env vars, and Studio-free self-auth boundary"
+
+  - code: agent_os/config.env
+    docs:
+      - docs/CONFIG_REFERENCE.md
+      - docs/05_agent_config.md
+    note: "Runtime feature flags and local server environment defaults"
+
+  # ─────────────────────────────────────────
+  # ENTERPRISE_ROOT — data store
+  # ─────────────────────────────────────────
+
+  - code: enterprise_root/tenants/company/shared/Enterprise_Context.md
+    docs:
+      - docs/AGENTPRO_SKILL_AUTHOR.md
+      - docs/04_skill_authoring.md
+    note: "Context file format, sections, injection behaviour"
+
+  - code: enterprise_root/tenants/company/shared/knowledge/finance_ap/
+    docs:
+      - docs/AUTHORING_GUIDE.md
+      - docs/AGENTPRO_SKILL_AUTHOR.md
+      - docs/04_skill_authoring.md
+      - docs/06_memory_and_learning.md
+    note: "Finance AP Knowledge Bundle: manifest, index, maintainer rules, log, and database/API/table/metric/policy/runbook concept docs"
+
+  - code: enterprise_root/tenants/company/shared/knowledge/it_ops/
+    docs:
+      - docs/AUTHORING_GUIDE.md
+      - docs/AGENTPRO_SKILL_AUTHOR.md
+      - docs/04_skill_authoring.md
+      - docs/06_memory_and_learning.md
+    note: "IT Ops sample Knowledge Bundle proving convention-based bundle discovery outside finance"
+
+  - code: enterprise_root/tenants/company/skills/knowledge_bundle_maintainer/SKILL.md
+    docs:
+      - docs/AUTHORING_GUIDE.md
+      - docs/AGENTPRO_SKILL_AUTHOR.md
+      - docs/04_skill_authoring.md
+    note: "Generic Plan Mode maintainer skill for approved Knowledge Bundle page updates"
+
+  - code: enterprise_root/tenants/company/skills/invoice_processing_ap/SKILL.md
+    docs:
+      - docs/AGENTPRO_SKILL_AUTHOR.md
+      - docs/04_skill_authoring.md
+    note: "AP skill context_file points at /shared/knowledge/finance_ap/index.md; keep AP data-source instructions aligned with the knowledge bundle"
+
+  - code: enterprise_root/tenants/company/skills/invoice_processing_ap/component.html
+    docs:
+      - docs/AGENTPRO_SKILL_AUTHOR.md
+      - docs/04_skill_authoring.md
+      - enterprise_root/tenants/company/shared/docs/help/skill_builder_ui.md
+    note: "Skill-local AP invoice review component rendered when invoice_processing_ap emits skill_component"
+
+  - code: enterprise_root/tenants/company/shared/entity_guide.md
+    docs:
+      - IAF-Agent-Skills/docs/entity_registry.md
+      - docs/AGENTPRO_SKILL_AUTHOR.md
+    note: "Entity type names, recognition examples"
+
+  - code: enterprise_root/tenants/company/shared/entity_validation.yaml
+    docs:
+      - enterprise_root/docs/multitenant_design.md
+      - IAF-Agent-Skills/docs/entity_registry.md
+    note: "Entity allowlist/blocklist schema, field names"
+
+  - code: enterprise_root/tenants/company/config/admin_config.json
+    docs:
+      - docs/05_agent_config.md
+      - docs/02_quick_start.md
+    note: "Admin override keys, boot-time config fields"
+
+  - code: enterprise_root/tenants/company/skills/_index.yaml
+    docs:
+      - docs/04_skill_authoring.md
+      - enterprise_root/tenants/company/shared/docs/help/skill_builder_ui.md
+    note: "Tenant skill registry entries, categories, and routing keywords"
+
+  - code: enterprise_root/tenants/company/skills/send_email/SKILL.md
+    docs:
+      - docs/04_skill_authoring.md
+      - enterprise_root/tenants/company/shared/docs/help/skill_builder_ui.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Governed email action skill and skill_component contract"
+
+  - code: enterprise_root/tenants/company/skills/send_email/component.html
+    docs:
+      - docs/04_skill_authoring.md
+      - enterprise_root/tenants/company/shared/docs/help/skill_builder_ui.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Skill-local email compose component rendered by chat UI"
+
+  - code: enterprise_root/tenants/company/skills/post_to_sap/SKILL.md
+    docs:
+      - docs/04_skill_authoring.md
+      - enterprise_root/tenants/company/shared/docs/help/skill_builder_ui.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Governed SAP posting skill and skill_component contract"
+
+  - code: enterprise_root/tenants/company/skills/post_to_sap/component.html
+    docs:
+      - docs/04_skill_authoring.md
+      - enterprise_root/tenants/company/shared/docs/help/skill_builder_ui.md
+      - IAF-Agent-Studio/docs/api_reference.md
+    note: "Skill-local SAP posting component rendered by chat UI"
+
+  - code: enterprise_root/tenants/company/shared/component_templates/
+    docs:
+      - docs/04_skill_authoring.md
+      - docs/AGENTPRO_SKILL_AUTHOR.md
+      - enterprise_root/tenants/company/shared/docs/help/skill_builder_ui.md
+    note: "Reusable component.html starter fragments; runtime components stay skill-local"
+
+  # ─────────────────────────────────────────
+  # SKILL.md files (any skill)
+  # ─────────────────────────────────────────
+
+  - code: IAF-Agent-Skills/skills/*/SKILL.md
+    docs:
+      - docs/04_skill_authoring.md
+      - docs/AGENTPRO_SKILL_AUTHOR.md
+      - IAF-Agent-Skills/docs/SKILL_DEVELOPMENT.md
+      - enterprise_root/tenants/company/shared/docs/help/skill_builder_ui.md
+    note: "SKILL.md frontmatter fields, execution mode YAML examples"
+
+  # ─────────────────────────────────────────
+  # BIZPROCESS — enablement decks & generators
+  # ─────────────────────────────────────────
+
+  - code: BizProcess/build_playbook_html.py
+    docs:
+      - BizProcess/GBS_Transformation_Playbook.md
+      - BizProcess/BPM_GBS_Transformation_Infosys.html
+    note: "Playbook slide structure, key-approach guidance blocks, and theme alignment with Infosys hybrid style"
+
+  # ─────────────────────────────────────────
+  # Verification scripts and generated docs
+  # ─────────────────────────────────────────
+
+  - code: scripts/verification/README.md
+    docs:
+      - docs/README.md
+      - docs/SECURITY_TESTING_GUIDE.md
+      - docs/DEPLOYMENT_GUIDE.md
+    note: "Ad-hoc verification script index and when to use formal test suites instead"
+
+  - code: scripts/verification/setup_security_test.py
+    docs:
+      - docs/SECURITY_TESTING_GUIDE.md
+      - docs/CONFIG_REFERENCE.md
+    note: "Security test credential seeding and external-access allowlist setup"
+
+  - code: scripts/verification/test_cron_hitl.py
+    docs:
+      - docs/SECURITY_TESTING_GUIDE.md
+      - IAF-Agent-Studio/docs/CRON_SCHEDULER.md
+      - docs/HITL_DESIGN_GUIDE.md
+    note: "Live cron-to-HITL approval verification driver"
+
+  - code: scripts/verification/verify_live.py
+    docs:
+      - docs/06_memory_and_learning.md
+      - scripts/verification/README.md
+    note: "Live knowledge DB DecisionTrace field inspection"
+
+  - code: scripts/verification/verify_phase7.py
+    docs:
+      - scripts/verification/README.md
+      - IAF-Agent-Skills/docs/HOOK_SYSTEM_DESIGN.md
+    note: "Live Phase 7 tool I/O and reasoning inspection"
+
+  - code: scripts/verification/verify_enterprise_restore.py
+    docs:
+      - scripts/verification/README.md
+      - docs/ENTERPRISE_OPERATIONS_PROFILE.md
+      - docs/STORAGE_BACKENDS.md
+    note: "CLI for backup manifest capture and deterministic isolated restore verification"
+
+  - code: scripts/verification/run_recovery_drill.py
+    docs:
+      - scripts/verification/README.md
+      - docs/ENTERPRISE_OPERATIONS_PROFILE.md
+      - docs/CONFIG_REFERENCE.md
+    note: "CLI for collecting and submitting live recovery drill evidence for scheduler, queue, signed-file, and SLO checks"
+
+  - code: scripts/verification/check_db.py
+    docs:
+      - scripts/verification/README.md
+      - IAF-Agent-Skills/docs/memory_schema.md
+    note: "Knowledge DB episode column and entity index inspection"
+
+  - code: scripts/verification/check_entities.py
+    docs:
+      - scripts/verification/README.md
+      - IAF-Agent-Skills/docs/entity_registry.md
+    note: "Entity storage location inspection in SQLite"
+
+  - code: docs/generated/README.md
+    docs:
+      - docs/README.md
+      - README.md
+    note: "Convention for ignored generated HTML review artifacts"
+
+  - code: docs/README.md
+    docs:
+      - docs/CODE_DOC_MAP.yaml
+      - docs/DOCUMENTATION_AUTHORITY.md
+    note: "Master documentation index and persona reading paths"
+
+  - code: docs/DOCUMENTATION_AUTHORITY.md
+    docs:
+      - docs/README.md
+      - AGENTS.md
+    note: "Source-of-truth order, entry-point verification, reload semantics, and doc drift checklist for humans and AI agents"
+
+  - code: docs/03_architecture.md
+    docs:
+      - docs/README.md
+      - docs/PROVIDER_ARCHITECTURE.md
+      - docs/COMPOSABLE_ADOPTION_SPEC.md
+    note: "Canonical layered architecture, request lifecycle, composable packages, solution modules, execution modes, and infrastructure dependencies"
+
+  - code: docs/ARCHITECTURE.md
+    docs:
+      - docs/03_architecture.md
+      - docs/README.md
+    note: "Compatibility redirect to docs/03_architecture.md"
+
+  - code: IAF-Agent-Studio/privacy/service.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+      - docs/PIA_DP_EVIDENCE_PACK.md
+    note: "Login privacy notice + acknowledgement service (PIA controls 1 & 3); acceptance persisted to auth audit sink (PRIVACY_ACK_ACCEPTED); inert unless PRIVACY_ACK_REQUIRED"
+
+  - code: IAF-Agent-Studio/routers/privacy.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+      - docs/PIA_DP_EVIDENCE_PACK.md
+    note: "Public /auth/privacy/notice + authed /auth/privacy/status,/accept endpoints for the acknowledgement gate"
+
+  - code: IAF-Agent-Studio/static/privacy-gate.js
+    docs:
+      - docs/CONFIG_REFERENCE.md
+      - docs/PIA_DP_EVIDENCE_PACK.md
+    note: "Shared, dependency-free app-shell Data Privacy consent gate. Included at end of body on authed shells (index.html, dashboard_v2.html, skill-builder-v2.html, twin.html, finops.html, rl_capture.html) so users who deep-link/bookmark straight into the app (bypassing login.html's post-login gateThenRedirect) still get the blocking acknowledgement overlay instead of opaque /api/* 403 PRIVACY_ACK_REQUIRED. On DOMContentLoaded reads iaf_access_token; if present, calls GET /auth/privacy/status (base-path prefixed via window.__BASE_PATH__); renders a blocking overlay only on {required:true,accepted:false}, otherwise fail-open no-op. Notice body rendered as text (no unsanitized HTML). Accept POSTs /auth/privacy/accept then reloads; Sign out clears token+user and returns to /login. Idempotent + try/catch guarded so a gate error never breaks the host page. OFF by default: overlay only appears when PRIVACY_ACK_REQUIRED=true server-side."
+
+  - code: IAF-Agent-Studio/shared/config.py
+    docs:
+      - docs/CONFIG_REFERENCE.md
+    note: "App version single-source-of-truth (resolve_app_version → APP_VERSION from repo-root Version file) and PRIVACY_ACK_* / PRIVACY_NOTICE_* config knobs"

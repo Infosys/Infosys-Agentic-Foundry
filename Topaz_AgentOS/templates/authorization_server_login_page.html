@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Authorization Server — Login</title>
+</head>
+<body>
+    <form method="post" action="/login" autocomplete="off">
+        <div class="form-group">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" required autocomplete="off">
+        </div>
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password"
+                   placeholder="Enter your password" required autocomplete="off">
+        </div>
+        <button type="submit" id="submitBtn">Login</button>
+    </form>
+</body>
+</html>

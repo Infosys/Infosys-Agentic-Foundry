@@ -1,0 +1,18 @@
+agent:
+  name: My Personal Agent
+  description: My personal productivity assistant — plans my day, preps meetings,
+    reviews my week
+  version: '1.0'
+skills:
+  mode: allowlist
+  allowed:
+  - my_meeting_prep
+tools:
+  allowed:
+  - shell
+  - write_file
+  - run_sql_query
+audit:
+  log_queries: true
+  log_responses: true
+  log_tool_calls: true

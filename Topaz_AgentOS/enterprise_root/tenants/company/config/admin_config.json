@@ -1,0 +1,5 @@
+{
+  "_updated_at": "2026-03-21T06:57:06.619024+00:00",
+  "QUEUE_BACKEND": "redis",
+  "CONTEXT_LOADING_MODE": "file"
+}

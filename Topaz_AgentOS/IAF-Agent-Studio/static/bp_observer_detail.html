@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Observer · Topaz AgentOS</title>
+<script>
+(function(){
+  const _f = window.fetch;
+  window.fetch = async function(input, init={}){
+    const url = typeof input==='string'?input:input.url;
+    const api = url && (url.startsWith('/') || url.startsWith(location.origin));
+    const auth = url && (url.includes('/auth/login')||url.includes('/auth/refresh'));
+    // SEC-6: httponly cookie sent automatically — no manual Authorization header needed
+    if(api) init.credentials = init.credentials || 'include';
+    let r = await _f(input, init);
+    if(r.status===401 && api && !auth){
+      try{ const rf=await _f('/auth/refresh',{method:'POST',credentials:'include'});
+        if(rf.ok){ r=await _f(input,init); }
+        else location.href='/login';
+      }catch(e){ location.href='/login'; }
+    }
+    return r;
+  };
+})();
+</script>
+<style>
+  :root{--bg:#eef3fb;--panel:#fff;--panel-2:#f4f7fb;--border:#c9d5e7;--text:#172033;--muted:#607089;
+    --accent:#315fdc;--accent-2:#7c3aed;--green:#167a3b;--amber:#b7791f;--red:#dc2626;--grey:#64748b;
+    --shadow:0 1px 3px rgba(30,50,90,.08),0 8px 24px rgba(30,50,90,.06);}
+  *{box-sizing:border-box}
+  body{margin:0;color:var(--text);font:14px/1.5 -apple-system,Segoe UI,Roboto,Arial,sans-serif;background:linear-gradient(160deg,#e9eefb,#eef3fb);min-height:100vh}
+  a{color:var(--accent);text-decoration:none;cursor:pointer}
+  .top{display:flex;align-items:center;gap:10px;padding:14px 26px}.crumb{color:var(--muted);font-size:13px}.spacer{flex:1}.muted{color:var(--muted)}
+  .btn{padding:7px 13px;border-radius:9px;font-size:12.5px;border:1px solid var(--border);background:#fff;color:var(--text);cursor:pointer;font-weight:500}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;box-shadow:0 8px 20px rgba(49,95,220,.28)}
+  .btn.green{background:#e7f6ec;border-color:#b5e0c2;color:var(--green)}.btn.red{background:#fdecec;border-color:#f3c9c9;color:var(--red)}.btn.sm{padding:4px 10px;font-size:12px}
+  .page{padding:2px 26px 40px;max-width:1340px;margin:0 auto}
+  .header{display:flex;align-items:flex-start;gap:12px;margin-bottom:16px}
+  .header h2{font-size:22px;font-weight:750;margin:0;display:flex;align-items:center;gap:9px}
+  .header .sub{color:var(--muted);font-size:13px;margin-top:4px}
+  .badge{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;padding:3px 9px;border-radius:999px}
+  .b-run{background:#e7f6ec;color:var(--green)}.b-tier{background:#f1ecfe;color:var(--accent-2)}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block}.dot.on{background:var(--green);box-shadow:0 0 0 3px rgba(22,122,59,.15)}.dot.off{background:var(--grey)}
+  .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:16px}
+  .kpi{position:relative;overflow:hidden;background:#fff;border:1px solid var(--border);border-radius:14px;padding:13px 14px;box-shadow:var(--shadow)}
+  .kpi::after{content:"";position:absolute;right:-24px;bottom:-26px;width:82px;height:82px;border-radius:50%;background:var(--tint,rgba(99,102,241,.06))}
+  .kpi .top{display:flex;align-items:center;gap:8px;margin-bottom:6px;position:relative;z-index:1}
+  .kpi .ic{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:13px}
+  .kpi .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:800}
+  .kpi .v{font-size:23px;font-weight:800;margin:2px 0 1px;position:relative;z-index:1}.kpi .s{font-size:10.5px;color:var(--muted);position:relative;z-index:1}
+  .v.green{color:var(--green)}.v.amber{color:var(--amber)}.v.red{color:var(--red)}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px;box-shadow:var(--shadow);margin-bottom:14px}
+  .card h3{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 10px;font-weight:700;display:flex;align-items:center;gap:6px}
+  .tabs{display:flex;gap:6px;border-bottom:1px solid var(--border);margin-bottom:14px}
+  .tab{padding:9px 15px;cursor:pointer;color:var(--muted);font-weight:600;font-size:13.5px;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+  .main{display:grid;grid-template-columns:1fr 350px;gap:16px}
+  .stream{background:var(--panel-2);border:1px solid var(--border);border-radius:12px;padding:4px;max-height:300px;overflow:auto}
+  .step{display:flex;gap:8px;padding:8px 10px;border-bottom:1px solid var(--border);font-size:13px;color:var(--text);align-items:flex-start}
+  .step:last-child{border-bottom:0}
+  .step .tm{color:var(--grey);font-size:11px;min-width:58px;padding-top:2px;font-variant-numeric:tabular-nums}
+  .step .tag{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;padding:2px 7px;border-radius:6px;white-space:nowrap}
+  .step .c{flex:1}
+  .tag.thought{background:#eef1f6;color:#4a5568}.tag.bash{background:#e9f0ff;color:var(--accent)}
+  .tag.observation{background:#e7f6ec;color:var(--green)}.tag.trigger{background:#fdecec;color:var(--red)}
+  .tag.message{background:#f1ecfe;color:var(--accent-2)}.tag.idle{background:#f4f7fb;color:var(--grey)}.tag.error{background:#fdecec;color:var(--red)}
+  .step.bash .c{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#334a63}
+  .step.trigger .c{font-weight:600}
+  .stream-empty{padding:26px;text-align:center;color:var(--muted);font-size:12.5px}
+  .det{border:1px solid var(--border);border-radius:12px;margin-bottom:10px;background:#fff;overflow:hidden}
+  .det .row{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer}.det .row:hover{background:var(--panel-2)}
+  .det .body{border-top:1px solid var(--border);padding:14px;display:none}.det.open .body{display:block}
+  .b-pend{background:#fbf1de;color:var(--amber)}.b-done{background:#e7f6ec;color:var(--green)}.b-rej{background:#fdecec;color:var(--red)}
+  .snap{background:linear-gradient(135deg,#2b2f77,#315fdc);color:#fff;border-radius:12px;padding:14px;margin-bottom:12px}
+  .snap .t{font-size:15px;font-weight:700;margin:5px 0}.snap .attr{display:inline-block;background:rgba(255,255,255,.16);border-radius:8px;padding:3px 9px;font-size:12px;margin:3px 4px 0 0}
+  .wt{padding:5px 12px;border-radius:8px;font-size:12.5px;border:1px solid var(--border);background:#fff;color:var(--muted);cursor:pointer;font-weight:600;margin-right:6px}
+  .wt.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .trace .sr{display:flex;justify-content:space-between;font-size:12px;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;margin-bottom:6px}
+  .evi{border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:12px;margin-bottom:6px;background:var(--panel-2)}
+  .out{background:#eef7f0;border:1px solid #cfe6d6;border-radius:8px;padding:10px;font-size:12.5px}
+  .chat{background:var(--panel-2);border:1px solid var(--border);border-radius:10px;padding:8px}
+  .msg{margin:7px 0;font-size:13px}.msg.u{text-align:right}.msg .bub{display:inline-block;padding:8px 11px;border-radius:12px;max-width:88%;white-space:pre-wrap;text-align:left}
+  .msg.u .bub{background:var(--accent);color:#fff}.msg.a .bub{background:#fff;border:1px solid var(--border)}
+  .q{font-size:12px;border:1px solid var(--border);background:#fff;border-radius:999px;padding:4px 10px;cursor:pointer;color:var(--muted);margin:0 4px 6px 0;display:inline-block}
+  .cin{display:flex;gap:6px;margin-top:8px}.cin input{flex:1;border:1px solid var(--border);border-radius:9px;padding:8px 10px;font-size:13px}
+  pre.yaml{background:#0f1526;color:#c7d2ec;border-radius:10px;padding:14px;font:12px/1.5 ui-monospace,Menlo,monospace;overflow:auto;max-height:360px}
+  label.f{display:block;font-size:12px;color:var(--muted);margin:9px 0 4px}
+  input.i,textarea.i,select.i{width:100%;background:#fff;border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px}
+  .row2{display:flex;gap:8px;align-items:center}
+  .spin{color:var(--muted);font-size:12px}
+  .nbrow{display:grid;grid-template-columns:1fr 380px;gap:14px;margin-bottom:16px}
+  .nbrow .card{margin-bottom:0}
+  .narr{background:linear-gradient(135deg,#f3f2fe,#eef3ff)}
+  .nbpill{display:inline-block;padding:6px 12px;border-radius:999px;font-size:12.5px;font-weight:600;margin:3px;cursor:pointer;border:1px solid transparent}
+  .nb-am{background:#fbf1de;color:var(--amber);border-color:#ead9b4}.nb-blue{background:#e9f0ff;color:var(--accent);border-color:#c6d8ff}.nb-ink{background:#f2f3f8;color:var(--text);border-color:var(--border)}.nb-red{background:#fdecec;color:var(--red);border-color:#f3c9c9}
+  .oc-item{border:1px solid var(--border);border-radius:9px;padding:8px 10px;margin-bottom:7px;font-size:12.5px;background:var(--panel-2)}
+  .oc-item .rs{color:var(--muted);font-size:11.5px;margin-top:3px}
+</style>
+</head>
+<body>
+  <div class="top"><span class="crumb"><a href="/observers">👁 Observers</a> / <span id="crumbName"></span></span><div class="spacer"></div><a href="/dashboard/v2" class="muted" style="font-size:12px">← Dashboard</a></div>
+  <div class="page">
+    <div class="header">
+      <div>
+        <h2 id="h2"><span class="dot off" id="hdot"></span> <span id="hname"></span> <span id="hstatus"></span> <span id="htier"></span></h2>
+        <div class="sub" id="hsub"></div>
+      </div>
+      <div class="spacer"></div>
+      <div class="row2" id="hactions"></div>
+    </div>
+    <div class="kpis" id="kpis"></div>
+    <div class="nbrow" id="nbrow">
+      <div class="card narr"><h3>Summary</h3><div id="narr" class="spin">…</div></div>
+      <div class="card"><h3>Next best actions</h3><div id="nba"></div></div>
+    </div>
+    <div class="tabs">
+      <div class="tab active" id="t-rt" onclick="showTab('rt')">Runtime</div>
+      <div class="tab" id="t-cfg" onclick="showTab('cfg')">Configure</div>
+    </div>
+
+    <div id="p-rt">
+      <div class="main">
+        <div>
+          <div class="card"><h3>Live stream <span class="dot on" id="wsdot"></span> <span class="spacer"></span><span class="spin" id="wsstat">connecting…</span></h3>
+            <div class="stream" id="stream"></div></div>
+          <div class="card"><h3>Detections &amp; approvals</h3><div id="dets"><div class="spin">loading…</div></div></div>
+        </div>
+        <div>
+          <div class="card"><h3>💬 Ask this observer <span class="spacer"></span><span class="spin">live mind / copilot</span></h3>
+            <div style="margin-bottom:8px">
+              <span class="q" onclick="askObs('What are you watching?')">What are you watching?</span>
+              <span class="q" onclick="askObs('What did you find today?')">What did you find today?</span>
+              <span class="q" onclick="askObs('How many approvals are pending?')">Pending approvals?</span>
+            </div>
+            <div class="chat" id="obschat" style="background:#fff;border:0;padding:0;min-height:60px"></div>
+            <div class="cin"><input id="obsinput" placeholder="Ask this observer…" onkeydown="if(event.key==='Enter')askObs()"/><button class="btn primary sm" onclick="askObs()">Send</button></div>
+          </div>
+          <div class="card"><h3>Recent outcomes</h3><div id="recent"><div class="spin">No resolved detections yet.</div></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="p-cfg" style="display:none">
+      <div class="card"><h3>Definition (spec)</h3>
+        <label class="f">Focus</label><textarea class="i" id="cfgFocus" rows="2"></textarea>
+        <label class="f">Compiles to</label><pre class="yaml" id="cfgYaml"></pre>
+        <div class="row2" style="margin-top:12px"><button class="btn primary sm" onclick="saveSpec()">Save</button><button class="btn red sm" onclick="delSpec()">Delete</button></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const NAME = decodeURIComponent(location.pathname.split('/').filter(Boolean).pop());
+let SPEC=null, STATUS=null;
+function esc(s){return (s==null?'':String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+async function jget(u){const r=await fetch(u);if(!r.ok)throw new Error(u+' '+r.status);return r.json();}
+async function jpost(u,b){const r=await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});return r.json();}
+function showTab(w){document.getElementById('p-rt').style.display=w==='rt'?'block':'none';document.getElementById('p-cfg').style.display=w==='cfg'?'block':'none';document.getElementById('t-rt').classList.toggle('active',w==='rt');document.getElementById('t-cfg').classList.toggle('active',w==='cfg');}
+
+const TINT={base:'rgba(49,95,220,.10)',green:'rgba(22,122,59,.13)',amber:'rgba(176,121,31,.15)',red:'rgba(220,38,38,.11)'};
+const ICOL={base:'var(--accent)',green:'var(--green)',amber:'var(--amber)',red:'var(--red)'};
+function kpi(l,v,s,cls,icon){
+  const k=(cls&&TINT[cls])?cls:'base', tint=TINT[k], icol=ICOL[k];
+  return `<div class="kpi" style="--tint:${tint}"><div class="top"><div class="ic" style="background:${tint};color:${icol}">${icon||'•'}</div><div class="l">${l}</div></div><div class="v ${cls||''}">${v}</div><div class="s">${s||''}</div></div>`;
+}
+
+async function loadHeader(){
+  SPEC = await jget(`/api/observers/${encodeURIComponent(NAME)}`);
+  STATUS = await jget(`/api/observers/${encodeURIComponent(NAME)}/status`).catch(()=>({}));
+  const running = STATUS && STATUS.running;
+  document.getElementById('crumbName').textContent = NAME;
+  document.getElementById('hname').textContent = NAME;
+  document.getElementById('hdot').className = 'dot '+(running?'on':'off');
+  document.getElementById('hstatus').innerHTML = `<span class="badge ${running?'b-run':'b-tier'}" style="${running?'':'background:#eef1f6;color:var(--grey)'}">${running?'running':'stopped'}</span>`;
+  document.getElementById('htier').innerHTML = `<span class="badge b-tier">${esc(SPEC.trust_tier||'recommend')}</span>`;
+  const scope = (SPEC.watch||[]).map(w=>w.path||w.dsn||w.url||w.type).join(' · ')||'—';
+  document.getElementById('hsub').textContent = `Watches ${scope}${SPEC.model?(' · '+SPEC.model):''}`;
+  document.getElementById('hactions').innerHTML = running
+    ? `<button class="btn red sm" onclick="life('stop')">■ Stop</button>`
+    : `<button class="btn green sm" onclick="life('start')">▶ Start</button>`;
+  document.getElementById('cfgFocus').value = SPEC.focus||'';
+  document.getElementById('cfgYaml').textContent =
+    `trust_tier: ${SPEC.trust_tier}\nwatch:\n`+(SPEC.watch||[]).map(w=>`  - {type: ${w.type}, path: ${w.path||w.dsn||w.url}, access: ${w.access}}`).join('\n')
+    +`\ntriggers:\n`+(SPEC.triggers||[]).map(t=>`  - ${t.field?(t.field+' '+t.op+' '+t.value):('pattern '+t.pattern)} -> ${t.skill} (${t.approval})`).join('\n')
+    +`\nruntime_mode: ${SPEC.runtime_mode}`;
+}
+
+let LASTM={};
+async function loadMetrics(){
+  const m = await jget(`/api/observers/${encodeURIComponent(NAME)}/metrics`).catch(()=>({}));
+  LASTM = m;
+  renderInsights();
+  document.getElementById('kpis').innerHTML =
+     kpi('Detections', m.detections||0, 'from watch scope','base','🔔')
+   + kpi('Awaiting human', m.pending||0, 'approval queue', 'amber','⏳')
+   + kpi('Approve rate', (m.approve_rate==null?'—':m.approve_rate+'%'), 'decisions', 'green','✓')
+   + kpi('Outcomes', m.outcomes||0, 'post-approval','base','◷')
+   + kpi('Approved', m.approved||0, 'total', 'green','✓')
+   + kpi('Rejected', m.rejected||0, 'total', 'red','✗');
+}
+
+const STREAM_TYPES = new Set(['thought','bash','observation','trigger','message','idle','error']);
+function stepRow(s){
+  let t = (s.type||'').toString();
+  if(t==='trig') t='trigger';
+  if(!STREAM_TYPES.has(t)) return '';                 // skip noise (shellm-run/prompt/merge/…)
+  const raw = (s.content||s.text||'').toString().trim();
+  if(!raw && t!=='idle') return '';                    // skip empty
+  const c = esc(raw).slice(0,240) || '…';
+  const tm = (s.ts||'').toString().slice(11,19);
+  return `<div class="step ${t}"><span class="tm">${tm}</span><span class="tag ${t}">${t}</span><span class="c">${c}</span></div>`;
+}
+function renderSteps(steps, prepend){
+  const el = document.getElementById('stream');
+  const html = (steps||[]).map(stepRow).join('');
+  if(prepend){
+    el.innerHTML = html || `<div class="stream-empty">No recent activity yet. When the observer runs, its thoughts, checks, and triggers stream here.</div>`;
+  } else if(html){
+    if(el.querySelector('.stream-empty')) el.innerHTML='';
+    el.insertAdjacentHTML('beforeend', html);
+  }
+  el.scrollTop = el.scrollHeight;
+}
+
+let DETS=[];
+async function loadDetections(){
+  const d = await jget(`/api/observers/${encodeURIComponent(NAME)}/detections`).catch(()=>({detections:[]}));
+  DETS = d.detections||[];
+  const el = document.getElementById('dets');
+  if(!DETS.length){ el.innerHTML = '<div class="spin">No detections yet. Escalations this observer raises appear here.</div>'; }
+  else { el.innerHTML = DETS.map(detCard).join(''); }
+  renderInsights();
+}
+
+function renderInsights(){
+  const m=LASTM||{}, running=STATUS&&STATUS.running;
+  const scope=(SPEC&&(SPEC.watch||[]).map(w=>w.path||w.dsn||w.url||w.type).join(', '))||'its scope';
+  const narr=document.getElementById('narr'); if(!narr) return;
+  let n = `${esc(NAME)} is ${running?'actively watching':'configured to watch'} ${esc(scope)}. `;
+  n += `${m.detections||0} detection${(m.detections||0)===1?'':'s'} so far`;
+  if((m.pending||0)>0) n += `, <b>${m.pending} awaiting approval</b>`;
+  if(m.approve_rate!=null) n += ` · approve rate ${m.approve_rate}%`;
+  n += '.';
+  if(!running) n += ' <span class="muted">The mind is stopped — Start it to resume watching.</span>';
+  narr.innerHTML = n;
+  let nb = '';
+  if((m.pending||0)>0) nb += `<span class="nbpill nb-am" onclick="firstPending()">Review ${m.pending} approval${m.pending>1?'s':''}</span>`;
+  nb += running ? `<span class="nbpill nb-blue" onclick="document.getElementById('stream').scrollIntoView({behavior:'smooth'})">Watch live stream</span>`
+                : `<span class="nbpill nb-blue" onclick="life('start')">Start observer</span>`;
+  nb += `<span class="nbpill nb-ink" onclick="showTab('cfg')">Configure scope</span>`;
+  document.getElementById('nba').innerHTML = nb;
+  const resolved=(DETS||[]).filter(d=>d.status!=='pending').slice(0,5);
+  document.getElementById('recent').innerHTML = resolved.length ? resolved.map(d=>`
+    <div class="oc-item"><span class="badge ${d.status==='approved'?'b-done':'b-rej'}">${d.status==='rejected'?'✗ rejected':'✓ '+(d.execution_status||'done')}</span>
+      <b style="font-size:12px"> ${esc((d.task||d.reason||d.id)).slice(0,42)}</b>
+      ${d.result_summary?`<div class="rs">${esc(d.result_summary).slice(0,120)}…</div>`:''}
+      ${d.trace_id?`<div class="rs"><a onclick="openDetById('${d.id}')">view execution →</a></div>`:''}
+    </div>`).join('') : '<div class="spin">No resolved detections yet.</div>';
+}
+function firstPending(){ const d=(DETS||[]).find(x=>x.status==='pending'); if(d) openDetById(d.id); }
+function openDetById(id){ const el=document.getElementById('det-'+id); if(el){ el.classList.add('open'); renderDetBody(id); el.scrollIntoView({behavior:'smooth'}); } }
+function statusBadge(d){
+  if(d.status==='pending') return '<span class="badge b-pend">⏸ pending</span>';
+  if(d.status==='rejected'||d.execution_status==='rejected') return '<span class="badge b-rej">✗ rejected</span>';
+  return '<span class="badge b-done">✓ '+(d.execution_status||d.status||'done')+'</span>';
+}
+function detCard(d){
+  return `<div class="det" id="det-${d.id}">
+    <div class="row" onclick="toggleDet('${d.id}')">${statusBadge(d)}<b>${esc((d.task||d.reason||d.id)).slice(0,60)}</b>
+      <span class="muted" style="font-size:12px">${esc(d.skill||'')}</span><span class="spacer"></span><span class="spin">${esc(d.rule||'')} ▾</span></div>
+    <div class="body" id="body-${d.id}"></div></div>`;
+}
+function toggleDet(id){
+  const el=document.getElementById('det-'+id); el.classList.toggle('open');
+  if(el.classList.contains('open')) renderDetBody(id);
+}
+function renderDetBody(id){
+  const d = DETS.find(x=>x.id===id); const b=document.getElementById('body-'+id);
+  b.innerHTML = `
+    <div class="snap"><div style="font-size:11px;color:#cdd3ff">DETECTION · ${esc(d.urgency||'')}</div>
+      <div class="t">${esc(d.task||d.reason||'')}</div>
+      <span class="attr">rule: ${esc(d.rule||'—')}</span><span class="attr">skill: ${esc(d.skill||'—')}</span><span class="attr">status: ${esc(d.status)}</span></div>
+    <div style="margin-bottom:10px">
+      <span class="wt on" onclick="wbTab('${id}','ov')">Overview</span><span class="wt" onclick="wbTab('${id}','ev')">Evidence</span><span class="wt" onclick="wbTab('${id}','tr')">Execution Trace</span><span class="wt" onclick="wbTab('${id}','ac')">Actions</span><span class="wt" onclick="wbTab('${id}','ch')">💬 Ask</span>
+    </div>
+    <div id="wb-${id}"></div>`;
+  wbTab(id,'ov');
+}
+function wbTab(id,which){
+  const d=DETS.find(x=>x.id===id); const w=document.getElementById('wb-'+id);
+  document.querySelectorAll('#body-'+id+' .wt').forEach(x=>x.classList.remove('on'));
+  const idx={ov:0,ev:1,tr:2,ac:3,ch:4}[which]; document.querySelectorAll('#body-'+id+' .wt')[idx].classList.add('on');
+  if(which==='ov'){
+    w.innerHTML = `<div style="font-size:12.5px">Reason: ${esc(d.reason||'')}</div>`
+      + (d.result_summary?`<div class="out" style="margin-top:8px">${esc(d.result_summary)}</div>`:'')
+      + (d.status==='pending'?`<div class="row2" style="margin-top:10px"><button class="btn green sm" onclick="resolve('${id}','approved')">✓ Approve</button><button class="btn red sm" onclick="resolve('${id}','rejected')">Reject</button></div>`:'');
+  } else if(which==='ev'){
+    const ev=(d.evidence||[]); w.innerHTML = ev.length?ev.map(e=>`<div class="evi">${esc(e)}</div>`).join(''):'<div class="spin">No evidence captured.</div>';
+  } else if(which==='tr'){
+    w.innerHTML='<div class="spin">loading trace…</div>';
+    if(!d.trace_id){ w.innerHTML='<div class="spin">No execution trace (skill did not run or no approval yet).</div>'; return; }
+    jget('/api/traces/'+d.trace_id).then(tr=>{
+      const spans=tr.spans||[]; w.innerHTML='<div class="trace">'+spans.map(s=>`<div class="sr"><span>${esc(s.name)}</span><span>${s.end_ms&&s.start_ms?((s.end_ms-s.start_ms)+'ms'):(s.status||'')}</span></div>`).join('')+`</div><div class="spin" style="margin-top:6px">trace ${d.trace_id.slice(0,12)} · ${spans.length} spans</div>`;
+    }).catch(()=>{w.innerHTML='<div class="spin">trace unavailable</div>';});
+  } else if(which==='ac'){
+    w.innerHTML = d.status==='pending'
+      ? `<button class="btn green sm" onclick="resolve('${id}','approved')">✓ Approve → run ${esc(d.skill)}</button> <button class="btn red sm" onclick="resolve('${id}','rejected')">Reject</button>`
+      : `<div class="spin">Resolved (${esc(d.status)}). No further actions.</div>`;
+  } else if(which==='ch'){
+    w.innerHTML = `<div class="chat"><div id="dchat-${id}"></div><div class="cin"><input id="dcin-${id}" placeholder="Ask about this detection…" onkeydown="if(event.key==='Enter')askDet('${id}')"/><button class="btn primary sm" onclick="askDet('${id}')">Send</button></div></div>`;
+  }
+}
+
+async function resolve(id, decision){
+  const el=document.getElementById('body-'+id); if(el) el.innerHTML='<div class="spin">processing…</div>';
+  await jpost(`/api/observers/approvals/${id}/resolve`,{decision, decided_by:'console'});
+  await loadDetections(); await loadMetrics();
+  const d=document.getElementById('det-'+id); if(d){ d.classList.add('open'); renderDetBody(id); }
+}
+
+async function askDet(id){
+  const inp=document.getElementById('dcin-'+id); const msg=inp.value.trim(); if(!msg)return; inp.value='';
+  const box=document.getElementById('dchat-'+id);
+  box.insertAdjacentHTML('beforeend',`<div class="msg u"><span class="bub">${esc(msg)}</span></div><div class="msg a" id="tmp"><span class="bub spin">thinking…</span></div>`);
+  const r=await jpost(`/api/observers/${encodeURIComponent(NAME)}/detections/${id}/chat`,{message:msg});
+  box.querySelector('#tmp').outerHTML=`<div class="msg a"><span class="bub">${esc(r.response||'(no response)')}</span></div>`;
+  box.scrollTop=box.scrollHeight;
+}
+
+async function askObs(preset){
+  const inp=document.getElementById('obsinput'); const msg=(preset||inp.value).trim(); if(!msg)return; if(!preset)inp.value='';
+  const box=document.getElementById('obschat');
+  box.insertAdjacentHTML('beforeend',`<div class="msg u"><span class="bub">${esc(msg)}</span></div><div class="msg a" id="otmp"><span class="bub spin">thinking…</span></div>`);
+  const mode = (STATUS&&STATUS.running)?'mind':'copilot';
+  const r=await jpost(`/api/observers/${encodeURIComponent(NAME)}/chat`,{message:msg, mode});
+  box.querySelector('#otmp').outerHTML=`<div class="msg a"><span class="bub">${esc(r.response||'(no response)')}${r.mode?(' <span class=spin>· '+r.mode+'</span>'):''}</span></div>`;
+  box.scrollTop=box.scrollHeight;
+}
+
+async function life(action){
+  document.getElementById('hactions').innerHTML='<span class="spin">'+action+'ing…</span>';
+  await jpost(`/api/observers/${encodeURIComponent(NAME)}/${action}`,{});
+  setTimeout(async()=>{ await loadHeader(); await loadMetrics(); connectWS(); }, 1500);
+}
+async function saveSpec(){ SPEC.focus=document.getElementById('cfgFocus').value; await fetch(`/api/observers/${encodeURIComponent(NAME)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(SPEC)}); alert('Saved'); }
+async function delSpec(){ if(!confirm('Delete observer '+NAME+'?'))return; await fetch(`/api/observers/${encodeURIComponent(NAME)}`,{method:'DELETE'}); location.href='/observers'; }
+
+// live stream via WebSocket (falls back to polling)
+let WS=null;
+function connectWS(){
+  try{ if(WS) WS.close(); }catch(e){}
+  const proto = location.protocol==='https:'?'wss':'ws';
+  // SEC-6: httponly iaf_access_token cookie is sent automatically on the WS upgrade
+  WS = new WebSocket(`${proto}://${location.host}/ws/observers/${encodeURIComponent(NAME)}`);
+  const dot=document.getElementById('wsdot'), stat=document.getElementById('wsstat');
+  WS.onopen=()=>{stat.textContent='live';};
+  WS.onclose=()=>{stat.textContent='disconnected — retrying';dot.className='dot off';setTimeout(connectWS,5000);};
+  WS.onmessage=(e)=>{ const m=JSON.parse(e.data);
+    if(m.type==='snapshot') renderSteps(m.steps||[], true);
+    else if(m.type==='steps') { renderSteps(m.steps||[], false); loadDetections(); loadMetrics(); }
+  };
+}
+
+(async function(){ await loadHeader(); await loadMetrics(); await loadDetections(); connectWS(); })();
+setInterval(loadMetrics, 20000);
+</script>
+<!-- SEC-7: shared idle-session timeout + user menu. -->
+<script src="/static/session-controls.js"></script>
+</body>
+</html>

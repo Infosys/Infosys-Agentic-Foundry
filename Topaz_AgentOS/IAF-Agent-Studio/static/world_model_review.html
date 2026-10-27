@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>World-Model Graph Review</title>
+<!-- Unified Light/Dark theme — FOUC guard must run before first paint -->
+<script>(function(){try{var m={hybrid:'light',light:'light',dark:'dark'},ls=window.localStorage;var v=m[ls.getItem('iaf_theme')]||m[ls.getItem('iaf_dashboard_theme')]||m[ls.getItem('iaf_workstreams_theme')]||m[ls.getItem('iaf-theme')];if(!v)v=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';var r=document.documentElement;r.setAttribute('data-theme',v);r.classList.add(v==='light'?'light-mode':'dark-mode');r.style.colorScheme=v;}catch(e){}})();</script>
+<link rel="stylesheet" href="/static/theme.css">
+<script src="/static/theme.js"></script>
+<style>
+  :root{--bg:#f6f7f9;--card:#fff;--ink:#1a1f2b;--muted:#6b7280;--line:#e5e7eb;
+        --accent:#2563eb;--ok:#059669;--okbg:#ecfdf5;--no:#dc2626;--nobg:#fef2f2;--pill:#eef2ff;}
+  html[data-theme="dark"]{--bg:#0b0f17;--card:#121926;--ink:#e6edf6;--muted:#9aa7bd;--line:#212b3b;
+        --accent:#7aa2ff;--ok:#5ddc9a;--okbg:rgba(93,220,154,.12);--no:#ff9aa6;--nobg:rgba(255,123,138,.12);--pill:#1d2140;}
+  html[data-theme="dark"] th{background:#0f1520}
+  html[data-theme="dark"] button:hover{border-color:#3a475f}
+  html[data-theme="dark"] .pill{color:#c7cbff}
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+       background:var(--bg);color:var(--ink)}
+  header{padding:20px 28px;border-bottom:1px solid var(--line);background:var(--card)}
+  h1{margin:0;font-size:19px}
+  .sub{color:var(--muted);margin-top:4px;font-size:13px}
+  .wrap{max-width:1040px;margin:22px auto;padding:0 20px}
+  .bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+  .bar label{color:var(--muted);font-size:12px}
+  .bar input{padding:6px 8px;border:1px solid var(--line);border-radius:7px;font-size:13px;width:150px}
+  button{cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink);
+         padding:7px 13px;border-radius:8px;font-size:13px;font-weight:600}
+  button:hover{border-color:#c7ccd6}
+  button.reload{margin-left:auto}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+  th{font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);background:#fafbfc}
+  tr:last-child td{border-bottom:none}
+  .triple{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
+  .rel{color:var(--accent);font-weight:700}
+  .pill{display:inline-block;background:var(--pill);color:#3730a3;border-radius:999px;
+        padding:2px 9px;font-size:11px;font-weight:600}
+  .conf{font-variant-numeric:tabular-nums;font-weight:700}
+  .prov{color:var(--muted);font-size:12px}
+  .act{display:flex;gap:7px;justify-content:flex-end}
+  .promote{color:var(--ok);border-color:#a7f3d0;background:var(--okbg)}
+  .reject{color:var(--no);border-color:#fecaca;background:var(--nobg)}
+  .empty{padding:44px;text-align:center;color:var(--muted)}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;
+         padding:10px 16px;border-radius:9px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast.show{opacity:1}
+  .toast.err{background:var(--no)}
+</style>
+</head>
+<body>
+<header>
+  <h1>World-Model Graph Review</h1>
+  <div class="sub">Agent-learned relationship edges land as <strong>pending&nbsp;review</strong> (hidden from graph reads).
+    Promote to make an edge visible to answers, or reject to discard it. Every decision is logged to the world-events spine.</div>
+</header>
+
+<div class="wrap">
+  <div class="bar">
+    <label>Tenant <input id="tenant" value="company"></label>
+    <label>Agent <input id="agent" value="enterprise_agent"></label>
+    <label>User <input id="user" value="demo"></label>
+    <button class="reload" id="reloadBtn">↻ Reload</button>
+  </div>
+  <div class="card">
+    <table>
+      <thead><tr><th>Relationship</th><th>Confidence</th><th>Provenance</th><th></th></tr></thead>
+      <tbody id="rows"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const token = () => ''; // SEC-6: httponly cookie used
+const headers = () => ({'Authorization': `Bearer ${token()}`, 'Content-Type': 'application/json'});
+const scope = () => ({
+  tenant_id: $('tenant').value.trim() || 'company',
+  agent_id: $('agent').value.trim() || 'enterprise_agent',
+  user_id: $('user').value.trim() || 'demo',
+});
+
+function toast(msg, isErr){
+  const t = $('toast'); t.textContent = msg; t.className = 'toast show' + (isErr ? ' err' : '');
+  setTimeout(() => { t.className = 'toast'; }, 2600);
+}
+function esc(s){ return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+async function load(){
+  const s = scope();
+  const q = new URLSearchParams({tenant_id:s.tenant_id, agent_id:s.agent_id, user_id:s.user_id, limit:'200'});
+  $('rows').innerHTML = '<tr><td colspan="4" class="empty">Loading…</td></tr>';
+  try{
+    const r = await fetch('/api/world-model/pending?' + q, {headers: headers()});
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    render(data.pending || []);
+  }catch(e){
+    $('rows').innerHTML = `<tr><td colspan="4" class="empty">Failed to load: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+function render(edges){
+  if(!edges.length){
+    $('rows').innerHTML = '<tr><td colspan="4" class="empty">No pending edges. The graph is fully vetted. ✓</td></tr>';
+    return;
+  }
+  $('rows').innerHTML = edges.map(e => {
+    const conf = (typeof e.confidence === 'number') ? e.confidence.toFixed(2) : '—';
+    const cond = e.condition ? ` <span class="prov">[${esc(e.condition)}]</span>` : '';
+    return `<tr data-id="${esc(e.id)}">
+      <td class="triple">${esc(e.from_node)} <span class="rel">—${esc(e.relation)}→</span> ${esc(e.to_node)}${cond}</td>
+      <td class="conf">${conf}</td>
+      <td class="prov">${esc(e.source || '—')}<br><span class="pill">${esc(e.created_by || 'agent')}</span></td>
+      <td><div class="act">
+        <button class="promote" data-act="promote">Promote</button>
+        <button class="reject" data-act="reject">Reject</button>
+      </div></td></tr>`;
+  }).join('');
+}
+
+async function decide(action, rel_id){
+  const s = scope();
+  const row = document.querySelector(`tr[data-id="${CSS.escape(rel_id)}"]`);
+  try{
+    const r = await fetch('/api/world-model/' + action, {
+      method:'POST', headers: headers(), body: JSON.stringify({rel_id, ...s})
+    });
+    if(!r.ok){ const t = await r.text().catch(()=> ''); throw new Error('HTTP ' + r.status + ' ' + t); }
+    const res = await r.json();
+    if(row){ row.style.transition='opacity .25s'; row.style.opacity='0'; setTimeout(()=>{ row.remove();
+      if(!document.querySelector('#rows tr[data-id]')) render([]); }, 250); }
+    toast(action === 'promote' ? `Promoted → ${res.status}` : `Rejected → ${res.status}`);
+  }catch(e){
+    toast('Failed: ' + e.message, true);
+  }
+}
+
+load();
+
+$('reloadBtn').addEventListener('click', () => load());
+$('rows').addEventListener('click', ev => {
+  const btn = ev.target.closest('button[data-act]');
+  if (!btn) return;
+  const row = btn.closest('tr[data-id]');
+  if (!row) return;
+  decide(btn.dataset.act, row.dataset.id);
+});
+</script>
+<script src="/static/session-controls.js"></script>
+</body>
+</html>

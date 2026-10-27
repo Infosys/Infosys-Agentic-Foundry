@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESAA Process Optimization | Digital Twin</title>
+    <!-- Unified Light/Dark theme — FOUC guard must run before first paint -->
+    <script>(function(){try{var m={hybrid:'light',light:'light',dark:'dark'},ls=window.localStorage;var v=m[ls.getItem('iaf_theme')]||m[ls.getItem('iaf_dashboard_theme')]||m[ls.getItem('iaf_workstreams_theme')]||m[ls.getItem('iaf-theme')];if(!v)v=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';var r=document.documentElement;r.setAttribute('data-theme',v);r.classList.add(v==='light'?'light-mode':'dark-mode');r.style.colorScheme=v;}catch(e){}})();</script>
+    <link rel="stylesheet" href="/static/theme.css">
+    <script src="/static/theme.js"></script>
+    <script src="/static/vendor/tailwind.min.js"></script>
+    <script defer src="/static/vendor/alpine.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        dark: { 700: '#2d2d3d', 800: '#1e1e2e', 900: '#141422', 950: '#0d0d1a' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background: #0d0d1a; font-family: 'Inter', system-ui, sans-serif; }
+        .kpi-card { transition: all 0.2s; }
+        .kpi-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #141422; }
+        ::-webkit-scrollbar-thumb { background: #2d2d3d; border-radius: 3px; }
+        html[data-theme="light"] body { background: #eef3fb; }
+        html[data-theme="light"] ::-webkit-scrollbar-track { background: #e8eefc; }
+        html[data-theme="light"] ::-webkit-scrollbar-thumb { background: #c9d5e7; }
+    </style>
+    <!-- Auth: auto-inject Bearer token on all API calls + silent refresh on 401 -->
+    <script>
+    // SEC-6: clean up stale localStorage tokens from before cookie migration
+        localStorage.removeItem('iaf_access_token');
+        localStorage.removeItem('iaf_user');
+        (function() {
+        const _origFetch = window.fetch;
+        window.fetch = async function(input, init = {}) {
+            const url = typeof input === "string" ? input : (input.url || "");
+            const isApiCall = url && (url.startsWith("/") || url.startsWith(location.origin));
+            const isAuthEndpoint = url && (url.includes("/auth/login") || url.includes("/auth/register") ||
+                                           url.includes("/auth/refresh") || url.includes("/auth/policy") ||
+                                           url.includes("/auth/registration-mode"));
+            if (isApiCall && !isAuthEndpoint) {
+                // SEC-6: httponly cookie sent automatically — no manual Authorization header needed, init.headers, { "Authorization": "Bearer " + token });
+            }
+            let response = await _origFetch(input, init);
+            if (response.status === 401 && isApiCall && !isAuthEndpoint) {
+                try {
+                    const refresh = await _origFetch("/auth/refresh", { method: "POST", credentials: "include" });
+                    if (refresh.ok) {
+                        const data = await refresh.json();
+                        // SEC-6: server updated httponly cookie; no localStorage write needed
+                        init.headers = Object.assign({}, init.headers, { "Authorization": "Bearer " + data.access_token });
+                        response = await _origFetch(input, init);
+                    } else {
+                        // SEC-6: stale tokens cleaned up at interceptor init
+                        window.location.href = (window.__BASE_PATH__ || "") + "/login";
+                    }
+                } catch {}
+            }
+            return response;
+        };
+    })();
+    </script>
+</head>
+<body class="text-gray-200 min-h-screen" x-data="esaaPage()" x-init="init()">
+
+    <!-- Header -->
+    <header class="bg-dark-800 border-b border-dark-700 px-6 py-3">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <a href="/twin" class="text-gray-500 hover:text-white text-sm transition-colors">← Back to Twin</a>
+                <div class="w-px h-4 bg-dark-700"></div>
+                <h1 class="text-sm font-semibold text-gray-200">🎯 ESAA Process Optimization</h1>
+                <span class="text-[10px] px-2 py-0.5 rounded-full bg-dark-700 text-gray-500" x-text="tier"></span>
+            </div>
+            <div class="flex items-center gap-3">
+                <span x-show="lastRun" class="text-[10px] text-gray-600" x-text="'Last: ' + lastRun"></span>
+                <button @click="triggerTier2()" :disabled="analyzing"
+                        class="text-xs px-3 py-1.5 rounded-lg bg-purple-900/30 hover:bg-purple-800/40 text-purple-400 border border-purple-800/30 transition-colors disabled:opacity-40"
+                        :class="analyzing ? 'animate-pulse' : ''">
+                    <span x-show="!analyzing">🧠 Run Deep Analysis (Tier 2)</span>
+                    <span x-show="analyzing">⏳ Analyzing...</span>
+                </button>
+                <button @click="refresh()" class="text-xs px-3 py-1.5 rounded-lg bg-dark-700 hover:bg-dark-600 text-gray-400 transition-colors">
+                    🔄 Refresh
+                </button>
+                <!-- REV-5: session-controls.js renders identity + Sign Out here. -->
+                <div data-session-controls></div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-6 py-6 space-y-6">
+
+        <!-- Summary Bar -->
+        <div class="grid grid-cols-5 gap-4">
+            <div class="bg-dark-800 rounded-lg border border-dark-700 p-4 text-center">
+                <div class="text-2xl font-bold text-white" x-text="recs.length"></div>
+                <div class="text-xs text-gray-500">Total Findings</div>
+            </div>
+            <template x-for="cat in categories" :key="cat.key">
+                <div class="bg-dark-800 rounded-lg border border-dark-700 p-4 text-center kpi-card cursor-pointer"
+                     :class="selectedCat === cat.key ? 'ring-1 ring-' + cat.color + '-500' : ''"
+                     @click="selectedCat = selectedCat === cat.key ? null : cat.key">
+                    <div class="text-2xl font-bold" :class="'text-' + cat.color + '-400'" x-text="catCount(cat.key)"></div>
+                    <div class="text-xs text-gray-500" x-text="cat.icon + ' ' + cat.label"></div>
+                </div>
+            </template>
+        </div>
+
+        <!-- Tier 2 LLM Insights Banner -->
+        <div x-show="tier === 'tier1+tier2'" class="bg-purple-900/20 border border-purple-800/30 rounded-lg p-3 flex items-center gap-3">
+            <span class="text-purple-400">🧠</span>
+            <div>
+                <div class="text-xs font-semibold text-purple-300">LLM-Enriched Insights Active</div>
+                <div class="text-[11px] text-purple-400/70">Tier 2 analysis used agent memory (knowledge graph, decisions, feedback) to generate deeper recommendations.</div>
+            </div>
+            <div class="ml-auto text-[10px] text-gray-600">
+                <span x-text="(tier2Stats?.knowledge_entries || 0) + ' knowledge entries'"></span> ·
+                <span x-text="(tier2Stats?.decision_entries || 0) + ' decisions'"></span> ·
+                <span x-text="(tier2Stats?.feedback_entries || 0) + ' feedback signals'"></span>
+            </div>
+        </div>
+
+        <!-- Recommendations Grid -->
+        <template x-for="cat in categories" :key="cat.key">
+            <div x-show="!selectedCat || selectedCat === cat.key" class="space-y-3">
+                <div class="flex items-center gap-2">
+                    <div class="w-1 h-6 rounded-full" :class="'bg-' + cat.color + '-500'"></div>
+                    <h2 class="text-sm font-semibold" :class="'text-' + cat.color + '-400'" x-text="cat.icon + ' ' + cat.label"></h2>
+                    <span class="text-[10px] text-gray-600" x-text="catCount(cat.key) + ' recommendations'"></span>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+                    <template x-for="rec in catRecs(cat.key)" :key="rec.rule_id + rec.title">
+                        <div class="bg-dark-800 rounded-lg border border-dark-700 p-4 kpi-card"
+                             :class="'border-l-4 border-' + cat.color + '-500'">
+                            <!-- Header -->
+                            <div class="flex items-start justify-between mb-2">
+                                <h3 class="text-xs font-semibold text-gray-200 leading-tight pr-2" x-text="rec.title"></h3>
+                                <div class="flex items-center gap-1 flex-shrink-0">
+                                    <span class="text-[10px] px-1.5 py-0.5 rounded-full"
+                                          :class="rec.impact==='high' ? 'bg-red-900/40 text-red-400' : rec.impact==='medium' ? 'bg-amber-900/40 text-amber-400' : 'bg-gray-800 text-gray-500'"
+                                          x-text="rec.impact"></span>
+                                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-dark-900 text-gray-500"
+                                          x-text="rec.source === 'tier2' ? '🧠' : '📊'"></span>
+                                </div>
+                            </div>
+
+                            <!-- Detail -->
+                            <p class="text-[11px] text-gray-400 mb-3 leading-relaxed" x-text="rec.detail"></p>
+
+                            <!-- Savings -->
+                            <div class="flex items-center gap-2 mb-2 text-[10px]">
+                                <span class="text-emerald-500">💡</span>
+                                <span class="text-gray-500" x-text="rec.estimated_savings_desc || 'N/A'"></span>
+                            </div>
+
+                            <!-- Evidence -->
+                            <div class="flex items-center justify-between text-[10px]">
+                                <div class="text-gray-600">
+                                    <span x-show="rec.evidence_ids && rec.evidence_ids.length">
+                                        Evidence: <span class="text-gray-500" x-text="(rec.evidence_ids||[]).slice(0,2).join(', ')"></span>
+                                    </span>
+                                </div>
+                                <span class="text-gray-600" x-text="rec.evidence_type || ''"></span>
+                            </div>
+
+                            <!-- Rule ID badge -->
+                            <div class="mt-2 pt-2 border-t border-dark-700 flex items-center justify-between">
+                                <span class="text-[10px] text-gray-600" x-text="'Rule: ' + rec.rule_id"></span>
+                                <a href="#" @click.prevent="askTwin(rec)"
+                                   class="text-[10px] text-cyan-500 hover:text-cyan-400 transition-colors cursor-pointer">
+                                    💬 Discuss →
+                                </a>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+
+                <div x-show="catCount(cat.key) === 0" class="text-center py-4 text-xs text-gray-600 italic">
+                    No findings in this category from current data
+                </div>
+            </div>
+        </template>
+
+        <!-- Empty State -->
+        <div x-show="recs.length === 0 && !loading" class="text-center py-12">
+            <div class="text-4xl mb-2">📊</div>
+            <div class="text-sm text-gray-400">No optimization recommendations available</div>
+            <div class="text-xs text-gray-600 mt-1">Ensure twin telemetry is populated with task data</div>
+        </div>
+
+        <!-- Loading -->
+        <div x-show="loading" class="text-center py-12">
+            <div class="text-4xl mb-2 animate-spin">⚙️</div>
+            <div class="text-sm text-gray-400">Loading recommendations...</div>
+        </div>
+
+    </main>
+
+    <script>
+    function esaaPage() {
+        return {
+            recs: [],
+            tier: 'tier1',
+            lastRun: '',
+            analyzing: false,
+            loading: true,
+            selectedCat: null,
+            tier2Stats: null,
+            categories: [
+                { key: 'eliminate', label: 'ELIMINATE', icon: '🗑', color: 'red' },
+                { key: 'standardize', label: 'STANDARDIZE', icon: '📐', color: 'amber' },
+                { key: 'augment', label: 'AUGMENT', icon: '🤖', color: 'cyan' },
+                { key: 'automate', label: 'AUTOMATE', icon: '⚡', color: 'emerald' },
+            ],
+
+            async init() {
+                await this.refresh();
+            },
+
+            async refresh() {
+                this.loading = true;
+                try {
+                    const r = await fetch('/api/twin/optimization');
+                    const d = await r.json();
+                    this.recs = d.recommendations || [];
+                    this.tier = d.tier || 'tier1';
+                    this.lastRun = d.computed_at ? new Date(d.computed_at).toLocaleString() : '';
+                    if (d.tier2 && d.tier2.patterns) {
+                        this.tier2Stats = d.tier2.patterns;
+                    }
+                } catch(e) { console.error('optimization', e); }
+                this.loading = false;
+            },
+
+            catCount(key) { return this.recs.filter(r => r.category === key).length; },
+            catRecs(key) { return this.recs.filter(r => r.category === key); },
+
+            async triggerTier2() {
+                if (this.analyzing) return;
+                this.analyzing = true;
+                try {
+                    const r = await fetch('/api/twin/optimization/analyze', { method: 'POST' });
+                    const d = await r.json();
+                    const jobId = d.job_id;
+                    let attempts = 0;
+                    const poll = setInterval(async () => {
+                        attempts++;
+                        try {
+                            const sr = await fetch(`/api/twin/optimization/status/${jobId}`);
+                            const sd = await sr.json();
+                            if (sd.status === 'completed' || sd.status === 'error' || attempts > 60) {
+                                clearInterval(poll);
+                                this.analyzing = false;
+                                await this.refresh();
+                            }
+                        } catch(e) { clearInterval(poll); this.analyzing = false; }
+                    }, 3000);
+                } catch(e) {
+                    console.error('tier2', e);
+                    this.analyzing = false;
+                }
+            },
+
+            askTwin(rec) {
+                this.selectedRecommendation = rec;
+                const q = 'Deep-dive on: ' + rec.title + '. ' + rec.detail;
+                if (window.AgentProAskTwin) {
+                    window.AgentProAskTwin.send(q);
+                }
+            }
+        }
+    }
+    </script>
+    <script>
+    window.AgentProPageContext = function() {
+        const app = window.Alpine ? Alpine.$data(document.body) : {};
+        return {
+            source_page: 'optimization',
+            page: 'twin_optimization',
+            selectedCategory: app.selectedCat,
+            tier: app.tier,
+            tier2Stats: app.tier2Stats,
+            analyzing: app.analyzing,
+            selectedRecommendation: app.selectedRecommendation || null,
+            recommendationCounts: Array.isArray(app.categories)
+                ? app.categories.reduce((acc, cat) => {
+                    acc[cat.key] = typeof app.catCount === 'function' ? app.catCount(cat.key) : 0;
+                    return acc;
+                }, {})
+                : {},
+            visibleRecommendations: Array.isArray(app.recs)
+                ? app.recs
+                    .filter(rec => !app.selectedCat || rec.category === app.selectedCat)
+                    .slice(0, 10)
+                    .map(rec => ({
+                        title: rec.title,
+                        category: rec.category,
+                        severity: rec.severity,
+                        impact: rec.impact,
+                        rule_id: rec.rule_id,
+                    }))
+                : [],
+        };
+    };
+    </script>
+    <script src="/static/ask-twin.js"></script>
+<script src="/static/session-controls.js"></script>
+</body>
+</html>

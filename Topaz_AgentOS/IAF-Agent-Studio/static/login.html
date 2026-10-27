@@ -1,0 +1,1167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IAF AgentOS — Sign In</title>
+    <!-- Unified Light/Dark theme — FOUC guard must run before first paint -->
+    <script>(function(){try{var m={hybrid:'light',light:'light',dark:'dark'},ls=window.localStorage;var v=m[ls.getItem('iaf_theme')]||m[ls.getItem('iaf_dashboard_theme')]||m[ls.getItem('iaf_workstreams_theme')]||m[ls.getItem('iaf-theme')];if(!v)v=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';var r=document.documentElement;r.setAttribute('data-theme',v);r.classList.add(v==='light'?'light-mode':'dark-mode');r.style.colorScheme=v;}catch(e){}})();</script>
+    <link rel="stylesheet" href="/static/theme.css">
+    <script src="/static/theme.js"></script>
+
+    <!-- Geist Font (matches main UI) -->
+    <style>
+    </style>
+
+    <!-- Tailwind CSS CDN -->
+    <script src="/static/vendor/tailwind.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        bg:       '#0d1117',
+                        surface:  '#161b22',
+                        surfalt:  '#21262d',
+                        border:   '#30363d',
+                        text:     '#c9d1d9',
+                        bright:   '#f0f6fc',
+                        muted:    '#8b949e',
+                        faint:    '#484f58',
+                        accent:   '#6366f1',
+                        accenthv: '#818cf8',
+                        green:    '#3fb950',
+                        red:      '#f85149',
+                        yellow:   '#d29922',
+                    },
+                    fontFamily: {
+                        sans: ['Geist', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+
+    <!-- PKCE OAuth2 helpers — no external library needed -->
+    <script>
+    var _pkce = {
+        _b64url: function(bytes) {
+            return btoa(String.fromCharCode.apply(null, bytes))
+                .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        },
+        verifier: async function() {
+            var a = new Uint8Array(32);
+            crypto.getRandomValues(a);
+            return _pkce._b64url(a);
+        },
+        challenge: async function(v) {
+            var d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v));
+            return _pkce._b64url(new Uint8Array(d));
+        },
+        rand: function() {
+            var a = new Uint8Array(16);
+            crypto.getRandomValues(a);
+            return _pkce._b64url(a);
+        },
+    };
+    </script>
+
+    <!-- Alpine.js (local — no CDN dependency) -->
+    <script defer src="/static/alpine.min.js"></script>
+    <style>[x-cloak] { display: none !important; }</style>
+
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            background-color: #0d1117;
+            color: #c9d1d9;
+            font-family: 'Geist', ui-sans-serif, system-ui, sans-serif;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        /* Subtle animated grid background */
+        .grid-bg {
+            background-image:
+                linear-gradient(rgba(99,102,241,0.04) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(99,102,241,0.04) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+
+        /* Glow effect on the card */
+        .card-glow {
+            box-shadow:
+                0 0 0 1px rgba(99,102,241,0.15),
+                0 20px 60px rgba(0,0,0,0.5),
+                0 0 80px rgba(99,102,241,0.05);
+        }
+
+        /* Input focus ring */
+        .auth-input:focus {
+            outline: none;
+            border-color: #6366f1;
+            box-shadow: 0 0 0 3px rgba(99,102,241,0.2);
+        }
+
+        /* Button styles */
+        .btn-primary {
+            background: linear-gradient(135deg, #6366f1, #818cf8);
+            transition: all 0.2s;
+        }
+        .btn-primary:hover:not(:disabled) {
+            background: linear-gradient(135deg, #818cf8, #a5b4fc);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px rgba(99,102,241,0.4);
+        }
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Tab underline animation */
+        .tab-active {
+            color: #f0f6fc;
+            border-bottom: 2px solid #6366f1;
+        }
+        .tab-inactive {
+            color: #8b949e;
+            border-bottom: 2px solid transparent;
+        }
+
+        /* Password strength bar */
+        .strength-bar {
+            height: 3px;
+            border-radius: 2px;
+            transition: width 0.3s, background-color 0.3s;
+        }
+
+        /* Error shake */
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%       { transform: translateX(-6px); }
+            40%       { transform: translateX(6px); }
+            60%       { transform: translateX(-4px); }
+            80%       { transform: translateX(4px); }
+        }
+        .shake { animation: shake 0.4s ease; }
+
+        /* ---- Light mode ---- */
+        html[data-theme="light"] body { background-color: #eef3fb; color: #172033; }
+        html[data-theme="light"] .grid-bg {
+            background-image:
+                linear-gradient(rgba(37,99,235,0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(37,99,235,0.05) 1px, transparent 1px);
+        }
+        html[data-theme="light"] .card-glow {
+            box-shadow: 0 0 0 1px rgba(37,99,235,0.12), 0 20px 60px rgba(15,23,42,0.12);
+        }
+        html[data-theme="light"] [style*="#161b22"] { background: #ffffff !important; border-color: #d5deeb !important; }
+        html[data-theme="light"] [style*="#21262d"] { background: #f3f6fb !important; border-color: #d5deeb !important; }
+        html[data-theme="light"] [style*="#1e1b4b"] { background: linear-gradient(135deg, #e0e7ff, #c7d2fe) !important; border-color: rgba(99,102,241,0.3) !important; }
+        html[data-theme="light"] .tab-active { color: #0f172a; }
+        html[data-theme="light"] .tab-inactive { color: #607089; }
+        /* Custom Tailwind palette (bright/text/muted/faint/surface) — light remap */
+        html[data-theme="light"] .text-bright { color: #0f172a !important; }
+        html[data-theme="light"] .text-text { color: #172033 !important; }
+        html[data-theme="light"] .text-muted { color: #607089 !important; }
+        html[data-theme="light"] .text-faint { color: #94a3b8 !important; }
+        html[data-theme="light"] .bg-surface { background-color: #ffffff !important; }
+        html[data-theme="light"] .bg-surfalt { background-color: #f3f6fb !important; }
+        html[data-theme="light"] .border-border { border-color: #d5deeb !important; }
+        .sso-btn:hover { background: #30363d !important; }
+        html[data-theme="light"] .sso-btn:hover { background: #e2e8f0 !important; }
+    </style>
+</head>
+
+<body class="grid-bg flex items-center justify-center min-h-screen p-4">
+
+<div x-data="authApp()" x-init="init()" class="w-full max-w-md">
+
+    <!-- Logo / Brand -->
+    <div class="text-center mb-8">
+        <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-4"
+             style="background: linear-gradient(135deg, #1e1b4b, #312e81); border: 1px solid rgba(99,102,241,0.3);">
+            <svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                      d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/>
+                <path stroke-linecap="round" stroke-linejoin="round"
+                      d="M18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z"/>
+            </svg>
+        </div>
+        <h1 class="text-xl font-semibold text-bright">IAF AgentOS Studio</h1>
+        <p class="text-sm text-muted mt-1">Enterprise AI Agent Platform</p>
+        <p class="text-xs text-faint mt-1" x-cloak x-show="appVersion"
+           x-text="'AgentOS v' + appVersion"></p>
+    </div>
+
+    <!-- Card -->
+    <div class="card-glow rounded-2xl p-8" style="background: #161b22; border: 1px solid #30363d;">
+
+        <!-- Tabs (Register tab hidden in admin_only mode; whole bar hidden
+             while a mandatory password change is outstanding) -->
+        <div x-show="!mustChangePassword" class="flex mb-6 gap-6 border-b border-border pb-0">
+            <button @click="tab = 'login'"
+                    :class="tab === 'login' ? 'tab-active' : 'tab-inactive'"
+                    class="pb-3 text-sm font-medium transition-all">
+                Sign In
+            </button>
+            <button x-cloak x-show="registrationMode !== 'admin_only'"
+                    @click="tab = 'register'"
+                    :class="tab === 'register' ? 'tab-active' : 'tab-inactive'"
+                    class="pb-3 text-sm font-medium transition-all">
+                Create Account
+            </button>
+        </div>
+
+        <!-- admin_only notice -->
+        <div x-show="registrationMode === 'admin_only' && tab === 'login' && !mustChangePassword"
+             class="mb-4 px-3 py-2 rounded-lg text-xs text-muted flex items-center gap-2"
+             style="background: #21262d; border: 1px solid #30363d;">
+            <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+            </svg>
+            Account access is by invitation only. Contact your administrator.
+        </div>
+
+        <!-- Global error banner -->
+        <div x-show="errorMsg" x-transition
+             class="mb-4 px-4 py-3 rounded-lg text-sm text-red flex items-start gap-2"
+             style="background: rgba(248,81,73,0.1); border: 1px solid rgba(248,81,73,0.25);">
+            <svg class="w-4 h-4 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+            </svg>
+            <span x-text="errorMsg"></span>
+        </div>
+
+        <!-- Success banner -->
+        <div x-show="successMsg" x-transition
+             class="mb-4 px-4 py-3 rounded-lg text-sm text-green flex items-start gap-2"
+             style="background: rgba(63,185,80,0.1); border: 1px solid rgba(63,185,80,0.25);">
+            <svg class="w-4 h-4 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+            </svg>
+            <span x-text="successMsg"></span>
+        </div>
+
+        <!-- ── MANDATORY CHANGE PASSWORD ── -->
+        <form method="post" x-cloak x-show="mustChangePassword" @submit.prevent="submitMandatoryPasswordChange()"
+              class="space-y-4" autocomplete="off">
+
+            <div class="mb-4 px-3 py-2 rounded-lg text-xs text-muted flex items-start gap-2"
+                 style="background: #21262d; border: 1px solid #30363d;">
+                <svg class="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                </svg>
+                <span>Your password was set by an administrator and is single-use.
+                      Choose a new password to finish signing in.</span>
+            </div>
+
+            <div x-show="mcpError" x-transition
+                 class="mb-2 px-4 py-3 rounded-lg text-sm text-red"
+                 style="background: rgba(248,81,73,0.1); border: 1px solid rgba(248,81,73,0.25);">
+                <span x-text="mcpError"></span>
+            </div>
+
+            <div x-show="mcpNeedsCurrent">
+                <label for="mcp-current" class="block text-xs font-medium text-muted mb-1.5">Temporary password</label>
+                <input id="mcp-current" type="password" x-model="mcpCurrent" autocomplete="current-password"
+                       aria-label="Temporary password"
+                       class="auth-input w-full px-3.5 py-2.5 rounded-lg text-sm text-bright bg-bg border border-border transition-all"
+                       :disabled="mcpLoading">
+            </div>
+
+            <div>
+                <label for="mcp-new" class="block text-xs font-medium text-muted mb-1.5">New password</label>
+                <input id="mcp-new" type="password" x-model="mcpNew" required autocomplete="new-password"
+                       aria-label="New password"
+                       class="auth-input w-full px-3.5 py-2.5 rounded-lg text-sm text-bright bg-bg border border-border transition-all"
+                       :disabled="mcpLoading">
+            </div>
+
+            <div>
+                <label for="mcp-confirm" class="block text-xs font-medium text-muted mb-1.5">Confirm new password</label>
+                <input id="mcp-confirm" type="password" x-model="mcpConfirm" required autocomplete="new-password"
+                       aria-label="Confirm new password"
+                       class="auth-input w-full px-3.5 py-2.5 rounded-lg text-sm text-bright bg-bg border border-border transition-all"
+                       :disabled="mcpLoading">
+            </div>
+
+            <button type="submit" :disabled="mcpLoading"
+                    class="auth-btn w-full py-2.5 rounded-lg text-sm font-medium">
+                <span x-show="!mcpLoading">Set new password</span>
+                <span x-show="mcpLoading">Updating…</span>
+            </button>
+        </form>
+
+        <!-- ── LOGIN FORM ── -->
+        <form method="post" x-show="tab === 'login' && !mustChangePassword" @submit.prevent="submitLogin()" class="space-y-4" autocomplete="on">
+
+            <div>
+                <label for="login-email" class="block text-xs font-medium text-muted mb-1.5">Email address</label>
+                <input id="login-email" type="email" x-model="loginEmail" required
+                       maxlength="254"
+                       placeholder="Your work email"
+                       autocomplete="username"
+                       aria-label="Email address"
+                       :aria-invalid="loginEmailError ? 'true' : 'false'"
+                       aria-describedby="login-email-error"
+                       @blur="validateLoginEmail()"
+                       @input="if (loginEmailError) validateLoginEmail()"
+                       class="auth-input w-full px-3.5 py-2.5 rounded-lg text-sm text-bright bg-bg border border-border transition-all"
+                       :disabled="loading">
+                <p id="login-email-error" x-show="loginEmailError" x-cloak x-text="loginEmailError"
+                   role="alert" class="mt-1 text-xs text-red-400"></p>
+            </div>
+
+            <div>
+                <div class="flex items-center justify-between mb-1.5">
+                    <label for="login-password" class="text-xs font-medium text-muted">Password</label>
+                </div>
+                <div class="relative">
+                    <input id="login-password" :type="showLoginPwd ? 'text' : 'password'"
+                           x-model="loginPassword" required
+                           maxlength="128"
+                           placeholder="••••••••"
+                           autocomplete="current-password"
+                           aria-label="Password"
+                           class="auth-input w-full px-3.5 py-2.5 pr-10 rounded-lg text-sm text-bright bg-bg border border-border transition-all"
+                           :disabled="loading">
+                    <button type="button" @click="showLoginPwd = !showLoginPwd"
+                            :aria-label="showLoginPwd ? 'Hide password' : 'Show password'"
+                            :aria-pressed="showLoginPwd ? 'true' : 'false'"
+                            class="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-text">
+                        <svg x-show="!showLoginPwd" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                        </svg>
+                        <svg x-show="showLoginPwd" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <button type="submit" :disabled="loading"
+                    class="btn-primary w-full py-2.5 rounded-lg text-sm font-semibold text-white mt-2">
+                <span x-show="!loading">Sign In</span>
+                <span x-show="loading" class="flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                    Signing in…
+                </span>
+            </button>
+
+            <!-- SSO divider + buttons (shown when any SSO provider is enabled) -->
+            <template x-if="ssoEnabled || msalEnabled">
+                <div class="mt-4">
+                    <div class="flex items-center gap-3 my-4">
+                        <div class="flex-1 h-px" style="background: #30363d;"></div>
+                        <span class="text-xs text-muted">or continue with</span>
+                        <div class="flex-1 h-px" style="background: #30363d;"></div>
+                    </div>
+                    <!-- Microsoft MSAL SSO button -->
+                    <template x-if="msalEnabled">
+                        <button type="button" @click="startMsalSSO()" :disabled="msalLoading || ssoLoading"
+                                class="w-full py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 mb-2"
+                                style="background: #21262d; border: 1px solid #30363d; color: #c9d1d9;"
+                                onmouseover="this.style.background='#30363d'" onmouseout="this.style.background='#21262d'">
+                            <template x-if="!msalLoading">
+                                <span class="flex items-center gap-2">
+                                    <svg class="w-4 h-4" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <rect x="1"  y="1"  width="9" height="9" fill="#f25022"/>
+                                        <rect x="11" y="1"  width="9" height="9" fill="#7fba00"/>
+                                        <rect x="1"  y="11" width="9" height="9" fill="#00a4ef"/>
+                                        <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+                                    </svg>
+                                    Sign in with Microsoft
+                                </span>
+                            </template>
+                            <template x-if="msalLoading">
+                                <span class="flex items-center gap-2">
+                                    <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                                    </svg>
+                                    Signing in with Microsoft…
+                                </span>
+                            </template>
+                        </button>
+                    </template>
+
+                    <!-- Keycloak SSO button -->
+                    <template x-if="ssoEnabled">
+                        <button type="button" @click="startSSO()" :disabled="ssoLoading || msalLoading"
+                                class="w-full py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2"
+                                style="background: #21262d; border: 1px solid #30363d; color: #c9d1d9;"
+                                onmouseover="this.style.background='#30363d'" onmouseout="this.style.background='#21262d'">
+                            <template x-if="!ssoLoading">
+                                <span class="flex items-center gap-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                              d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                                    </svg>
+                                    Sign in with SSO
+                                </span>
+                            </template>
+                            <template x-if="ssoLoading">
+                                <span class="flex items-center gap-2">
+                                    <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                                    </svg>
+                                    Redirecting to SSO…
+                                </span>
+                            </template>
+                        </button>
+                    </template>
+                </div>
+            </template>
+        </form>
+
+        <!-- ── REGISTER FORM ── -->
+        <form method="post" x-cloak x-show="tab === 'register' && registrationMode !== 'admin_only' && !mustChangePassword" @submit.prevent="submitRegister()" class="space-y-4" autocomplete="on">
+        <!-- approval mode notice -->
+        <div x-show="registrationMode === 'approval'"
+             class="px-3 py-2 rounded-lg text-xs text-yellow flex items-center gap-2 -mb-1"
+             style="background: rgba(210,153,34,0.1); border: 1px solid rgba(210,153,34,0.25);">
+            <svg class="w-3.5 h-3.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+            </svg>
+            Your account will require admin approval before you can sign in.
+        </div>
+
+            <div>
+                <label for="reg-name" class="block text-xs font-medium text-muted mb-1.5">Full name</label>
+                <input id="reg-name" type="text" x-model="regName" required
+                       placeholder="Jane Smith"
+                       aria-label="Full name"
+                       class="auth-input w-full px-3.5 py-2.5 rounded-lg text-sm text-bright bg-bg border border-border transition-all"
+                       :disabled="loading">
+            </div>
+
+            <div>
+                <label for="reg-email" class="block text-xs font-medium text-muted mb-1.5">Email address</label>
+                <input id="reg-email" type="email" x-model="regEmail" required
+                       maxlength="254"
+                       placeholder="Your work email"
+                       autocomplete="email"
+                       aria-label="Email address"
+                       class="auth-input w-full px-3.5 py-2.5 rounded-lg text-sm text-bright bg-bg border border-border transition-all"
+                       :disabled="loading">
+            </div>
+
+            <div>
+                <label for="reg-password" class="block text-xs font-medium text-muted mb-1.5">Password</label>
+                <div class="relative">
+                    <input id="reg-password" :type="showRegPwd ? 'text' : 'password'"
+                           x-model="regPassword"
+                           @input="checkPasswordStrength()"
+                           required
+                           maxlength="128"
+                           placeholder="••••••••"
+                           autocomplete="new-password"
+                           aria-label="Password"
+                           class="auth-input w-full px-3.5 py-2.5 pr-10 rounded-lg text-sm text-bright bg-bg border border-border transition-all"
+                           :disabled="loading">
+                    <button type="button" @click="showRegPwd = !showRegPwd"
+                            :aria-label="showRegPwd ? 'Hide password' : 'Show password'"
+                            :aria-pressed="showRegPwd ? 'true' : 'false'"
+                            class="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-text">
+                        <svg x-show="!showRegPwd" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                        </svg>
+                        <svg x-show="showRegPwd" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
+                        </svg>
+                    </button>
+                </div>
+                <!-- Strength bar -->
+                <div class="mt-1.5 flex gap-1">
+                    <template x-for="i in 4" :key="i">
+                        <div class="flex-1 h-1 rounded-full transition-all duration-300"
+                             :style="{ background: i <= pwdStrength ? pwdStrengthColor : '#30363d' }"></div>
+                    </template>
+                </div>
+                <p class="text-[11px] mt-1" :style="{ color: pwdStrengthColor }" x-text="pwdStrengthLabel"></p>
+            </div>
+
+            <!-- Password rules checklist -->
+            <div x-show="regPassword.length > 0"
+                 class="rounded-lg p-3 space-y-1.5 text-xs"
+                 style="background: #21262d; border: 1px solid #30363d;">
+                <template x-for="rule in pwdRules" :key="rule.label">
+                    <div class="flex items-center gap-2" :class="rule.ok ? 'text-green' : 'text-muted'">
+                        <svg x-show="rule.ok" class="w-3.5 h-3.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                        </svg>
+                        <svg x-show="!rule.ok" class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <circle cx="12" cy="12" r="9" stroke-width="2"/>
+                        </svg>
+                        <span x-text="rule.label"></span>
+                    </div>
+                </template>
+            </div>
+
+            <button type="submit" :disabled="loading || pwdStrength < 3"
+                    class="btn-primary w-full py-2.5 rounded-lg text-sm font-semibold text-white mt-2">
+                <span x-show="!loading">Create Account</span>
+                <span x-show="loading" class="flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                    Creating account…
+                </span>
+            </button>
+        </form>
+
+    </div>
+
+    <!-- Footer -->
+    <p class="text-center text-xs text-faint mt-6">
+        IAF AgentOS Studio &nbsp;·&nbsp; Enterprise Edition<span x-cloak x-show="appVersion">&nbsp;·&nbsp;<span x-text="'v' + appVersion"></span></span>
+    </p>
+
+    <!-- ── PRIVACY NOTICE + DECLARATION GATE (PIA controls 1 & 3) ── -->
+    <div x-cloak x-show="showPrivacy"
+         class="fixed inset-0 z-50 flex items-center justify-center p-4"
+         style="background: rgba(0,0,0,0.75);">
+        <div class="card-glow rounded-2xl w-full max-w-2xl flex flex-col"
+             style="background:#161b22; border:1px solid #30363d; max-height: 88vh;">
+            <div class="px-6 pt-5 pb-3 border-b border-border">
+                <h2 class="text-base font-semibold text-bright" x-text="privacyTitle"></h2>
+                <p class="text-xs text-muted mt-1">
+                    Version <span x-text="privacyVersion"></span> · You must accept to continue.
+                </p>
+            </div>
+            <!-- Notice body rendered as plain text (x-text) to avoid any HTML injection -->
+            <pre x-text="privacyMarkdown"
+                 class="px-6 py-4 overflow-y-auto text-sm text-text flex-1"
+                 style="white-space: pre-wrap; word-break: break-word; font-family: 'Geist', ui-sans-serif, system-ui, sans-serif; margin:0;"></pre>
+            <div class="px-6 py-4 border-t border-border">
+                <label class="flex items-start gap-2 cursor-pointer text-sm text-text">
+                    <input type="checkbox" x-model="privacyChecked" class="mt-0.5">
+                    <span>I have read, understood, and accept the Declaration and Acknowledgement above.</span>
+                </label>
+                <div x-show="privacyError" class="mt-2 text-xs text-red" x-text="privacyError"></div>
+                <div class="flex items-center justify-end gap-3 mt-4">
+                    <button type="button" @click="declinePrivacy()"
+                            class="px-4 py-2 rounded-lg text-sm text-muted"
+                            style="background:#21262d; border:1px solid #30363d;">
+                        Decline &amp; sign out
+                    </button>
+                    <button type="button" @click="acceptPrivacy()"
+                            :disabled="!privacyChecked || privacyLoading"
+                            class="btn-primary px-5 py-2 rounded-lg text-sm font-semibold text-white"
+                            :class="(!privacyChecked || privacyLoading) ? 'opacity-50 cursor-not-allowed' : ''">
+                        <span x-show="!privacyLoading">I have read and accept</span>
+                        <span x-show="privacyLoading">Recording…</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function authApp() {
+    return {
+        tab: 'login',
+        loading: false,
+        errorMsg: '',
+        successMsg: '',
+
+        // Login form
+        loginEmail: '',
+        loginPassword: '',
+        loginEmailError: '',
+        showLoginPwd: false,
+
+        // Register form
+        regName: '',
+        regEmail: '',
+        regPassword: '',
+        showRegPwd: false,
+
+        // Password strength
+        pwdStrength: 0,
+        pwdStrengthColor: '#484f58',
+        pwdStrengthLabel: '',
+        pwdRules: [],
+
+        // Policy from server
+        policy: { min_length: 8, require_uppercase: true, require_digit: true, require_special: true },
+
+        // Registration mode from server: 'open' | 'approval' | 'admin_only'
+        registrationMode: 'admin_only',
+
+        // Keycloak SSO state
+        ssoEnabled: false,
+        ssoLoading: false,
+
+        // Microsoft MSAL state
+        msalEnabled: false,
+        msalLoading: false,
+
+        // App version (sourced from the repo-root Version file via /auth/version)
+        appVersion: '',
+
+        // Privacy acknowledgement gate (PIA controls 1 & 3)
+        showPrivacy: false,
+        privacyTitle: '',
+        privacyVersion: '',
+        privacyMarkdown: '',
+        privacyChecked: false,
+        privacyLoading: false,
+        privacyError: '',
+        _pendingRedirect: '',
+
+        // Mandatory first-login password change. The account authenticates but
+        // the server refuses application APIs until the temporary password the
+        // administrator issued has been replaced.
+        mustChangePassword: false,
+        mcpCurrent: '',
+        mcpNew: '',
+        mcpConfirm: '',
+        mcpError: '',
+        mcpLoading: false,
+        // Captured from the login form so the user is not asked to retype the
+        // password they typed a second ago. Empty when the screen was restored
+        // from the identity cookie after a reload, in which case we ask for it.
+        _mcpKnownCurrent: '',
+
+        _getCookie(name) {
+            const match = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]*)'));
+            return match ? decodeURIComponent(match[1]) : null;
+        },
+        _deleteCookie(name) {
+            document.cookie = name + '=; path=/; max-age=0';
+        },
+
+        async init() {
+            // App version — single source of truth is the repo-root Version file.
+            try {
+                const rv = await fetch('/auth/version');
+                if (rv.ok) { const dv = await rv.json(); this.appVersion = dv.version || ''; }
+            } catch {}
+
+            // A user who reloaded, or was bounced back here by a refused API
+            // call, still owes a password change. The readable iaf_user cookie
+            // is only a snapshot taken when the token was issued, so confirm it
+            // against /auth/me before gating: a stale `true` would reopen a form
+            // whose temporary password no longer works, and a stale `false`
+            // would bounce dashboard -> login -> dashboard forever.
+            try {
+                const rawUser = this._getCookie('iaf_user');
+                let owesChange = false;
+                try { owesChange = !!(rawUser && JSON.parse(rawUser).must_change_password); } catch {}
+
+                const me = await fetch('/auth/me', { credentials: 'include' });
+                if (me.ok) {
+                    owesChange = !!(await me.json()).must_change_password;
+                } else if (me.status === 401) {
+                    owesChange = false;   // not signed in — nothing to gate
+                }
+
+                if (owesChange) {
+                    this.enterPasswordChange();
+                    return;
+                }
+            } catch {}
+
+            // Handle SSO callback — server redirects to /login?sso=ok after issuing
+            // the session cookies.  The access token is never exposed as a readable cookie.
+            const _ssoParams = new URLSearchParams(window.location.search);
+            if (_ssoParams.get('sso') === 'ok') {
+                window.history.replaceState({}, '', '/login');
+                // Read display name from short-lived sso_user cookie if present
+                const ssoUserRaw = this._getCookie('iaf_sso_user');
+                if (ssoUserRaw) {
+                    try {
+                        const userData = JSON.parse(ssoUserRaw);
+                        this.successMsg = `Welcome, ${userData.display_name || ''}!`;
+                    } catch { }
+                }
+                this._deleteCookie('iaf_sso_user');
+                setTimeout(() => { this.gateThenRedirect(); }, 600);
+                return;
+            }
+
+            // Handle SSO errors (still via URL param — no sensitive data)
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('sso_error')) {
+                this.errorMsg = decodeURIComponent(params.get('sso_error'));
+                window.history.replaceState({}, '', '/login');
+            }
+
+            // Single-session control: the server sets this short-lived, readable
+            // reason cookie when it ends this browser's session because the
+            // account signed in elsewhere. Show it once, then drop it.
+            if (this._getCookie('iaf_logout_reason') === 'session_superseded') {
+                this.errorMsg = 'You were signed out because your account signed in from another browser or device.';
+                this._deleteCookie('iaf_logout_reason');
+            } else if (this._getCookie('iaf_logout_reason') === 'session_expired') {
+                // AUTH_SESSION_MAX_HOURS: absolute session lifetime reached.
+                this.errorMsg = 'Your session reached its maximum length. Please sign in again.';
+                this._deleteCookie('iaf_logout_reason');
+            }
+
+            // Load registration mode
+            try {
+                const r = await fetch('/auth/registration-mode');
+                if (r.ok) { const d = await r.json(); this.registrationMode = d.mode || 'admin_only'; }
+            } catch {}
+
+            // Load password policy from server
+            try {
+                const r = await fetch('/auth/policy');
+                if (r.ok) this.policy = await r.json();
+            } catch {}
+
+            this.buildRules();
+
+            // Check Keycloak SSO status
+            try {
+                const r = await fetch('/auth/oauth/status');
+                if (r.ok) {
+                    const d = await r.json();
+                    this.ssoEnabled = d.keycloak_enabled === true;
+                }
+            } catch {}
+
+            // Check Microsoft MSAL status + handle redirect response
+            try {
+                const r = await fetch('/auth/msal/config');
+                if (r.ok) {
+                    const cfg = await r.json();
+                    if (cfg.enabled && cfg.client_id) {
+                        this.msalEnabled = true;
+                        await this._initMsal(cfg);
+                    }
+                }
+            } catch {}
+
+            // Already logged in? Check via httponly cookie (sent automatically).
+            // gateThenRedirect is fail-open, so a status hiccup never traps the user.
+            // Only a 2xx redirects: a superseded session gets 401 here (its
+            // cookies were cleared and the server rejects its sid), so the
+            // signed-out message above stays on screen.
+            try {
+                const r = await fetch('/auth/me', { credentials: 'include' });
+                if (r.ok) {
+                    await this.gateThenRedirect();
+                    return;
+                }
+            } catch {}
+            // Clean up any stale localStorage tokens from before the cookie migration
+            localStorage.removeItem('iaf_access_token');
+            localStorage.removeItem('iaf_user');
+        },
+
+        buildRules() {
+            this.pwdRules = [
+                { label: `At least ${this.policy.min_length} characters`,      ok: false, check: p => p.length >= this.policy.min_length },
+                { label: 'One uppercase letter',                                  ok: false, check: p => /[A-Z]/.test(p) },
+                { label: 'One number',                                            ok: false, check: p => /\d/.test(p) },
+                { label: 'One special character (!@#$%^&* etc.)',                  ok: false, check: p => /[!@#$%^&*()\-_=+\[\]{}|;:',.<>?/\\]/.test(p) },
+            ];
+        },
+
+        checkPasswordStrength() {
+            const p = this.regPassword;
+            this.buildRules();
+            this.pwdRules.forEach(r => r.ok = r.check(p));
+            const passed = this.pwdRules.filter(r => r.ok).length;
+            this.pwdStrength = passed;
+
+            const labels = ['', 'Weak', 'Fair', 'Good', 'Strong'];
+            const colors = ['#484f58', '#f85149', '#d29922', '#58a6ff', '#3fb950'];
+            this.pwdStrengthLabel = labels[passed] || '';
+            this.pwdStrengthColor = colors[passed] || '#484f58';
+        },
+
+        clearMessages() {
+            this.errorMsg = '';
+            this.successMsg = '';
+        },
+
+        validateLoginEmail() {
+            const email = (this.loginEmail || '').trim();
+            if (!email) { this.loginEmailError = ''; return false; }
+            if (email.length > 254) {
+                this.loginEmailError = 'Email must be 254 characters or fewer.';
+                return false;
+            }
+            // Require a local part, domain, and a dotted TLD (rejects e.g. "a@b").
+            const re = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+            if (!re.test(email)) {
+                this.loginEmailError = 'Enter a valid email address (for example, name followed by @ and your company domain).';
+                return false;
+            }
+            this.loginEmailError = '';
+            return true;
+        },
+
+        async submitLogin() {
+            this.clearMessages();
+            if (!this.loginEmail || !this.loginPassword) return;
+            if (!this.validateLoginEmail()) return;
+            this.loading = true;
+            try {
+                const r = await fetch('/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ email: this.loginEmail, password: this.loginPassword }),
+                });
+                const data = await r.json();
+                if (!r.ok) {
+                    this.errorMsg = data.detail || 'Login failed.';
+                    return;
+                }
+                // SEC-6: httponly cookie set by server; also store IAF JWT for Bearer auth on API calls
+                if (data.must_change_password) {
+                    // Authenticated, but the credential is temporary. Do not
+                    // redirect: gate here until it has been replaced.
+                    this._mcpKnownCurrent = this.loginPassword;
+                    this.enterPasswordChange();
+                    return;
+                }
+                this.successMsg = `Welcome back, ${data.user.display_name}!`;
+                setTimeout(() => { this.gateThenRedirect(); }, 600);
+            } catch {
+                this.errorMsg = 'Network error. Is the server running?';
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async submitRegister() {
+            this.clearMessages();
+            if (this.pwdStrength < 3) {
+                this.errorMsg = 'Please choose a stronger password.';
+                return;
+            }
+            this.loading = true;
+            try {
+                const r = await fetch('/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        email: this.regEmail,
+                        display_name: this.regName,
+                        password: this.regPassword,
+                    }),
+                });
+                const data = await r.json();
+                if (!r.ok) {
+                    this.errorMsg = data.detail || 'Registration failed.';
+                    return;
+                }
+                // SEC-6: httponly cookie set by server; also store IAF JWT for Bearer auth on API calls
+                this.successMsg = `Account created! Welcome, ${data.user.display_name}!`;
+                setTimeout(() => { window.location.href = (window.__BASE_PATH__ || '') + '/'; }, 700);
+            } catch {
+                this.errorMsg = 'Network error. Is the server running?';
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        _homeUrl() {
+            return (window.__BASE_PATH__ || '') + '/';
+        },
+
+        // ── Mandatory password change ───────────────────────────────────
+        enterPasswordChange() {
+            this.clearMessages();
+            this.mustChangePassword = true;
+            this.mcpCurrent = '';
+            this.mcpNew = '';
+            this.mcpConfirm = '';
+            this.mcpError = '';
+        },
+
+        // True when the screen was restored after a reload, so we no longer
+        // hold the password the user typed and must ask for it.
+        get mcpNeedsCurrent() {
+            return !this._mcpKnownCurrent;
+        },
+
+        async submitMandatoryPasswordChange() {
+            this.mcpError = '';
+            const current = this._mcpKnownCurrent || this.mcpCurrent;
+            if (!current) {
+                this.mcpError = 'Enter your temporary password.';
+                return;
+            }
+            if (!this.mcpNew || !this.mcpConfirm) {
+                this.mcpError = 'Enter and confirm your new password.';
+                return;
+            }
+            if (this.mcpNew !== this.mcpConfirm) {
+                this.mcpError = 'The two passwords do not match.';
+                return;
+            }
+            if (this.mcpNew === current) {
+                this.mcpError = 'Choose a password different from the temporary one.';
+                return;
+            }
+
+            this.mcpLoading = true;
+            try {
+                const r = await fetch('/auth/me/password', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ old_password: current, new_password: this.mcpNew }),
+                });
+                const data = await r.json().catch(() => ({}));
+                if (!r.ok) {
+                    // Surfaces the server-side password policy verbatim.
+                    this.mcpError = data.detail || 'Could not change the password.';
+                    return;
+                }
+                this.mustChangePassword = false;
+                this._mcpKnownCurrent = '';
+                this.mcpCurrent = this.mcpNew = this.mcpConfirm = '';
+                this.successMsg = 'Password updated. Signing you in…';
+                this.gateThenRedirect();
+            } catch {
+                this.mcpError = 'Network error. Is the server running?';
+            } finally {
+                this.mcpLoading = false;
+            }
+        },
+
+        // Privacy acknowledgement gate: after a token is obtained, block redirect
+        // until the current notice version is accepted. When the gate is off (or
+        // already accepted) this is transparent and redirects immediately.
+        async gateThenRedirect() {
+            this._pendingRedirect = this._homeUrl();
+            try {
+                // SEC-6: cookies sent automatically — no Authorization header needed
+                const r = await fetch('/auth/privacy/status', { credentials: 'include' });
+                if (r.ok) {
+                    const s = await r.json();
+                    if (s.required && !s.accepted) {
+                        await this.openPrivacyModal();
+                        return;   // wait for acceptance
+                    }
+                }
+            } catch {
+                // Fail-open on client too: never trap the user on a status hiccup.
+            }
+            window.location.href = this._pendingRedirect;
+        },
+
+        async openPrivacyModal() {
+            try {
+                const r = await fetch('/auth/privacy/notice');
+                if (r.ok) {
+                    const n = await r.json();
+                    this.privacyTitle = n.title || 'Data Privacy Notice';
+                    this.privacyVersion = n.version || '';
+                    this.privacyMarkdown = n.markdown || '';
+                }
+            } catch {
+                this.privacyMarkdown = 'Unable to load the privacy notice. Please contact your administrator.';
+            }
+            this.privacyChecked = false;
+            this.privacyError = '';
+            this.showPrivacy = true;
+        },
+
+        async acceptPrivacy() {
+            if (!this.privacyChecked) return;
+            this.privacyLoading = true;
+            this.privacyError = '';
+            try {
+                // SEC-6: httponly cookie sent automatically
+                const r = await fetch('/auth/privacy/accept', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                });
+                if (!r.ok) {
+                    const d = await r.json().catch(() => ({}));
+                    this.privacyError = d.detail || 'Could not record acceptance. Please try again.';
+                    return;
+                }
+                window.location.href = this._pendingRedirect || this._homeUrl();
+            } catch {
+                this.privacyError = 'Network error recording acceptance. Please try again.';
+            } finally {
+                this.privacyLoading = false;
+            }
+        },
+
+        declinePrivacy() {
+            // Declining means no access is granted — log out (clears httponly cookie) and return to sign-in.
+            fetch('/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
+            this.showPrivacy = false;
+            this.errorMsg = 'You must accept the data privacy declaration to access AgentOS.';
+        },
+
+        // Microsoft SSO via PKCE OAuth2 — no external library needed.
+        // cfg = { client_id, authority, scopes, redirect_uri }
+        async _initMsal(cfg) {
+            window._msalCfg = cfg;
+
+            // Check if this page load is a PKCE callback (Azure AD redirected here with ?code=...)
+            const params = new URLSearchParams(window.location.search);
+            const code  = params.get('code');
+            const error = params.get('error');
+
+            if (error) {
+                const desc = params.get('error_description') || error;
+                this.errorMsg = this._msalErrorMessage({ message: desc });
+                window.history.replaceState({}, '', '/login');
+                return;
+            }
+
+            if (code) {
+                this.msalLoading = true;
+                // Clean up URL immediately so a reload doesn't resubmit the code
+                window.history.replaceState({}, '', '/login');
+                try {
+                    const token = await this._pkceExchangeCode(code, cfg);
+                    await this.exchangeMsalToken(token);
+                } catch (err) {
+                    this.errorMsg = this._msalErrorMessage(err);
+                    this.msalLoading = false;
+                }
+            }
+        },
+
+        async startMsalSSO() {
+            const cfg = window._msalCfg;
+            if (!cfg) return;
+            this.clearMessages();
+            this.msalLoading = true;
+            try {
+                const verifier   = await _pkce.verifier();
+                const challenge  = await _pkce.challenge(verifier);
+                const state      = _pkce.rand();
+                sessionStorage.setItem('pkce_verifier', verifier);
+                sessionStorage.setItem('pkce_state',    state);
+
+                const redirectUri = cfg.redirect_uri || window.location.origin;
+                // Always include openid so Azure AD issues an id_token alongside the access_token.
+                // id_token is signed by the tenant JWKS and the backend can verify it.
+                const baseScopes = cfg.scopes || 'openid profile email';
+                const scopes = baseScopes.includes('openid') ? baseScopes : 'openid profile ' + baseScopes;
+
+                const url = cfg.authority + '/oauth2/v2.0/authorize?' + new URLSearchParams({
+                    client_id:             cfg.client_id,
+                    response_type:         'code',
+                    redirect_uri:          redirectUri,
+                    scope:                 scopes,
+                    code_challenge:        challenge,
+                    code_challenge_method: 'S256',
+                    state:                 state,
+                    response_mode:         'query',
+                });
+                window.location.href = url;
+                // Execution stops here — browser navigates to Azure AD
+            } catch (err) {
+                this.errorMsg = this._msalErrorMessage(err);
+                this.msalLoading = false;
+            }
+        },
+
+        async _pkceExchangeCode(code, cfg) {
+            const verifier    = sessionStorage.getItem('pkce_verifier') || '';
+            sessionStorage.removeItem('pkce_verifier');
+            sessionStorage.removeItem('pkce_state');
+
+            const redirectUri = cfg.redirect_uri || window.location.origin;
+            const body = new URLSearchParams({
+                client_id:     cfg.client_id,
+                grant_type:    'authorization_code',
+                code:          code,
+                redirect_uri:  redirectUri,
+                code_verifier: verifier,
+            });
+
+            const res = await fetch(cfg.authority + '/oauth2/v2.0/token', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body:    body.toString(),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error_description || err.error || 'Token exchange failed');
+            }
+            const data = await res.json();
+            // Prefer id_token: it is always signed by the tenant JWKS and verifiable
+            // by the backend regardless of which resource scope was requested.
+            // access_token for Microsoft Graph cannot be validated by third parties.
+            const token = data.id_token || data.access_token;
+            if (!token) throw new Error('No token in response');
+            return token;
+        },
+
+        async exchangeMsalToken(accessToken) {
+            try {
+                const r = await fetch('/auth/sso/microsoft', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Authorization': 'Bearer ' + accessToken },
+                });
+                const data = await r.json().catch(() => ({}));
+                if (!r.ok) {
+                    this.errorMsg = data.detail || 'Microsoft sign-in failed. Please try again.';
+                    this.msalLoading = false;
+                    return;
+                }
+                if (data.status === 'PENDING_APPROVAL') {
+                    this.errorMsg = data.message || 'Your account is pending administrator approval.';
+                    this.msalLoading = false;
+                    return;
+                }
+                // Store IAF JWT so index.html can include it as Bearer on every API call
+                this.successMsg = `Welcome, ${data.username || data.email || ''}!`;
+                setTimeout(() => { this.gateThenRedirect(); }, 600);
+            } catch {
+                this.errorMsg = 'Network error during Microsoft sign-in. Is the server running?';
+                this.msalLoading = false;
+            }
+        },
+
+        _msalErrorMessage(err) {
+            if (!err) return 'Microsoft sign-in failed. Please try again.';
+            const msg = err.message || String(err);
+            if (/user_cancelled|cancel/i.test(msg)) return 'Sign-in was cancelled.';
+            if (/AADSTS50058|no.*session/i.test(msg)) return 'Session expired. Please sign in again.';
+            if (/AADSTS65004/i.test(msg)) return 'Sign-in was cancelled.';
+            if (/network|fetch/i.test(msg)) return 'Network error contacting Microsoft. Please try again.';
+            return 'Microsoft sign-in failed. Please try again.';
+        },
+
+        async startSSO() {
+            this.clearMessages();
+            this.ssoLoading = true;
+            try {
+                const r = await fetch('/auth/oauth/login');
+                const data = await r.json();
+                if (!r.ok) {
+                    this.errorMsg = data.detail || 'SSO initialization failed.';
+                    this.ssoLoading = false;
+                    return;
+                }
+                window.location.href = data.authorization_url;
+            } catch {
+                this.errorMsg = 'Network error starting SSO. Is the server running?';
+                this.ssoLoading = false;
+            }
+        },
+    };
+}
+</script>
+</body>
+</html>

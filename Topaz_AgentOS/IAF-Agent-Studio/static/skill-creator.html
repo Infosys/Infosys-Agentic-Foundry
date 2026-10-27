@@ -1,0 +1,1266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Skill Creator — IAF</title>
+<!-- Unified Light/Dark theme — FOUC guard must run before first paint -->
+<script>(function(){try{var m={hybrid:'light',light:'light',dark:'dark'},ls=window.localStorage;var v=m[ls.getItem('iaf_theme')]||m[ls.getItem('iaf_dashboard_theme')]||m[ls.getItem('iaf_workstreams_theme')]||m[ls.getItem('iaf-theme')];if(!v)v=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';var r=document.documentElement;r.setAttribute('data-theme',v);r.classList.add(v==='light'?'light-mode':'dark-mode');r.style.colorScheme=v;}catch(e){}})();</script>
+<link rel="stylesheet" href="/static/theme.css">
+<script src="/static/theme.js"></script>
+<script src="/static/vendor/tailwind.min.js"></script>
+<script defer src="/static/vendor/alpine.min.js"></script>
+<script src="/static/vendor/js-yaml.min.js"></script>
+<style>
+[x-cloak]{display:none!important}
+.scroll-thin::-webkit-scrollbar{width:5px}
+.scroll-thin::-webkit-scrollbar-track{background:transparent}
+.scroll-thin::-webkit-scrollbar-thumb{background:#334155;border-radius:3px}
+@keyframes fade-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.fade-in{animation:fade-in .25s ease-out}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{animation:spin 1s linear infinite}
+.drop-zone-active{border-color:#6366f1!important;background:rgba(99,102,241,.08)!important}
+
+/* ── Light theme ── */
+body.light-mode {
+    background: #f1f5f9 !important;
+    color: #1e293b !important;
+}
+body.light-mode header {
+    background: #ffffff !important;
+    border-color: #e2e8f0 !important;
+}
+body.light-mode header span.text-white,
+body.light-mode h1.text-white,
+body.light-mode h2.text-white,
+body.light-mode .text-white {
+    color: #0f172a !important;
+}
+body.light-mode .font-semibold.text-white {
+    color: #0f172a !important;
+}
+body.light-mode .text-gray-400,
+body.light-mode .text-gray-500 {
+    color: #64748b !important;
+}
+body.light-mode .text-gray-300 {
+    color: #475569 !important;
+}
+body.light-mode .text-gray-200 {
+    color: #334155 !important;
+}
+body.light-mode .text-gray-600 {
+    color: #94a3b8 !important;
+}
+body.light-mode .bg-dark-900,
+body.light-mode .bg-dark-800 {
+    background: #ffffff !important;
+}
+body.light-mode .border-dark-700,
+body.light-mode .border-dark-600,
+body.light-mode .border-dark-800 {
+    border-color: #e2e8f0 !important;
+}
+/* Cards — need shadow + border to stand out on light bg */
+body.light-mode .group.bg-dark-900,
+body.light-mode button.bg-dark-900,
+body.light-mode .bg-dark-900.border {
+    background: #ffffff !important;
+    border-color: #e2e8f0 !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,.08), 0 0 0 1px rgba(0,0,0,.04);
+}
+body.light-mode .group:hover {
+    background: #f8fafc !important;
+    border-color: #818cf8 !important;
+}
+/* Inputs */
+body.light-mode input, body.light-mode textarea, body.light-mode select {
+    background: #f8fafc !important;
+    color: #1e293b !important;
+    border-color: #cbd5e1 !important;
+}
+body.light-mode input:focus, body.light-mode textarea:focus, body.light-mode select:focus {
+    border-color: #6366f1 !important;
+}
+body.light-mode input::placeholder, body.light-mode textarea::placeholder {
+    color: #94a3b8 !important;
+}
+body.light-mode pre {
+    background: #f8fafc !important;
+    color: #334155 !important;
+    border-color: #e2e8f0 !important;
+}
+/* Rounded cards in editor */
+body.light-mode .bg-dark-800.border.border-dark-700,
+body.light-mode .bg-dark-900.border.border-dark-700 {
+    background: #ffffff !important;
+    border-color: #e2e8f0 !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+/* Tab bar */
+body.light-mode .border-b.border-dark-700 {
+    border-color: #e2e8f0 !important;
+}
+/* Drop zone */
+body.light-mode .border-dashed.border-dark-600 {
+    border-color: #cbd5e1 !important;
+    background: #f8fafc !important;
+}
+body.light-mode .border-dashed:hover {
+    border-color: #818cf8 !important;
+}
+/* Accent chip buttons */
+body.light-mode .bg-accent\/10,
+body.light-mode .bg-accent\/15 {
+    background: rgba(99,102,241,.1) !important;
+}
+/* Mode/tool badge backgrounds in editor */
+body.light-mode .bg-dark-900.border-dark-700 {
+    background: #ffffff !important;
+    border-color: #e2e8f0 !important;
+}
+/* Dark code areas */
+body.light-mode .bg-dark-950 {
+    background: #f1f5f9 !important;
+}
+
+/* ── Hybrid theme ── */
+body.hybrid-mode {
+    background: linear-gradient(180deg, #0d1526 0%, #101d35 100%) !important;
+}
+body.hybrid-mode header {
+    background: rgba(15,23,42,.94) !important;
+    border-color: rgba(148,163,184,.24) !important;
+}
+body.hybrid-mode .bg-dark-900 {
+    background: rgba(15,23,42,.8) !important;
+}
+body.hybrid-mode input, body.hybrid-mode textarea, body.hybrid-mode select {
+    background: rgba(30,41,59,.7) !important;
+}
+</style>
+<script>
+tailwind.config={theme:{extend:{colors:{dark:{950:'#080c14',900:'#0f172a',850:'#131d33',800:'#1e293b',700:'#334155',600:'#475569'},accent:{DEFAULT:'#6366f1',light:'#818cf8',dim:'#4f46e5'}}}}}
+</script>
+<!-- Auth: httponly cookie sent automatically (SEC-6); silent refresh on 401 -->
+<script>
+(function() {
+  const _origFetch = window.fetch;
+  window.fetch = async function(input, init = {}) {
+    const url = typeof input === 'string' ? input : (input.url || '');
+    const isApi = url && (url.startsWith('/') || url.startsWith(location.origin));
+    const isAuth = url && (url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/refresh'));
+    // SEC-6: httponly cookie sent automatically — no manual Authorization header needed
+    if (isApi) init.credentials = init.credentials || 'include';
+    let response = await _origFetch(input, init);
+    if (response.status === 401 && isApi && !isAuth) {
+      try {
+        const refresh = await _origFetch('/auth/refresh', { method: 'POST', credentials: 'include' });
+        if (refresh.ok) {
+          // SEC-6: server updated the httponly cookie; no localStorage write needed
+          response = await _origFetch(input, init);
+        } else {
+          window.location.href = (window.__BASE_PATH__ || '') + '/login';
+        }
+      } catch {}
+    }
+    return response;
+  };
+})();
+</script>
+<script>
+// Sync theme from Designer Studio (query param takes priority for embedded mode)
+(function(){
+    const params = new URLSearchParams(window.location.search);
+    const theme = params.get('theme') || localStorage.getItem('iaf_skill_builder_theme') || 'dark';
+    if (theme === 'light')  document.documentElement.classList.add('light-ready');
+    if (theme === 'hybrid') document.documentElement.classList.add('hybrid-ready');
+    window._scInitTheme = theme;
+})();
+</script>
+</head>
+<body class="bg-dark-950 text-gray-100 min-h-screen" x-data="skillCreator()" x-init="init(); applyParentTheme()" x-cloak>
+
+<!-- ── Toast ── -->
+<div class="fixed top-4 right-4 z-50 space-y-2 pointer-events-none">
+  <template x-for="t in toasts" :key="t.id">
+    <div class="pointer-events-auto fade-in flex items-start gap-3 px-4 py-3 rounded-xl shadow-xl text-sm max-w-sm"
+         :class="t.type==='success'?'bg-emerald-900 border border-emerald-700':'t.type==='error'?'bg-red-900 border border-red-700':'bg-dark-800 border border-dark-600'">
+      <span x-text="t.icon" class="text-base shrink-0 mt-0.5"></span>
+      <div><p class="font-semibold text-white" x-text="t.title"></p><p class="text-xs text-gray-300 mt-0.5" x-text="t.msg"></p></div>
+      <button @click="toasts=toasts.filter(x=>x.id!==t.id)" class="ml-auto text-gray-400 hover:text-white text-xs">✕</button>
+    </div>
+  </template>
+</div>
+
+<!-- ── Header: stepper always visible; back link + user hidden when embedded ── -->
+<header class="bg-dark-900 border-b border-dark-700 px-6 py-3 flex items-center flex-shrink-0"
+        :class="isEmbedded ? 'justify-center' : 'justify-between'">
+  <div class="flex items-center gap-3" x-show="!isEmbedded">
+    <a href="/skill-builder/v2" class="text-gray-400 hover:text-white transition text-sm" title="Back to Designer Studio">←</a>
+    <span class="text-white font-semibold">✦ Skill Creator</span>
+  </div>
+  <!-- Step breadcrumb (Start → Create → Edit → Submit) -->
+  <div class="flex items-center gap-2">
+    <template x-for="(s,i) in stepDefs" :key="s.id">
+      <div class="flex items-center gap-2">
+        <div class="w-6 h-6 rounded-full text-xs flex items-center justify-center font-bold transition"
+             :class="currentStepIdx > i ? 'bg-emerald-600 text-white' : currentStepIdx === i ? 'bg-accent text-white' : 'bg-dark-700 text-gray-500'">
+          <span x-show="currentStepIdx > i">✓</span>
+          <span x-show="currentStepIdx <= i" x-text="i+1"></span>
+        </div>
+        <span class="text-xs" :class="currentStepIdx===i?'text-gray-200':'text-gray-500'" x-text="s.label"></span>
+        <span x-show="i < stepDefs.length-1" class="text-dark-600 text-xs">›</span>
+      </div>
+    </template>
+  </div>
+  <div class="text-xs text-gray-500" x-show="!isEmbedded" x-text="currentUser?.name || currentUser?.display_name || currentUser?.email || ''"></div>
+</header>
+
+<!-- ── Main ── -->
+<main class="max-w-4xl mx-auto px-4 py-8">
+
+  <!-- ════════════════════════ STEP: LANDING ════════════════════════ -->
+  <div x-show="step==='landing'" class="fade-in">
+    <div class="text-center mb-6">
+      <h1 class="text-2xl font-bold text-white mb-2">Create a New Skill</h1>
+      <p class="text-gray-400">How would you like to start? Choose a method below.</p>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+
+      <!-- From Documents -->
+      <button @click="startUpload()" class="group bg-dark-900 border border-dark-700 hover:border-accent/50 hover:bg-dark-800 rounded-2xl p-6 text-left transition">
+        <div class="text-3xl mb-3">📄</div>
+        <h2 class="font-semibold text-white mb-1">From Documents</h2>
+        <p class="text-xs text-gray-400">Upload SOP, policy PDF, Excel, PPTX, audio or video — AI generates the skill automatically.</p>
+        <div class="mt-4 text-xs text-accent group-hover:text-accent-light transition">Start →</div>
+      </button>
+
+      <!-- Build Manually -->
+      <button @click="startManual()" class="group bg-dark-900 border border-dark-700 hover:border-accent/50 hover:bg-dark-800 rounded-2xl p-6 text-left transition">
+        <div class="text-3xl mb-3">🔨</div>
+        <h2 class="font-semibold text-white mb-1">Build Manually</h2>
+        <p class="text-xs text-gray-400">Step-by-step guided wizard. Covers all modes — REACT, Workflow, Parallel, Supervisor.</p>
+        <div class="mt-4 text-xs text-accent group-hover:text-accent-light transition">Start →</div>
+      </button>
+
+      <!-- From Template -->
+      <button @click="startTemplate()" class="group bg-dark-900 border border-dark-700 hover:border-accent/50 hover:bg-dark-800 rounded-2xl p-6 text-left transition">
+        <div class="text-3xl mb-3">📋</div>
+        <h2 class="font-semibold text-white mb-1">From Template</h2>
+        <p class="text-xs text-gray-400">Pick a pre-built starter (invoice approval, IT helpdesk, HR leave…) and customise it.</p>
+        <div class="mt-4 text-xs text-accent group-hover:text-accent-light transition">Browse →</div>
+      </button>
+    </div>
+  </div>
+
+  <!-- ════════════════════════ STEP: UPLOAD ════════════════════════ -->
+  <div x-show="step==='upload'" class="fade-in space-y-6">
+    <div class="flex items-center gap-3 mb-2">
+      <button @click="goLanding()" class="text-gray-400 hover:text-white text-sm">← Back</button>
+      <h2 class="text-lg font-semibold text-white">Upload Documents</h2>
+    </div>
+
+    <!-- Drop zone -->
+    <div class="border-2 border-dashed border-dark-600 rounded-2xl p-10 text-center transition cursor-pointer"
+         :class="dragging ? 'drop-zone-active' : 'hover:border-accent/40'"
+         @dragover.prevent="dragging=true" @dragleave="dragging=false"
+         @drop.prevent="dragging=false; handleDrop($event)"
+         @click="$refs.fileInput.click()">
+      <div class="text-4xl mb-3">↑</div>
+      <p class="text-gray-300 font-medium mb-1">Drag & drop files here, or click to browse</p>
+      <p class="text-xs text-gray-500">PDF · DOCX · PPTX · XLSX · TXT · MD · CSV · MP4 · MOV · MP3 · WAV · VSDX</p>
+      <span x-ref="fileInputContainer" x-init="$nextTick(() => {
+          const inp = document.createElement('input');
+          inp.type = 'file';
+          inp.multiple = true;
+          inp.className = 'hidden';
+          inp.accept = '.pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xlsm,.xls,.txt,.md,.csv,.json,.yaml,.yml,.mp4,.mov,.avi,.mp3,.wav,.m4a,.vsdx';
+          inp.dataset.maxSizeMb = '10';
+          inp.addEventListener('change', (e) => handleFileSelect(e));
+          $refs.fileInputContainer.appendChild(inp);
+          $refs.fileInput = inp;
+      })"></span>
+    </div>
+
+    <!-- File list -->
+    <div x-show="uploadFiles.length > 0" class="space-y-2">
+      <template x-for="(f,i) in uploadFiles" :key="i">
+        <div class="flex items-center gap-3 bg-dark-800 rounded-lg px-4 py-2.5 text-sm">
+          <span x-text="fileIcon(f.name)" class="text-base"></span>
+          <span class="flex-1 text-gray-200 truncate" x-text="f.name"></span>
+          <span class="text-xs text-gray-500" x-text="formatBytes(f.size)"></span>
+          <button @click="uploadFiles.splice(i,1)" class="text-gray-500 hover:text-red-400 transition text-xs">✕</button>
+        </div>
+      </template>
+    </div>
+
+    <!-- Hints -->
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs text-gray-400 mb-1">Domain <span class="text-gray-600">(optional hint)</span></label>
+        <input type="text" x-model="domainHint" placeholder="e.g. Finance & Accounting"
+               class="w-full bg-dark-800 border border-dark-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 outline-none focus:border-accent/50">
+      </div>
+      <div>
+        <label class="block text-xs text-gray-400 mb-1">Process <span class="text-gray-600">(optional hint)</span></label>
+        <input type="text" x-model="processHint" placeholder="e.g. Invoice Approval"
+               class="w-full bg-dark-800 border border-dark-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 outline-none focus:border-accent/50">
+      </div>
+    </div>
+
+    <div class="flex justify-end">
+      <button @click="generateFromDocs()" :disabled="uploadFiles.length===0 || generating"
+              class="px-6 py-2.5 bg-accent hover:bg-accent-dim disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl transition">
+        <span x-show="!generating">✨ Generate Skill →</span>
+        <span x-show="generating">Generating…</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ════════════════════════ STEP: GENERATING ════════════════════════ -->
+  <div x-show="step==='generating'" class="fade-in">
+    <div class="text-center mb-8">
+      <h2 class="text-lg font-semibold text-white mb-1">Generating your skill…</h2>
+      <p class="text-sm text-gray-400">This usually takes 15–30 seconds</p>
+    </div>
+    <div class="max-w-sm mx-auto space-y-3">
+      <template x-for="gs in genSteps" :key="gs.label">
+        <div class="flex items-center gap-3 text-sm">
+          <span x-show="gs.state==='done'" class="text-emerald-400">✅</span>
+          <span x-show="gs.state==='active'" class="text-accent spin inline-block">⟳</span>
+          <span x-show="gs.state==='pending'" class="text-dark-600">○</span>
+          <span :class="gs.state==='active'?'text-white':gs.state==='done'?'text-gray-300':'text-dark-600'" x-text="gs.label"></span>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- ════════════════════════ STEP: TEMPLATE ════════════════════════ -->
+  <div x-show="step==='template'" class="fade-in space-y-5">
+    <div class="flex items-center gap-3 mb-2">
+      <button @click="goLanding()" class="text-gray-400 hover:text-white text-sm">← Back</button>
+      <h2 class="text-lg font-semibold text-white">Choose a Template</h2>
+    </div>
+    <div x-show="templatesLoading" class="text-center text-gray-500 py-8">Loading templates…</div>
+    <div x-show="!templatesLoading" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <template x-for="t in templates" :key="t.id">
+        <button @click="loadTemplate(t)"
+                class="group bg-dark-900 border border-dark-700 hover:border-accent/50 hover:bg-dark-800 rounded-xl p-5 text-left transition">
+          <div class="text-xl mb-2" x-text="categoryIcon(t.category)"></div>
+          <h3 class="font-semibold text-white text-sm mb-1" x-text="t.label"></h3>
+          <p class="text-xs text-gray-400" x-text="t.description"></p>
+          <div class="mt-3 flex items-center gap-2">
+            <span class="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                  :class="modeBadge(t.execution_mode)" x-text="t.execution_mode"></span>
+          </div>
+          <div class="mt-3 text-xs text-accent group-hover:text-accent-light">Use this →</div>
+        </button>
+      </template>
+    </div>
+  </div>
+
+  <!-- ════════════════════════ STEP: MANUAL ════════════════════════ -->
+  <div x-show="step==='manual'" class="fade-in space-y-6">
+    <div class="flex items-center gap-3 mb-2">
+      <button @click="goLanding()" class="text-gray-400 hover:text-white text-sm">← Back</button>
+      <h2 class="text-lg font-semibold text-white">Quick Setup</h2>
+    </div>
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs text-gray-400 mb-1">Skill Name <span class="text-red-400">*</span></label>
+        <input type="text" x-model="skill.skill_name" placeholder="invoice_approval"
+               class="w-full bg-dark-800 border border-dark-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 outline-none focus:border-accent/50">
+        <p class="text-[10px] text-gray-600 mt-1">lowercase, underscores only</p>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-400 mb-1">Description <span class="text-red-400">*</span></label>
+        <textarea x-model="skill.description" placeholder="Handles invoice validation and approval" rows="3"
+               class="w-full bg-dark-800 border border-dark-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 outline-none focus:border-accent/50 resize-y"></textarea>
+      </div>
+    </div>
+    <div>
+      <label class="block text-xs text-gray-400 mb-1">Domain / Category</label>
+      <div class="flex gap-2 flex-wrap">
+        <template x-for="cat in categories" :key="cat.id">
+          <button @click="skill.suggested_category = cat.id"
+                  class="px-3 py-1.5 rounded-lg text-xs border transition"
+                  :class="skill.suggested_category===cat.id?'bg-accent/15 border-accent/40 text-accent-light':'bg-dark-800 border-dark-700 text-gray-400 hover:border-dark-600'">
+            <span x-text="cat.icon+' '+cat.label"></span>
+          </button>
+        </template>
+      </div>
+    </div>
+    <div class="flex justify-end">
+      <button @click="step='edit'; editTab='info'"
+              :disabled="!skill.skill_name || !skill.description"
+              class="px-6 py-2.5 bg-accent hover:bg-accent-dim disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl transition">
+        Continue to Editor →
+      </button>
+    </div>
+  </div>
+
+  <!-- ════════════════════════ STEP: EDIT ════════════════════════ -->
+  <div x-show="step==='edit'" class="fade-in">
+    <div class="flex items-center justify-between mb-5">
+      <div class="flex items-center gap-3">
+        <button @click="goLanding()" class="text-gray-400 hover:text-white text-sm">← Start over</button>
+        <h2 class="text-lg font-semibold text-white">Review & Edit</h2>
+        <span class="text-xs px-2 py-0.5 rounded-full font-medium" :class="modeBadge(skill.execution_mode)" x-text="skill.execution_mode||'react'"></span>
+      </div>
+      <button @click="step='save'"
+              :disabled="!skill.skill_name || !skill.description"
+              class="px-4 py-2 bg-accent hover:bg-accent-dim disabled:opacity-40 text-white text-xs font-semibold rounded-lg transition">
+        Next: Save & Submit →
+      </button>
+    </div>
+
+    <!-- Edit tabs -->
+    <div class="flex border-b border-dark-700 mb-5 overflow-x-auto">
+      <template x-for="t in editTabs" :key="t.id">
+        <button @click="editTab=t.id"
+                class="px-4 py-2.5 text-xs font-medium border-b-2 transition whitespace-nowrap"
+                :class="editTab===t.id?'border-accent text-accent-light':'border-transparent text-gray-400 hover:text-gray-200'"
+                x-text="t.label"></button>
+      </template>
+    </div>
+
+    <!-- TAB: Info -->
+    <div x-show="editTab==='info'" class="space-y-5 fade-in">
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">Skill Name <span class="text-red-400">*</span></label>
+          <input type="text" x-model="skill.skill_name"
+                 class="w-full bg-dark-800 border border-dark-700 rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-accent/50">
+          <p class="text-[10px] text-gray-600 mt-1">lowercase_underscores only</p>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">Version</label>
+          <input type="text" x-model="skill.version" placeholder="1.0"
+                 class="w-full bg-dark-800 border border-dark-700 rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-accent/50">
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-400 mb-1">Description <span class="text-red-400">*</span></label>
+        <textarea x-model="skill.description" rows="3"
+               class="w-full bg-dark-800 border border-dark-700 rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-accent/50 resize-y"></textarea>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-400 mb-1">Keywords / Triggers
+          <span class="text-gray-600 font-normal">(phrases users type to invoke this skill)</span></label>
+        <div class="flex flex-wrap gap-2 mb-2">
+          <template x-for="(kw,i) in skill.keywords" :key="i">
+            <span class="flex items-center gap-1 bg-accent/10 border border-accent/25 text-accent-light text-xs px-2.5 py-1 rounded-full">
+              <span x-text="kw"></span>
+              <button @click="skill.keywords.splice(i,1)" class="text-gray-500 hover:text-red-400 ml-1">✕</button>
+            </span>
+          </template>
+        </div>
+        <div class="flex gap-2">
+          <input type="text" x-model="newKeyword" placeholder="Add keyword…" @keydown.enter="addKeyword()"
+                 class="flex-1 bg-dark-800 border border-dark-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 outline-none focus:border-accent/50">
+          <button @click="addKeyword()" class="px-3 py-2 bg-dark-700 hover:bg-dark-600 text-gray-300 text-sm rounded-lg transition">+ Add</button>
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-400 mb-1">Category</label>
+        <div class="flex gap-2 flex-wrap">
+          <template x-for="cat in categories" :key="cat.id">
+            <button @click="skill.suggested_category=cat.id"
+                    class="px-3 py-1.5 rounded-lg text-xs border transition"
+                    :class="skill.suggested_category===cat.id?'bg-accent/15 border-accent/40 text-accent-light':'bg-dark-800 border-dark-700 text-gray-400 hover:border-dark-600'">
+              <span x-text="cat.icon+' '+cat.label"></span>
+            </button>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: Mode -->
+    <div x-show="editTab==='mode'" class="space-y-5 fade-in">
+      <p class="text-sm text-gray-400">Choose how this skill executes:</p>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <template x-for="m in modes" :key="m.id">
+          <button @click="skill.execution_mode=m.id"
+                  class="rounded-xl p-4 text-left border transition"
+                  :class="skill.execution_mode===m.id?'bg-accent/10 border-accent/50 text-white':'bg-dark-900 border-dark-700 text-gray-400 hover:border-dark-600'">
+            <div class="text-2xl mb-2" x-text="m.icon"></div>
+            <div class="font-semibold text-sm" x-text="m.label"></div>
+            <div class="text-[11px] mt-1 leading-relaxed" x-text="m.desc"></div>
+          </button>
+        </template>
+      </div>
+
+      <!-- Tools selection -->
+      <div>
+        <label class="block text-xs text-gray-400 mb-2">Tools available to this skill</label>
+        <div class="flex gap-2 flex-wrap">
+          <template x-for="t in availableTools" :key="t">
+            <button @click="toggleTool(t)"
+                    class="px-3 py-1.5 rounded-lg text-xs border transition"
+                    :class="skill.tools.includes(t)?'bg-accent/10 border-accent/30 text-accent-light':'bg-dark-800 border-dark-700 text-gray-400 hover:border-dark-600'">
+              <span x-text="t"></span>
+            </button>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: Prompt / Steps -->
+    <div x-show="editTab==='prompt'" class="space-y-4 fade-in">
+
+      <!-- REACT: prompt textarea -->
+      <div x-show="skill.execution_mode==='react'">
+        <label class="block text-xs text-gray-400 mb-2">Skill Prompt
+          <span class="text-gray-600">(instructions to the AI agent)</span></label>
+        <textarea x-model="skill.skill_md_body" rows="18"
+                  placeholder="# My Skill&#10;&#10;## Capabilities&#10;&#10;1. **Action** — what it does&#10;&#10;## Data Location&#10;&#10;...&#10;&#10;## Business Rules&#10;&#10;..."
+                  class="w-full bg-dark-800 border border-dark-700 rounded-xl px-4 py-3 text-sm text-gray-200 font-mono placeholder-gray-600 outline-none focus:border-accent/50 resize-none scroll-thin"></textarea>
+      </div>
+
+      <!-- WORKFLOW / PARALLEL: step builder -->
+      <div x-show="skill.execution_mode==='workflow' || skill.execution_mode==='parallel'">
+        <div class="flex items-center justify-between mb-3">
+          <label class="text-xs text-gray-400">Steps
+            <span class="text-gray-600" x-show="skill.execution_mode==='parallel'">— run concurrently (set depends_on for ordering)</span>
+            <span class="text-gray-600" x-show="skill.execution_mode==='workflow'">— run sequentially in order</span>
+          </label>
+          <button @click="addStep()" class="text-xs text-accent hover:text-accent-light px-2 py-1 rounded transition">+ Add Step</button>
+        </div>
+        <div class="space-y-3">
+          <template x-for="(s,i) in skill.steps" :key="i">
+            <div class="bg-dark-800 border border-dark-700 rounded-xl p-4 space-y-3">
+              <div class="flex items-center gap-2">
+                <span class="text-xs text-gray-500 font-mono w-5" x-text="(i+1)+'.'"></span>
+                <input type="text" x-model="s.name" placeholder="step_name"
+                       class="flex-1 bg-dark-900 border border-dark-700 rounded px-2 py-1 text-xs text-gray-200 outline-none focus:border-accent/50">
+                <select x-model="s.action"
+                        class="bg-dark-900 border border-dark-700 rounded px-2 py-1 text-xs text-gray-300 outline-none">
+                  <option value="shell">shell</option>
+                  <option value="skill">skill</option>
+                  <option value="condition">condition</option>
+                </select>
+                <button @click="skill.steps.splice(i,1)" class="text-gray-600 hover:text-red-400 text-xs ml-1">✕</button>
+              </div>
+              <div x-show="s.action==='shell'">
+                <input type="text" x-model="s.command" placeholder="shell command or description"
+                       class="w-full bg-dark-900 border border-dark-700 rounded px-2 py-1 text-xs text-gray-200 font-mono outline-none focus:border-accent/50">
+              </div>
+              <div x-show="s.action==='skill'" class="grid grid-cols-2 gap-2">
+                <input type="text" x-model="s.skill" placeholder="skill name"
+                       class="bg-dark-900 border border-dark-700 rounded px-2 py-1 text-xs text-gray-200 outline-none focus:border-accent/50">
+                <input type="text" x-model="s.task" placeholder="task description"
+                       class="bg-dark-900 border border-dark-700 rounded px-2 py-1 text-xs text-gray-200 outline-none focus:border-accent/50">
+              </div>
+              <div x-show="skill.execution_mode==='parallel'">
+                <input type="text" x-model="s.depends_on_text" placeholder="depends_on: step1, step2 (optional)"
+                       class="w-full bg-dark-900 border border-dark-700 rounded px-2 py-1 text-xs text-gray-400 font-mono outline-none focus:border-accent/50">
+              </div>
+            </div>
+          </template>
+          <button x-show="skill.steps.length===0" @click="addStep()"
+                  class="w-full border-2 border-dashed border-dark-600 rounded-xl p-4 text-sm text-gray-500 hover:border-accent/30 hover:text-gray-400 transition">
+            + Add first step
+          </button>
+        </div>
+      </div>
+
+      <!-- SUPERVISOR: worker skills -->
+      <div x-show="skill.execution_mode==='supervisor'">
+        <div class="flex items-center justify-between mb-3">
+          <label class="text-xs text-gray-400">Worker Skills <span class="text-gray-600">(skills this supervisor delegates to)</span></label>
+          <button @click="addWorker()" class="text-xs text-accent hover:text-accent-light px-2 py-1 rounded transition">+ Add Worker</button>
+        </div>
+        <div class="space-y-3">
+          <template x-for="(w,i) in skill.worker_skills" :key="i">
+            <div class="bg-dark-800 border border-dark-700 rounded-xl p-4 grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-[10px] text-gray-500 mb-1">Skill Name</label>
+                <input type="text" x-model="w.name" placeholder="invoice_approval"
+                       class="w-full bg-dark-900 border border-dark-700 rounded px-2 py-1.5 text-xs text-gray-200 outline-none focus:border-accent/50">
+              </div>
+              <div class="flex gap-2">
+                <div class="flex-1">
+                  <label class="block text-[10px] text-gray-500 mb-1">Task Description</label>
+                  <input type="text" x-model="w.task" placeholder="What to delegate"
+                         class="w-full bg-dark-900 border border-dark-700 rounded px-2 py-1.5 text-xs text-gray-200 outline-none focus:border-accent/50">
+                </div>
+                <button @click="skill.worker_skills.splice(i,1)" class="text-gray-600 hover:text-red-400 text-xs self-end mb-1">✕</button>
+              </div>
+            </div>
+          </template>
+          <button x-show="skill.worker_skills.length===0" @click="addWorker()"
+                  class="w-full border-2 border-dashed border-dark-600 rounded-xl p-4 text-sm text-gray-500 hover:border-accent/30 hover:text-gray-400 transition">
+            + Add first worker skill
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: Context Files -->
+    <div x-show="editTab==='context'" class="space-y-4 fade-in">
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="text-sm text-gray-300 font-medium">Context Files</p>
+          <p class="text-xs text-gray-500 mt-0.5">Reference documents the agent reads at query time. Stored in <code class="text-accent-light">/shared/contexts/<span x-text="skill.skill_name||'skill_name'"></span>/</code></p>
+        </div>
+        <button @click="addContextFile()" class="text-xs text-accent hover:text-accent-light px-2 py-1 rounded transition">+ Add file</button>
+      </div>
+
+      <div x-show="contextFiles.length===0" class="text-center text-gray-600 py-8 border border-dashed border-dark-700 rounded-xl text-sm">
+        No context files yet. Generate from documents or add manually.
+      </div>
+
+      <div class="space-y-3">
+        <template x-for="(cf,i) in contextFiles" :key="i">
+          <div class="bg-dark-900 border border-dark-700 rounded-xl overflow-hidden">
+            <div class="flex items-center gap-3 px-4 py-2.5 border-b border-dark-800">
+              <span class="text-sm">📄</span>
+              <input type="text" x-model="cf.filename"
+                     class="flex-1 bg-transparent text-xs text-gray-300 font-mono outline-none focus:text-white">
+              <button @click="cf._open = !cf._open"
+                      class="text-xs text-gray-500 hover:text-gray-300 transition" x-text="cf._open?'▲ Hide':'▼ Edit'"></button>
+              <button @click="contextFiles.splice(i,1)" class="text-gray-600 hover:text-red-400 text-xs">✕</button>
+            </div>
+            <div x-show="cf._open" x-transition>
+              <textarea x-model="cf.content" rows="8"
+                        class="w-full bg-dark-950 px-4 py-3 text-xs text-gray-300 font-mono outline-none resize-none scroll-thin"></textarea>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- TAB: Raw SKILL.md -->
+    <div x-show="editTab==='raw'" class="space-y-3 fade-in">
+      <div class="flex items-center justify-between">
+        <p class="text-xs text-gray-400">Direct SKILL.md edit — changes here are used as-is when saving</p>
+        <div class="flex gap-2">
+          <button @click="rebuildRaw()" class="text-xs text-gray-400 hover:text-white border border-dark-700 px-3 py-1.5 rounded-lg transition">↻ Rebuild from form</button>
+          <button @click="parseRaw()" class="text-xs text-accent hover:text-accent-light border border-accent/30 px-3 py-1.5 rounded-lg transition">⟵ Parse into form</button>
+        </div>
+      </div>
+      <textarea x-model="rawSkillMd" rows="28"
+                class="w-full bg-dark-900 border border-dark-700 rounded-xl px-4 py-3 text-xs text-gray-200 font-mono outline-none focus:border-accent/50 resize-none scroll-thin"></textarea>
+    </div>
+  </div>
+
+  <!-- ════════════════════════ STEP: SAVE ════════════════════════ -->
+  <div x-show="step==='save'" class="fade-in space-y-6">
+    <div class="flex items-center gap-3 mb-2">
+      <button @click="step='edit'" class="text-gray-400 hover:text-white text-sm">← Back to Editor</button>
+      <h2 class="text-lg font-semibold text-white">Save & Submit</h2>
+    </div>
+
+    <!-- Summary card -->
+    <div class="bg-dark-900 border border-dark-700 rounded-2xl p-6 space-y-4">
+      <div class="flex items-start gap-4">
+        <div class="text-3xl" x-text="categoryIcon(skill.suggested_category)"></div>
+        <div>
+          <h3 class="font-bold text-white text-lg" x-text="skill.skill_name || '—'"></h3>
+          <p class="text-sm text-gray-400" x-text="skill.description || '—'"></p>
+          <div class="flex items-center gap-2 mt-2">
+            <span class="text-[10px] px-2 py-0.5 rounded-full font-medium" :class="modeBadge(skill.execution_mode)" x-text="skill.execution_mode||'react'"></span>
+            <span class="text-xs text-gray-500" x-text="skill.keywords.length + ' keywords'"></span>
+            <span class="text-xs text-gray-500" x-show="skill.steps.length" x-text="skill.steps.length + ' steps'"></span>
+            <span class="text-xs text-gray-500" x-show="skill.worker_skills.length" x-text="skill.worker_skills.length + ' workers'"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Files to be saved -->
+      <div>
+        <p class="text-xs text-gray-500 uppercase tracking-wider mb-2">Files that will be saved</p>
+        <div class="space-y-1">
+          <div class="flex items-center gap-2 text-xs text-gray-300">
+            <span class="text-emerald-400">📄</span>
+            <span>skills/<span x-text="skill.skill_name"></span>/SKILL.md</span>
+            <span class="text-gray-600 ml-auto">personal → submit for review</span>
+          </div>
+          <template x-for="cf in contextFiles" :key="cf.filename">
+            <div class="flex items-center gap-2 text-xs text-gray-300">
+              <span class="text-blue-400">📄</span>
+              <span>shared/contexts/<span x-text="skill.skill_name"></span>/<span x-text="cf.filename"></span></span>
+              <span class="text-gray-600 ml-auto">saved immediately</span>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- Note -->
+    <div>
+      <label class="block text-xs text-gray-400 mb-1">Note for reviewer <span class="text-gray-600">(optional)</span></label>
+      <textarea x-model="submitNote" rows="2" placeholder="e.g. Generated from AP policy v3 and approval matrix sheet"
+                class="w-full bg-dark-800 border border-dark-700 rounded-xl px-3 py-2 text-sm text-gray-200 placeholder-gray-600 outline-none focus:border-accent/50 resize-none"></textarea>
+    </div>
+
+    <!-- Error msg -->
+    <div x-show="saveError" class="bg-red-900/40 border border-red-700 rounded-lg px-4 py-3 text-sm text-red-300" x-text="saveError"></div>
+
+    <div class="flex gap-3">
+      <button @click="saveSkill('draft')" :disabled="saving || !skill.skill_name"
+              class="px-5 py-2.5 bg-dark-700 hover:bg-dark-600 disabled:opacity-40 text-gray-200 text-sm rounded-xl transition">
+        <span x-show="!saving">Save as Draft</span>
+        <span x-show="saving">Saving…</span>
+      </button>
+      <button @click="saveSkill('submit')" :disabled="saving || !skill.skill_name"
+              class="flex-1 px-5 py-2.5 bg-accent hover:bg-accent-dim disabled:opacity-40 text-white text-sm font-semibold rounded-xl transition">
+        <span x-show="!saving">✓ Save &amp; Submit for Review →</span>
+        <span x-show="saving">Submitting…</span>
+      </button>
+    </div>
+    <p class="text-xs text-gray-600 text-center">Submitted skills appear in <a href="/dashboard/v2#skill-review" class="text-accent hover:underline">dashboard/v2 → Skill Review</a> for admin approval</p>
+  </div>
+
+  <!-- ════════════════════════ STEP: DONE ════════════════════════ -->
+  <div x-show="step==='done'" class="fade-in text-center py-12">
+    <div class="text-5xl mb-4">🎉</div>
+    <h2 class="text-xl font-bold text-white mb-2" x-text="savedVerb==='submit' ? 'Skill Submitted for Review!' : 'Skill Saved as Draft!'"></h2>
+    <p class="text-gray-400 mb-6" x-text="savedVerb==='submit' ? 'An admin will review and approve your skill. You\'ll be notified.' : 'Your draft is saved in your personal skills workspace.'"></p>
+    <div class="flex gap-3 justify-center">
+      <a href="/dashboard/v2#skill-review" target="_top"
+         class="px-5 py-2.5 bg-dark-700 hover:bg-dark-600 text-gray-200 text-sm rounded-xl transition">View in Skill Review</a>
+      <button @click="resetAndStart()"
+              class="px-5 py-2.5 bg-accent hover:bg-accent-dim text-white text-sm font-semibold rounded-xl transition">Create Another Skill →</button>
+    </div>
+  </div>
+
+</main>
+
+<script>
+function skillCreator() {
+  return {
+    // ── Embed detection ────────────────────────────────
+    isEmbedded: new URLSearchParams(window.location.search).has('embed'),
+
+    // ── Navigation ────────────────────────────────────
+    step: 'landing',
+    stepDefs: [
+      { id: 'start',  label: 'Start'  },
+      { id: 'create', label: 'Create' },
+      { id: 'edit',   label: 'Edit'   },
+      { id: 'save',   label: 'Submit' },
+    ],
+    get currentStepIdx() {
+      const m = { landing:0, upload:1, manual:1, template:1, generating:1, edit:2, save:3, done:3 };
+      return m[this.step] ?? 0;
+    },
+    get stepLabel() {
+      const m = { landing:'Choose method', upload:'Upload documents', manual:'Quick setup',
+                  template:'Choose template', generating:'Generating…', edit:'Review & edit',
+                  save:'Save & submit', done:'Done' };
+      return m[this.step] || '';
+    },
+
+    // ── User ──────────────────────────────────────────
+    currentUser: null,
+
+    // ── Upload ────────────────────────────────────────
+    uploadFiles: [],
+    domainHint: '',
+    processHint: '',
+    dragging: false,
+    generating: false,
+    genSteps: [
+      { label: 'Reading uploaded files',     state: 'pending' },
+      { label: 'Extracting text content',    state: 'pending' },
+      { label: 'Analysing with AI',          state: 'pending' },
+      { label: 'Building SKILL.md package',  state: 'pending' },
+    ],
+
+    // ── Skill data ────────────────────────────────────
+    skill: {
+      skill_name: '', description: '', version: '1.0',
+      execution_mode: 'react', keywords: [], tools: ['shell', 'query_memory'],
+      suggested_category: 'operations', business_context: {},
+      skill_md_body: '', steps: [], worker_skills: [],
+    },
+    contextFiles: [],
+    rawSkillMd: '',
+    newKeyword: '',
+
+    // ── Editor ────────────────────────────────────────
+    editTab: 'info',
+    editTabs: [
+      { id: 'info',    label: 'ℹ️ Info' },
+      { id: 'mode',    label: '🤖 Mode & Tools' },
+      { id: 'prompt',  label: '📝 Prompt / Steps' },
+      { id: 'context', label: '📁 Context Files' },
+      { id: 'raw',     label: '⌨️ Raw SKILL.md' },
+    ],
+
+    // ── Save ──────────────────────────────────────────
+    submitNote: '',
+    saving: false,
+    saveError: '',
+    savedVerb: '',
+
+    // ── Templates ─────────────────────────────────────
+    templates: [],
+    templatesLoading: false,
+
+    // ── Toast ─────────────────────────────────────────
+    toasts: [],
+
+    // ── Static data ───────────────────────────────────
+    modes: [
+      { id:'react',      icon:'🧠', label:'REACT',      desc:'AI reasons freely. Best for open-ended Q&A and analysis.' },
+      { id:'workflow',   icon:'📋', label:'Workflow',    desc:'Fixed sequential steps. Best for defined SOPs.' },
+      { id:'parallel',   icon:'⚡', label:'Parallel',    desc:'Concurrent steps. Best for multi-source data gathering.' },
+      { id:'supervisor', icon:'👔', label:'Supervisor',  desc:'Delegates to worker skills. Best for multi-domain orchestration.' },
+    ],
+    availableTools: ['shell','query_memory','write_file','run_sql_query','create_plan','invoke_plan'],
+    categories: [
+      { id:'operations',      icon:'⚙️',  label:'Operations' },
+      { id:'implementation',  icon:'🏗️',  label:'Implementation' },
+      { id:'discovery',       icon:'🔍',  label:'Discovery' },
+      { id:'itops',           icon:'💻',  label:'IT Ops' },
+      { id:'platform',        icon:'🛠️',  label:'Platform' },
+    ],
+
+    // ═══════════════════════════════════════════════
+    // Init
+    // ═══════════════════════════════════════════════
+    async init() {
+      // 1. Try iaf_user cookie (SEC-6: server sets readable cookie on login)
+      try {
+        const raw = document.cookie.split('; ').find(r => r.startsWith('iaf_user='));
+        if (raw) this.currentUser = JSON.parse(decodeURIComponent(raw.replace(/^iaf_user=/, '')));
+      } catch {}
+
+      // 2. Fallback: if no cached user but we have a JWT, fetch /auth/me.
+      // Handles direct navigation to /skill-creator before opening /static/index.html.
+      if (!this.currentUser?.user_id) {
+        // SEC-6: httponly cookie sent automatically; try /auth/me with cookie
+        {
+          try {
+            const r = await fetch('/auth/me', { credentials: 'include' });
+            if (r.ok) {
+              const user = await r.json();
+              this.currentUser = user;
+              // Cache for next visit so we don't re-fetch every load
+              // SEC-6: server sets iaf_user cookie; no localStorage write
+            }
+          } catch (e) {
+            console.warn('skill-creator: /auth/me lookup failed:', e);
+          }
+        }
+      }
+
+      this.$watch('step', val => {
+        if (val === 'template') this.loadTemplates();
+        if (val === 'edit' && this.editTab === 'raw') this.rebuildRaw();
+      });
+      this.$watch('editTab', tab => {
+        if (tab === 'raw') this.rebuildRaw();
+      });
+    },
+
+    applyParentTheme() {
+        const params = new URLSearchParams(window.location.search);
+        const theme = params.get('theme') || localStorage.getItem('iaf_skill_builder_theme') || 'dark';
+        document.body.classList.remove('light-mode', 'hybrid-mode');
+        if (theme === 'light') document.body.classList.add('light-mode');
+        else if (theme === 'hybrid') document.body.classList.add('hybrid-mode');
+    },
+
+    defaultSkill() {
+      return {
+        skill_name: '', description: '', version: '1.0',
+        execution_mode: 'react', keywords: [], tools: ['shell', 'query_memory'],
+        suggested_category: 'operations', business_context: {},
+        skill_md_body: '', steps: [], worker_skills: [],
+      };
+    },
+    resetSkillDraft() {
+      this.skill = this.defaultSkill();
+      this.contextFiles = [];
+      this.rawSkillMd = '';
+      this.newKeyword = '';
+      this.editTab = 'info';
+      this.submitNote = '';
+      this.saveError = '';
+      this.savedVerb = '';
+      this.uploadFiles = [];
+      this.domainHint = '';
+      this.processHint = '';
+      this.generating = false;
+      this.genSteps.forEach(s => { s.state = 'pending'; });
+    },
+    goLanding() {
+      this.resetSkillDraft();
+      this.step = 'landing';
+    },
+    startManual() {
+      this.resetSkillDraft();
+      this.step = 'manual';
+    },
+    startUpload() {
+      this.resetSkillDraft();
+      this.step = 'upload';
+    },
+    startTemplate() {
+      this.resetSkillDraft();
+      this.step = 'template';
+    },
+
+    // ═══════════════════════════════════════════════
+    // File handling
+    // ═══════════════════════════════════════════════
+    handleDrop(e) {
+      const MAX_FILE_SIZE = 10 * 1024 * 1024;
+      const ALLOWED_EXTENSIONS = ['.pdf','.docx','.doc','.pptx','.ppt','.xlsx','.xlsm','.xls','.txt','.md','.csv','.json','.yaml','.yml','.mp4','.mov','.avi','.mp3','.wav','.m4a','.vsdx'];
+      const files = Array.from(e.dataTransfer.files);
+      for (const file of files) {
+        const ext = '.' + file.name.split('.').pop().toLowerCase();
+        if (!ALLOWED_EXTENSIONS.includes(ext)) { alert('File type not allowed: ' + file.name); return; }
+        if (file.size > MAX_FILE_SIZE) { alert('File too large (max 10MB): ' + file.name); return; }
+      }
+      files.forEach(f => { if (!this.uploadFiles.find(x=>x.name===f.name)) this.uploadFiles.push(f); });
+    },
+    handleFileSelect(e) {
+      const MAX_FILE_SIZE = 10 * 1024 * 1024;
+      const ALLOWED_EXTENSIONS = ['.pdf','.docx','.doc','.pptx','.ppt','.xlsx','.xlsm','.xls','.txt','.md','.csv','.json','.yaml','.yml','.mp4','.mov','.avi','.mp3','.wav','.m4a','.vsdx'];
+      const files = Array.from(e.target.files);
+      for (const file of files) {
+        const ext = '.' + file.name.split('.').pop().toLowerCase();
+        if (!ALLOWED_EXTENSIONS.includes(ext)) { alert('File type not allowed: ' + file.name); e.target.value = ''; return; }
+        if (file.size > MAX_FILE_SIZE) { alert('File too large (max 10MB): ' + file.name); e.target.value = ''; return; }
+      }
+      files.forEach(f => { if (!this.uploadFiles.find(x=>x.name===f.name)) this.uploadFiles.push(f); });
+      e.target.value = '';
+    },
+    fileIcon(name) {
+      const ext = name.split('.').pop().toLowerCase();
+      const m = { pdf:'📕', docx:'📝', doc:'📝', pptx:'📊', ppt:'📊', xlsx:'📈', xls:'📈',
+                  xlsm:'📈', mp4:'🎬', mov:'🎬', mp3:'🎵', wav:'🎵', m4a:'🎵', vsdx:'🔷',
+                  txt:'📄', md:'📄', csv:'📊', json:'📋' };
+      return m[ext] || '📄';
+    },
+    formatBytes(b) {
+      if (b < 1024) return b+'B';
+      if (b < 1024*1024) return (b/1024).toFixed(1)+'KB';
+      return (b/1024/1024).toFixed(1)+'MB';
+    },
+
+    // ═══════════════════════════════════════════════
+    // Generate from documents
+    // ═══════════════════════════════════════════════
+    async generateFromDocs() {
+      if (!this.uploadFiles.length) return;
+      this.generating = true;
+      this.step = 'generating';
+      this.genSteps.forEach(s => s.state = 'pending');
+
+      const fd = new FormData();
+      this.uploadFiles.forEach(f => fd.append('files', f));
+      if (this.domainHint)  fd.append('domain_hint', this.domainHint);
+      if (this.processHint) fd.append('process_hint', this.processHint);
+
+      // Animate steps
+      const animate = async (idx, duration) => {
+        this.genSteps[idx].state = 'active';
+        await new Promise(r => setTimeout(r, duration));
+        this.genSteps[idx].state = 'done';
+      };
+
+      try {
+        await animate(0, 600);
+        await animate(1, 800);
+        // Start real API call
+        this.genSteps[2].state = 'active';
+        const resp = await fetch('/api/skills/from-document', { method:'POST', body: fd });
+        this.genSteps[2].state = 'done';
+
+        if (!resp.ok) {
+          const err = await resp.json();
+          throw new Error(err.detail || 'Generation failed');
+        }
+
+        this.genSteps[3].state = 'active';
+        const data = await resp.json();
+        await new Promise(r => setTimeout(r, 400));
+        this.genSteps[3].state = 'done';
+
+        // Populate skill
+        this.skill = {
+          skill_name:         data.skill_name || '',
+          description:        data.description || '',
+          version:            data.version || '1.0',
+          execution_mode:     data.execution_mode || 'react',
+          keywords:           data.keywords || [],
+          tools:              data.tools || ['shell','query_memory'],
+          suggested_category: data.suggested_category || 'operations',
+          business_context:   data.business_context || {},
+          skill_md_body:      data.skill_md_body || '',
+          steps:              (data.steps||[]).map(s=>({...s, depends_on_text: (s.depends_on||[]).join(', ')})),
+          worker_skills:      data.worker_skills || [],
+        };
+        this.contextFiles = [
+          ...(data.context_md ? [{ filename:'context.md', content: data.context_md, _open:false }] : []),
+          ...(data.context_files||[]).map(cf => ({ ...cf, _open:false })),
+        ];
+        this.rawSkillMd = data.skill_md_content || '';
+        this.step = 'edit';
+        this.editTab = 'info';
+        this.toast('success','✓ Skill Generated','Review and edit below, then save.');
+      } catch(e) {
+        this.toast('error','Generation failed', e.message);
+        this.step = 'upload';
+      } finally {
+        this.generating = false;
+      }
+    },
+
+    // ═══════════════════════════════════════════════
+    // Templates
+    // ═══════════════════════════════════════════════
+    async loadTemplates() {
+      if (this.templates.length) return;
+      this.templatesLoading = true;
+      try {
+        const r = await fetch('/api/skill-creator/templates');
+        const d = await r.json();
+        this.templates = d.templates || [];
+      } catch(e) {
+        this.toast('error','Failed to load templates', e.message);
+      } finally {
+        this.templatesLoading = false;
+      }
+    },
+    loadTemplate(t) {
+      this.skill = {
+        skill_name:         t.id,
+        description:        t.description,
+        version:            '1.0',
+        execution_mode:     t.execution_mode,
+        keywords:           [...(t.keywords||[])],
+        tools:              [...(t.tools||['shell','query_memory'])],
+        suggested_category: t.category,
+        business_context:   JSON.parse(JSON.stringify(t.business_context||{})),
+        skill_md_body:      t.skill_md_body || '',
+        steps:              JSON.parse(JSON.stringify(t.steps||[])),
+        worker_skills:      JSON.parse(JSON.stringify(t.worker_skills||[])),
+      };
+      this.contextFiles = t.context_md
+        ? [{ filename:'context.md', content: t.context_md, _open:false }]
+        : [];
+      (t.context_files||[]).forEach(cf => this.contextFiles.push({...cf, _open:false}));
+      this.rebuildRaw();
+      this.step = 'edit';
+      this.editTab = 'info';
+    },
+
+    // ═══════════════════════════════════════════════
+    // Editor helpers
+    // ═══════════════════════════════════════════════
+    addKeyword() {
+      const kw = this.newKeyword.trim();
+      if (kw && !this.skill.keywords.includes(kw)) this.skill.keywords.push(kw);
+      this.newKeyword = '';
+    },
+    toggleTool(t) {
+      const i = this.skill.tools.indexOf(t);
+      if (i===-1) this.skill.tools.push(t); else this.skill.tools.splice(i,1);
+    },
+    addStep() {
+      this.skill.steps.push({ name:'', action:'shell', command:'', skill:'', task:'', depends_on_text:'' });
+    },
+    addWorker() {
+      this.skill.worker_skills.push({ name:'', task:'' });
+    },
+    addContextFile() {
+      this.contextFiles.push({ filename:'new_context.md', content:'# Context\n\n', _open:true });
+    },
+
+    // ── Raw SKILL.md sync ─────────────────────────────
+    rebuildRaw() {
+      try {
+        const fm = {
+          name:           this.skill.skill_name,
+          version:        this.skill.version || '1.0',
+          description:    this.skill.description,
+          execution_mode: this.skill.execution_mode,
+        };
+        if (this.skill.keywords?.length)      fm.triggers       = this.skill.keywords;
+        if (this.skill.tools?.length)         fm.tools          = this.skill.tools;
+        if (Object.keys(this.skill.business_context||{}).length) fm.business_context = this.skill.business_context;
+        if (this.skill.steps?.length)         fm.steps          = this.skill.steps.map(s=>{
+          const o={name:s.name,action:s.action};
+          if(s.action==='shell'&&s.command) o.command=s.command;
+          if(s.action==='skill'){if(s.skill)o.skill=s.skill;if(s.task)o.task=s.task;}
+          if(this.skill.execution_mode==='parallel'&&s.depends_on_text) o.depends_on=s.depends_on_text.split(',').map(d=>d.trim()).filter(d=>d);
+          return o;
+        });
+        if (this.skill.worker_skills?.length) fm.worker_skills = this.skill.worker_skills.filter(w=>w.name);
+
+        const yamlStr = jsyaml.dump(fm, {lineWidth:120});
+        this.rawSkillMd = `---\n${yamlStr}---\n\n${this.skill.skill_md_body||''}\n`;
+      } catch(e) {
+        console.warn('rebuildRaw error:', e);
+      }
+    },
+    parseRaw() {
+      try {
+        const parts = this.rawSkillMd.split(/^---\s*$/m);
+        if (parts.length < 3) { this.toast('error','Parse error','No valid frontmatter found'); return; }
+        const fm = jsyaml.load(parts[1]);
+        if (!fm) { this.toast('error','Parse error','Empty frontmatter'); return; }
+        this.skill.skill_name      = fm.name || this.skill.skill_name;
+        this.skill.version         = fm.version || '1.0';
+        this.skill.description     = fm.description || '';
+        this.skill.execution_mode  = fm.execution_mode || 'react';
+        this.skill.keywords        = fm.triggers || fm.keywords || [];
+        this.skill.tools           = fm.tools || ['shell','query_memory'];
+        this.skill.business_context= fm.business_context || {};
+        this.skill.steps           = (fm.steps||[]).map(s=>({...s,depends_on_text:(s.depends_on||[]).join(', ')}));
+        this.skill.worker_skills   = fm.worker_skills || [];
+        this.skill.skill_md_body   = parts.slice(2).join('---').trim();
+        this.toast('success','Parsed','Form fields updated from raw SKILL.md.');
+      } catch(e) {
+        this.toast('error','Parse failed', e.message);
+      }
+    },
+
+    // ── Watch tab change to rebuild raw ───────────────
+    onEditTabChange(tab) {
+      if (tab === 'raw') this.rebuildRaw();
+    },
+
+    // ═══════════════════════════════════════════════
+    // Save & Submit
+    // ═══════════════════════════════════════════════
+    async saveSkill(action) {
+      if (!this.currentUser?.user_id) {
+        this.saveError = 'You must be logged in to save a skill.';
+        return;
+      }
+      this.saving = true;
+      this.saveError = '';
+
+      try {
+        // 1. Ensure raw SKILL.md is up to date
+        this.rebuildRaw();
+
+        // 2. Save context files first (they go to shared/contexts/)
+        if (this.contextFiles.length) {
+          const ctxResp = await fetch('/api/skills/save-context-files', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({
+              skill_name: this.skill.skill_name,
+              files: this.contextFiles.map(cf=>({ filename:cf.filename, content:cf.content })),
+              tenant_id: 'company',
+            }),
+          });
+          if (!ctxResp.ok) {
+            const e = await ctxResp.json();
+            throw new Error('Context save failed: ' + (e.detail || ctxResp.status));
+          }
+        }
+
+        // 3. Save SKILL.md to personal skills
+        const saveResp = await fetch(`/api/personal-skills/${this.currentUser.user_id}/save`, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            skill_name: this.skill.skill_name,
+            skill_md_content: this.rawSkillMd,
+            tenant_id: 'company',
+          }),
+        });
+        if (!saveResp.ok) {
+          const e = await saveResp.json();
+          throw new Error('Save failed: ' + (e.detail || saveResp.status));
+        }
+
+        // 4. Submit for review if requested
+        if (action === 'submit') {
+          const subResp = await fetch(`/api/personal-skills/${this.currentUser.user_id}/${this.skill.skill_name}/submit`, {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ tenant_id:'company', notes: this.submitNote, publish_mode: 'publish_new', source_skill_name: '' }),
+          });
+          if (!subResp.ok) {
+            const e = await subResp.json();
+            throw new Error('Submit failed: ' + (e.detail || subResp.status));
+          }
+        }
+
+        this.savedVerb = action;
+        this.step = 'done';
+        this.toast('success', action==='submit' ? '✓ Submitted for Review' : '✓ Saved as Draft',
+                   `"${this.skill.skill_name}" ${action==='submit'?'is pending admin approval':'saved to your personal skills'}.`);
+
+      } catch(e) {
+        this.saveError = e.message;
+        this.toast('error', 'Save failed', e.message);
+      } finally {
+        this.saving = false;
+      }
+    },
+
+    resetAndStart() {
+      this.goLanding();
+    },
+
+    // ═══════════════════════════════════════════════
+    // Helpers
+    // ═══════════════════════════════════════════════
+    modeBadge(m) {
+      const c = { react:'bg-violet-900/50 text-violet-300 border border-violet-700',
+                  workflow:'bg-blue-900/50 text-blue-300 border border-blue-700',
+                  parallel:'bg-amber-900/50 text-amber-300 border border-amber-700',
+                  supervisor:'bg-emerald-900/50 text-emerald-300 border border-emerald-700' };
+      return c[m] || c.react;
+    },
+    categoryIcon(c) {
+      const m = { operations:'⚙️', implementation:'🏗️', discovery:'🔍', itops:'💻', platform:'🛠️' };
+      return m[c] || '📦';
+    },
+    toast(type, title, msg) {
+      const id = Date.now();
+      const icons = { success:'✅', error:'❌', info:'ℹ️' };
+      this.toasts.push({ id, type, title, msg, icon: icons[type]||'ℹ️' });
+      setTimeout(() => { this.toasts = this.toasts.filter(t=>t.id!==id); }, 5000);
+    },
+
+  };
+}
+
+document.addEventListener('alpine:init', () => {
+  Alpine.data('skillCreator', skillCreator);
+});
+</script>
+
+<script>
+window.AgentProPageContext = function() {
+  const app = window.Alpine ? Alpine.$data(document.body) : {};
+  return {
+    source_page: 'skill_creator',
+    page: app.step || 'landing',
+    stepLabel: app.stepLabel,
+    editTab: app.editTab,
+    draftSkill: {
+      name: app.skill?.skill_name,
+      description: app.skill?.description,
+      execution_mode: app.skill?.execution_mode,
+      category: app.skill?.suggested_category,
+      keywords: app.skill?.keywords,
+      tools: app.skill?.tools,
+      steps: Array.isArray(app.skill?.steps) ? app.skill.steps.length : 0,
+      worker_skills: Array.isArray(app.skill?.worker_skills) ? app.skill.worker_skills.length : 0,
+    },
+    uploadFiles: Array.isArray(app.uploadFiles) ? app.uploadFiles.map(file => ({ name: file.name, size: file.size })) : [],
+    templatesLoaded: Array.isArray(app.templates) ? app.templates.length : 0,
+    generating: app.generating,
+  };
+};
+</script>
+<script src="/static/ask-twin.js"></script>
+<!-- SEC-7: shared idle-session timeout + user menu. -->
+<script src="/static/session-controls.js"></script>
+</body>
+</html>

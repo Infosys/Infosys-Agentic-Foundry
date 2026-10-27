@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IAF AgentOS — Complete Architecture</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root { --font: 'Courier New', 'Consolas', 'Monaco', monospace; --t: 0.28s ease; }
+
+    /* ══════ LIGHT MODE ══════ */
+    body[data-mode="light"] {
+      --bg-page:   #f0f4f8;
+      --bg-header: #ffffff;
+      --bg-pre:    #ffffff;
+      --text:      #1a1a2e;
+      --border:    #d0d7de;
+      --shadow:    rgba(0,0,0,0.08);
+      --title:     #0969da;
+      --btn-bg:    #e8edf2;
+      --btn-txt:   #24292f;
+      --btn-a-bg:  #0969da;
+      --btn-a-txt: #ffffff;
+      --badge-bg:  #dbeafe;
+      --badge-txt: #1e40af;
+    }
+
+    /* ══════ DARK MODE ══════ */
+    body[data-mode="dark"] {
+      --bg-page:   #080c10;
+      --bg-header: #0d1117;
+      --bg-pre:    #0d1117;
+      --text:      #00e676;
+      --border:    #21262d;
+      --shadow:    rgba(0,230,118,0.06);
+      --title:     #39ff14;
+      --btn-bg:    #161b22;
+      --btn-txt:   #8b949e;
+      --btn-a-bg:  #00e676;
+      --btn-a-txt: #080c10;
+      --badge-bg:  #0d1f12;
+      --badge-txt: #00e676;
+    }
+
+    /* ══════ HYBRID MODE ══════ */
+    body[data-mode="hybrid"] {
+      --bg-page:   #11111b;
+      --bg-header: #1e1e2e;
+      --bg-pre:    #181825;
+      --text:      #cdd6f4;
+      --border:    #313244;
+      --shadow:    rgba(203,166,247,0.06);
+      --title:     #cba6f7;
+      --btn-bg:    #313244;
+      --btn-txt:   #a6adc8;
+      --btn-a-bg:  #cba6f7;
+      --btn-a-txt: #11111b;
+      --badge-bg:  #2a2a3e;
+      --badge-txt: #cba6f7;
+    }
+
+    body {
+      background: var(--bg-page);
+      color: var(--text);
+      font-family: var(--font);
+      transition: background var(--t), color var(--t);
+      min-height: 100vh;
+    }
+
+    /* ── HEADER ── */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--bg-header);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+      box-shadow: 0 2px 10px var(--shadow);
+      transition: background var(--t), border-color var(--t);
+    }
+
+    .header-left { display: flex; align-items: center; gap: 12px; }
+
+    .header-title {
+      font-size: 12px;
+      font-weight: bold;
+      color: var(--title);
+      letter-spacing: 0.4px;
+      transition: color var(--t);
+    }
+
+    .badge {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 99px;
+      background: var(--badge-bg);
+      color: var(--badge-txt);
+      transition: background var(--t), color var(--t);
+    }
+
+    .mode-buttons { display: flex; gap: 6px; }
+
+    .mode-btn {
+      padding: 5px 14px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--btn-bg);
+      color: var(--btn-txt);
+      font-family: var(--font);
+      font-size: 11px;
+      cursor: pointer;
+      transition: all var(--t);
+      letter-spacing: 0.3px;
+    }
+    .mode-btn:hover { opacity: 0.8; }
+    .mode-btn.active {
+      background: var(--btn-a-bg);
+      color: var(--btn-a-txt);
+      border-color: var(--btn-a-bg);
+      font-weight: bold;
+    }
+
+    /* ── MAIN ── */
+    main { padding: 20px; }
+
+    pre#ascii-pre {
+      background: var(--bg-pre);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 22px 26px;
+      font-family: var(--font);
+      font-size: 12px;
+      line-height: 1.52;
+      overflow-x: auto;
+      white-space: pre;
+      box-shadow: 0 4px 20px var(--shadow);
+      transition: background var(--t), border-color var(--t), box-shadow var(--t);
+    }
+
+    body[data-mode="dark"] pre#ascii-pre {
+      text-shadow: 0 0 7px rgba(0,230,118,0.25);
+    }
+
+    /* ── LEGEND (hybrid only) ── */
+    .legend {
+      display: none;
+      margin-top: 12px;
+      padding: 10px 16px;
+      background: var(--bg-header);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      gap: 10px 20px;
+      flex-wrap: wrap;
+      font-size: 10.5px;
+      transition: background var(--t);
+    }
+    body[data-mode="hybrid"] .legend { display: flex; }
+
+    .legend-item { display: flex; align-items: center; gap: 5px; color: var(--btn-txt); }
+    .legend-dot  { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
+
+    /* ══════ HYBRID SYNTAX COLOURS (Catppuccin Mocha) ══════ */
+    body[data-mode="hybrid"] .hl-divider     { color: #585b70; }
+    body[data-mode="hybrid"] .hl-sec-hdr     { color: #cba6f7; font-weight: bold; }
+    body[data-mode="hybrid"] .hl-outer-box   { color: #f5c2e7; }
+    body[data-mode="hybrid"] .hl-hitl        { color: #fab387; }
+    body[data-mode="hybrid"] .hl-security    { color: #f38ba8; }
+    body[data-mode="hybrid"] .hl-hook        { color: #a6e3a1; }
+    body[data-mode="hybrid"] .hl-memory      { color: #94e2d5; }
+    body[data-mode="hybrid"] .hl-finops      { color: #f9e2af; }
+    body[data-mode="hybrid"] .hl-kernel      { color: #89dceb; }
+    body[data-mode="hybrid"] .hl-flow        { color: #89b4fa; }
+    body[data-mode="hybrid"] .hl-ingress     { color: #b4befe; }
+    body[data-mode="hybrid"] .hl-normal      { color: #cdd6f4; }
+  </style>
+</head>
+<body data-mode="light">
+
+  <header>
+    <div class="header-left">
+      <div class="header-title">IAF AgentOS — Complete Architecture</div>
+      <span class="badge">v1.0 · ASCII Reference</span>
+    </div>
+    <div class="mode-buttons">
+      <button class="mode-btn active" id="btn-light"  onclick="setMode('light')">&#9728; Light</button>
+      <button class="mode-btn"        id="btn-dark"   onclick="setMode('dark')">&#9685; Dark</button>
+      <button class="mode-btn"        id="btn-hybrid" onclick="setMode('hybrid')">&#11041; Hybrid</button>
+    </div>
+  </header>
+
+  <main>
+    <pre id="ascii-pre"></pre>
+
+    <div class="legend" id="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#cba6f7"></div>Section headers</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#b4befe"></div>Ingress / API</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fab387"></div>HITL / Approval</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f38ba8"></div>Security / RBAC</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#a6e3a1"></div>Hooks</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#94e2d5"></div>Memory / Learning</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f9e2af"></div>FinOps / Traces</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#89dceb"></div>Kernel / Execution</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#89b4fa"></div>Flow / Data</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f5c2e7"></div>Box titles</div>
+    </div>
+  </main>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       ASCII SOURCE  —  stored as text/plain so no HTML escaping needed
+       ═══════════════════════════════════════════════════════════════════ -->
+  <script type="text/plain" id="ascii-src">
+╔══════════════════════════════════════════════════════════════════════════════════════════════╗
+║                    IAF AgentOS — Complete Architecture                                       ║
+║                    Business & Technical Reference                                            ║
+╚══════════════════════════════════════════════════════════════════════════════════════════════╝
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ SECTION 1 — INGRESS LAYER  (how work enters the system)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
+ │   CHAT UI        │  │   REST API       │  │   CRON          │  │   WORKSTREAM     │
+ │   WebSocket      │  │   POST /query    │  │   Scheduler     │  │   Mission Mode   │
+ │   /ws/chat       │  │   POST /run      │  │   APScheduler   │  │   YAML backlog   │
+ │                  │  │   POST /skills/  │  │   + Redis jobs  │  │   per-item HITL  │
+ │   streaming      │  │   run/{name}     │  │   cron_trace_id │  │   evidence bundle│
+ │   HITL prompts   │  │                  │  │                 │  │                  │
+ └────────┬─────────┘  └────────┬─────────┘  └────────┬────────┘  └────────┬─────────┘
+          │                     │                      │                    │
+          └─────────────────────┴──────────────────────┴────────────────────┘
+                                │
+                  ┌─────────────▼──────────────────────┐
+                  │       QUEUE / JOB BUS               │
+                  │  Queue items deduplicated (UNIQUE   │
+                  │  timestamp bucketing), priority,    │
+                  │  retry, HITL-pause on gate-block    │
+                  │  cc_queue/processor.py              │
+                  └─────────────┬──────────────────────┘
+                                │
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┿━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ SECTION 2 — ROUTING & CONTEXT LAYER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┿━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+          ┌─────────────────────▼──────────────────────────────────────────────┐
+          │                  SKILL ROUTER                                       │
+          │   query + entity mentions + conversation history                    │
+          │        │                                                            │
+          │        ├─ Entity resolution  (entity_guide.md alias→canonical)     │
+          │        ├─ Taxonomy scoring   (L1–L5 context files scored vs query) │
+          │        ├─ Keyword matching   (skills/_index.yaml keywords[])        │
+          │        └─ LLM fallback       (router LLM for ambiguous queries)     │
+          │                                                                     │
+          │   outputs: skill_name, entity_name, entity_type                    │
+          └──────────────────────┬─────────────────────────────────────────────┘
+                                 │
+          ┌──────────────────────▼────────────────────────────────────────────┐
+          │                  CONTEXTOS                                         │
+          │   Injects ONLY the relevant slice of enterprise knowledge          │
+          │                                                                    │
+          │   Enterprise_Context.md  ← root index (always loaded)             │
+          │   + matched L1–L5 taxonomy snippets (scored per query)            │
+          │   + SKILL.md context_files  (explicit per-skill references)       │
+          │   + entity guide entry for named entity                           │
+          │                                                                    │
+          │   Result: system_prompt = persona + enterprise slice + context    │
+          └──────────────────────┬────────────────────────────────────────────┘
+                                 │
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┿━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ SECTION 3 — AGENT CORE  (SkillAgent — the orchestration brain)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┿━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+          ┌──────────────────────▼────────────────────────────────────────────┐
+          │                  SKILL AGENT                                       │
+          │                                                                    │
+          │  ┌──────────────────────────────────────────────────────────────┐ │
+          │  │           NATIVE REACT RUNTIME  (LangGraph removed)          │ │
+          │  │                                                              │ │
+          │  │  ┌─ PLANNER ──────────────────────────────────────────────┐ │ │
+          │  │  │  create_plan(json)  → DAG of skill assignments          │ │ │
+          │  │  │  invoke_plan(plan)  → parallel / sequential execution   │ │ │
+          │  │  │  invoke_skill(name, task) → delegate to sub-agent       │ │ │
+          │  │  │  Plan memory: stores multi-step plan, tracks steps      │ │ │
+          │  │  └────────────────────────────────────────────────────────┘ │ │
+          │  │                                                              │ │
+          │  │  ┌─ REACT LOOP ───────────────────────────────────────────┐ │ │
+          │  │  │  while not done (max_iterations):                      │ │ │
+          │  │  │    1. LLM call  (bind_tools, stream / invoke)          │ │ │
+          │  │  │       │                                                │ │ │
+          │  │  │       ▼ tool_calls[] in response                      │ │ │
+          │  │  │    2. for each tool_call:                              │ │ │
+          │  │  │       │                                                │ │ │
+          │  │  │       ▼                                                │ │ │
+          │  │  │  ┌─ TOOL GOVERNANCE ────────────────────────────┐    │ │ │
+          │  │  │  │  govern_tool_call()                          │    │ │ │
+          │  │  │  │  ├─ run PreToolUse hooks (all layers)        │    │ │ │
+          │  │  │  │  │   blocked? → set pending_tool_call        │    │ │ │
+          │  │  │  │  │             return __PENDING__             │    │ │ │
+          │  │  │  │  ├─ is_write?     → pending (interactive)    │    │ │ │
+          │  │  │  │  ├─ is_dangerous? → pending (auto_run)       │    │ │ │
+          │  │  │  │  └─ allowed      → execute tool              │    │ │ │
+          │  │  │  └──────────────────────────────────────────────┘    │ │ │
+          │  │  │       │                                                │ │ │
+          │  │  │       ▼ tool result                                   │ │ │
+          │  │  │    3. run PostToolUse hooks                           │ │ │
+          │  │  │    4. append ToolMessage to messages[]               │ │ │
+          │  │  │  end loop → return final response                    │ │ │
+          │  │  └────────────────────────────────────────────────────────┘ │ │
+          │  └──────────────────────────────────────────────────────────────┘ │
+          │                                                                    │
+          │  ┌──────────────────────────────────────────────────────────────┐ │
+          │  │           CAPABILITY ADAPTERS  (pluggable per tenant)        │ │
+          │  │                                                              │ │
+          │  │  CredentialResolverAdapter → agent_os credential store       │ │
+          │  │  EvidenceCollectorAdapter  → evidence bundles + evidence.db  │ │
+          │  │  ToolExecutionCapability   → tool call observability         │ │
+          │  │  MemoryCapability          → memory read / write backend     │ │
+          │  │  TaxonomyRoutingCapability → skill routing / taxonomy        │ │
+          │  │  ModelProvider             → primary / light LLM registry    │ │
+          │  │                                                              │ │
+          │  │  All swappable via capability registry — no agent.py change  │ │
+          │  └──────────────────────────────────────────────────────────────┘ │
+          └──────────────────────┬────────────────────────────────────────────┘
+                                 │
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┿━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ SECTION 4 — EXECUTION LAYER  (SafeKernel — agent_os)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┿━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+          ┌──────────────────────▼────────────────────────────────────────────┐
+          │                  SAFEKERNEL                                        │
+          │                                                                    │
+          │  VIRTUAL FILESYSTEM                  SECURITY CONTROLS             │
+          │  /me/         user sandbox           RBAC: user/manager/admin/     │
+          │  /shared/     read-only tenant       auditor on every path op      │
+          │  /global/     read-only platform     Path traversal blocked (..)   │
+          │  /team/       team shared space      Blocked cmds: rm, bash, sudo  │
+          │  /local/      desktop mount (opt)    Rate limiter: 60/min sliding  │
+          │                                      Audit JSONL: per-day, gzip    │
+          │                                                                    │
+          │  COMMANDS  (all re-implemented in Python — NOT subprocess)         │
+          │  ls · cat · head · tail · grep · find · tree · wc · mkdir         │
+          │  touch · echo · cd · pwd · semgrep (semantic via VectorStore)      │
+          │  Ripgrep (rg) accelerator: 10-50x faster, falls back to Python     │
+          │                                                                    │
+          │  CREDENTIAL VAULT                                                  │
+          │  get_credential name field  → loads into $CRED_NAME_FIELD         │
+          │  Real value NEVER in LLM context — substituted at exec time        │
+          │                                                                    │
+          │  EXTERNAL ACCESS GOVERNANCE                                        │
+          │  curl → checked vs external_access.yaml entitlements first        │
+          │  SQL  → database_allowed() entitlement gate before query          │
+          │  Every decision logged to external_access_audit.jsonl             │
+          │                                                                    │
+          │  TOOLS AVAILABLE TO AGENT                                          │
+          │  shell · write_file · run_sql_query · execute_code                │
+          │  query_memory · invoke_skill · invoke_plan · create_plan           │
+          │  request_human_approval · get_credential                           │
+          └──────────────────────────────────────────────────────────────────┘
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ SECTION 5 — HOOK HARNESS  (governance at every lifecycle point)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ LAYER 1: Platform Hooks  (framework-owned, priority <=99, always first)
+ ─────────────────────────────────────────────────────────────────────────
+ platform_hooks/hooks.yaml  —  NON-editable by tenant
+ circuit_breaker.PreStep       · circuit_breaker.PreToolUse (invoke_skill)
+ result_validator.PostStep     · audit_log.PostStep
+ audit_log.PostToolUse         · on_failure.OnExecutionFailure
+
+                 │  resolve_effective_hooks() merges at HookRunner construction
+                 ▼
+
+ LAYER 2: Tenant / Agent Hooks  (config.yaml, priority >=100, skill-scoped)
+ ─────────────────────────────────────────────────────────────────────────────
+ tenant_audit_sql   PostToolUse  run_sql_query  fa_ar
+ payment_url_guard  PreToolUse   shell          fa_ap   [BLOCKING]
+ fa_ar sql block    PreToolUse   run_sql_query  fa_ar   [BLOCKING]
+
+ HOOK EVENTS fired during a turn:
+ ┌────────────────────────────────────────────────────────────────────┐
+ │  BeforeTurn ──► PreSampling ──► [LLM call]                        │
+ │       ──► PostSampling ──► PreToolUse ──► [tool runs]             │
+ │       ──► PostToolUse ──► (repeat per tool) ──► PostTurn          │
+ │       ──► OnTurnEnd                                                │
+ │                                                                    │
+ │  On HITL:  OnApprovalResolved · BeforeApprovalResume              │
+ │            AfterApprovalResume                                     │
+ │  On error: OnExecutionFailure                                      │
+ │  Memory:   OnMemoryWrite · OnKnowledgeEntryPending                 │
+ └────────────────────────────────────────────────────────────────────┘
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ SECTION 6 — HUMAN-IN-THE-LOOP (HITL)  — two paths, one approval store
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ PATH A: HOOK BLOCKS A TOOL  (stream-intercept)
+ ─────────────────────────────────────────────────────────────────────────
+ Hook fires blocked=True  ──►  pending_tool_call = { id, name, args }
+ OR write / dangerous call       pending_action   = { __STREAM_INTERCEPT__ }
+                                 approval_pending = { resume_kind: stream_intercept }
+                                      │
+                                      ▼  checkpoint to Redis ApprovalStore
+                                 Human sees approval prompt in UI
+                                      │
+                       Approve ◄──────┴──────► Reject
+                          │                        │
+                          ▼                        ▼
+              resume_approved_tool_call()     reject_pending_tool_call()
+              RUNS THE EXACT HELD CALL        clears state, informs user
+              (not re-plan — same args)
+
+ PATH B: AGENT ASKS FOR APPROVAL  (request_human_approval)
+ ─────────────────────────────────────────────────────────────────────────
+ LLM calls request_human_approval("Should I pay $118k?")
+                                      │
+                           approval_pending set with question
+                           status = "awaiting_human"
+                           turn ends, agent waits
+                                      │
+                       Approve ◄──────┴──────► Reject
+                          │                        │
+                          ▼                        ▼
+        agent.run("[HUMAN DECISION]: Yes")     agent.run("[HUMAN DECISION]: No")
+        LLM CONTINUES REASONING                LLM handles rejection gracefully
+        with verdict as new context
+
+ DURABLE RESUME  (survives server restart / session eviction):
+ ─────────────────────────────────────────────────────────────────────────
+ Approval + full agent_state snapshot saved to Redis (7-day TTL)
+ Cold path: POST /api/hitl/{id}/resolve → rebuild agent, import_state, resume
+ Warm path: in-memory fast path when instance still alive
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ SECTION 7 — MEMORY & LEARNING  (self-improving over time)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ ┌──────────────────────────────────────────────────────────────────────────┐
+ │                     MEMORY ARCHITECTURE                                  │
+ │                                                                          │
+ │  EPISODIC  (what happened)             SEMANTIC  (what is known)         │
+ │  /memory/history/session.jsonl         /memory/learnings/*.jsonl         │
+ │  per-session conversation log          append_learning() per tool call   │
+ │  replay for context continuity         query_memory tool for retrieval   │
+ │                                        VectorStore → semgrep search      │
+ │                                                                          │
+ │  IMPLICIT LEARNING  (observed patterns)                                  │
+ │  implicit_learning.py                                                    │
+ │  ├─ analyze_implicit_feedback()  — detects correction patterns           │
+ │  ├─ triage_implicit_signal()     — categorises what to learn             │
+ │  └─ append_learning()            — writes to /memory/learnings/          │
+ │                                                                          │
+ │  KNOWLEDGE CRUD                                                          │
+ │  knowledge_extractor.py — extracts structured facts from responses       │
+ │  knowledge_crud.py      — create / read / update / delete knowledge      │
+ │  OnKnowledgeEntryPending hook fires — human can review before commit     │
+ │                                                                          │
+ │  PLAN MEMORY                                                             │
+ │  Multi-step plan stored on agent instance during execution               │
+ │  create_plan → invoke_plan → per-step status tracked                    │
+ │  invoke_skill routes sub-tasks to specialist agents                      │
+ └──────────────────────────────────────────────────────────────────────────┘
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ SECTION 8 — SELF-EVOLUTION  (platform grows from usage)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ ┌────────────────────────────────────────────────────────────────────────┐
+ │  User conversation                                                     │
+ │       │                                                                │
+ │       ├─ Implicit learning fires automatically → /memory/learnings/   │
+ │       │                                                                │
+ │       ├─ Skill Builder: promote this conversation as a new skill       │
+ │       │   → SKILL.md generated from conversation                      │
+ │       │   → promoted_from: {session_id}, promoted_at: {timestamp}    │
+ │       │   → registered in _index.yaml immediately                     │
+ │       │                                                                │
+ │       ├─ agentos_guide skill: agent answers questions ABOUT ITSELF     │
+ │       │   using its own docs  (self-documenting platform)             │
+ │       │                                                                │
+ │       └─ research_orchestrator: decomposes question → workstream YAML │
+ │             Mission Mode processes each angle with evidence bundle     │
+ └────────────────────────────────────────────────────────────────────────┘
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ SECTION 9 — OBSERVABILITY, FINOPS & GOVERNANCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ ┌─────────────────────────────────────────────────────────────────────────────┐
+ │  TRACES  (traces.db)                                                        │
+ │  Every agent.run() mints a trace_id                                         │
+ │  Cron fires mint cron_trace_id → parent_trace_id links cron→agent run       │
+ │  Stored: skill, user, model, prompt_tokens, completion_tokens, cost_usd     │
+ │  latency_ms, status, metadata                                               │
+ ├─────────────────────────────────────────────────────────────────────────────┤
+ │  EVIDENCE BUNDLES  (evidence.db)                                            │
+ │  Per run: tool calls + args, SQL results, document reads, API responses     │
+ │  Linked to trace_id — viewable in Chat, Workstream, Queue Monitor           │
+ │  GET /api/evidence/{trace_id}                                               │
+ ├─────────────────────────────────────────────────────────────────────────────┤
+ │  FINOPS  (/api/finops/*)                                                    │
+ │  Queries traces.db: cost per skill / user / model / day                     │
+ │  LLM budget tracker: start_budget(trace_id) → end_budget() → summary       │
+ │  Token counts: prompt + completion per turn, session, tenant                │
+ │  model_pricing.yaml: cost-per-token by model → cost_usd auto-calculated    │
+ ├─────────────────────────────────────────────────────────────────────────────┤
+ │  KERNEL AUDIT  (agent_os)                                                   │
+ │  Every shell command → .audit/commands_YYYY-MM-DD.jsonl                     │
+ │  File-locked writes, gzip after 1 day, purge after 30 days                  │
+ ├─────────────────────────────────────────────────────────────────────────────┤
+ │  EXTERNAL ACCESS AUDIT                                                      │
+ │  Every curl / SQL / credential access → external_access_audit.jsonl         │
+ │  allowed / denied + reason + resource + skill + user + timestamp            │
+ └─────────────────────────────────────────────────────────────────────────────┘
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ SECTION 10 — PERSISTENCE LAYER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ REDIS  (session + approval state)        SQLITE  (per-tenant)
+ ├─ Session pool  (per-user agents)         ├─ traces.db         (FinOps, audit)
+ ├─ ApprovalStore (HITL checkpoints,7d)     ├─ evidence.db       (tool call proof)
+ ├─ Cron job definitions (APScheduler)      ├─ cmdb.db           (IT ops)
+ ├─ Queue items  (cc_queue)                 ├─ ap_ops.db         (F&A AP)
+ └─ AOF enabled  (persistent restart)       ├─ ar_receivables.db (F&A AR)
+                                            └─ twin_telemetry.db
+
+ FILES  (enterprise_root/)
+ ├─ config.yaml            agent + hook config (editable by tenant admin)
+ ├─ SKILL.md               per-skill persona + tools + approval_rules
+ ├─ Enterprise_Context.md  ContextOS root index
+ ├─ contexts/L1-L5/        taxonomy files (authored by domain experts)
+ ├─ workstreams/*.yaml      HITL-capable backlogs
+ └─ .audit/                kernel command logs (JSONL, gzip rotation)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ SECTION 11 — SECURITY & PRINCIPAL ACCESS  (defence in depth, 3 gates)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ REQUEST
+    │
+    ├─ GATE 0: JWT auth (python-jose) ──► user_id + role extracted
+    │
+    ├─ GATE 0: Entitlements (per request)
+    │   ├─ Can this user   access this skill?
+    │   ├─ Can this skill  access this database?
+    │   └─ Can this credential be used by this skill?
+    │
+    ├─ Principal Service Account (for HITL resume / cron)
+    │   Runs under service principal — not the requesting user
+    │   Approval is auditable, not attributable to a user session
+    │
+    ├─ GATE 1: SafeKernel RBAC  (per file operation)
+    │   user    — own /me/ only
+    │   manager — own + team members
+    │   admin   — all paths
+    │   auditor — read everywhere, write nowhere
+    │
+    ├─ GATE 2: Hook layer  (PreToolUse)
+    │   platform hooks run before tenant hooks
+    │   fail_policy: closed = deny on hook error (fail safe)
+    │   blocking hooks can veto any tool call
+    │
+    ├─ GATE 3: Tool governance  (write / dangerous calls)
+    │   write / dangerous → intercepted → HITL required
+    │   pending_tool_call set → human approves / rejects
+    │
+    └─ GATE 4: Kernel hard-deny  (final layer)
+        blocked_commands list enforced (rm, bash, sudo, ...)
+        path traversal (..) blocked at parse time
+        credential vault: real secrets NEVER reach LLM context
+        injection operators blocked: && || ; ` $() ${}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ SECTION 12 — COMPLETE DATA FLOW  (end-to-end, all entry points)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ USER QUERY                   CRON / QUEUE                WORKSTREAM
+      │                            │                            │
+      ▼                            ▼                            ▼
+ [JWT auth +              [cron_trace_id minted]       [item picked from YAML]
+  entitlement]            [Queue dedup check]          [threshold checked]
+      │                            │                            │
+      └────────────────────────────┴────────────────────────────┘
+                                   │
+                                   ▼
+                         [Skill Router + ContextOS]
+                         entity resolved, context sliced, persona built
+                                   │
+                                   ▼
+                           [SkillAgent.run()]
+                           trace_id minted
+                           LLM budget tracker started
+                                   │
+                          ┌────────┴────────┐
+                          │                 │
+                          ▼                 ▼
+                    [BeforeTurn hook]  [session memory loaded]
+                          │
+                          ▼
+                    [PreSampling hook]
+                          │
+                          ▼
+                    [LLM call → tool_calls[]]
+                          │
+                          ▼
+                    [PostSampling hook]
+                          │
+                    ┌─────▼──────┐
+                    │ for each   │
+                    │ tool_call  │
+                    └─────┬──────┘
+                          │
+                    [PreToolUse hooks] ──── blocked ────► HITL PATH A
+                          │ allowed                       pending_tool_call set
+                          ▼
+                    [SafeKernel executes]
+                    sandboxed, RBAC checked
+                    audited, rate-limited
+                          │
+                    [PostToolUse hooks]
+                    audit_log, circuit_breaker
+                          │
+                    [Evidence collected]
+                          │
+                    ┌─────▼──────┐
+                    │ more LLM   │
+                    │ iterations?│
+                    └─────┬──────┘
+                          │ done
+                          ▼
+                    [PostTurn hook]
+                    [LLM budget end]
+                    [Trace written → traces.db]
+                    [Evidence bundle stored → evidence.db]
+                    [Implicit learning fired]
+                          │
+                          ▼
+          Response streamed to:
+          ├─ Chat WebSocket (streaming tokens)
+          ├─ REST API response
+          ├─ Queue record updated (status, output, evidence_trace_id)
+          └─ Workstream item updated (status, evidence inline)
+</script>
+
+  <script>
+    const RAW = document.getElementById('ascii-src').textContent;
+
+    function escHtml(s) {
+      return s
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    function classifyLine(line) {
+      const t = line;
+      // Heavy dividers
+      if (/^━{10,}/.test(t))                                          return 'hl-divider';
+      // Outer box (title lines of the whole diagram)
+      if (/^[╔╚╗╝║]/.test(t))                                        return 'hl-outer-box';
+      // Section headers
+      if (/SECTION\s+\d+\s*[—–]/.test(t))                            return 'hl-sec-hdr';
+      // HITL / approval
+      if (/HITL|HUMAN.IN.THE.LOOP|ApprovalStore|pending_tool_call|approval_pending|PATH A|PATH B|resume_kind|request_human_approval|APPROVAL|DURABLE RESUME|AWAIT/.test(t)) return 'hl-hitl';
+      // Security / RBAC
+      if (/SECURITY|RBAC|BLOCKED|blocked_cmd|entitlement|SafeKernel|SAFEKERNEL|PRINCIPAL|hard.deny|JWT|credential vault|GATE [0-9]|fail_policy|path traversal|injection|blocked/.test(t)) return 'hl-security';
+      // Hooks
+      if (/\bhook\b|HOOK|Hook|PreToolUse|PostToolUse|BeforeTurn|PostTurn|PostSampling|PreSampling|OnApproval|OnExecution|OnMemory|OnKnowledge|platform hook|tenant hook|resolve_effective|LAYER 1|LAYER 2/.test(t)) return 'hl-hook';
+      // Memory / learning
+      if (/[Mm]emory|MEMORY|learning|LEARNING|knowledge|KNOWLEDGE|implicit|episodic|semantic|VectorStore|semgrep|append_learning|PLAN MEMORY/.test(t)) return 'hl-memory';
+      // FinOps / traces
+      if (/FinOps|finops|FINOPS|traces\.db|trace_id|token|cost_usd|model_pricing|LLM budget|evidence\.db|EVIDENCE|TRACES|FINOPS|twin_telemetry/.test(t)) return 'hl-finops';
+      // Kernel / execution
+      if (/SafeKernel|SAFEKERNEL|KERNEL|run_shell|write_file|run_sql|virtual.filesystem|VIRTUAL FILESYSTEM|sandbox|COMMANDS|Ripgrep|ripgrep|\brg\b|CREDENTIAL VAULT|EXTERNAL ACCESS/.test(t)) return 'hl-kernel';
+      // Ingress
+      if (/INGRESS|CHAT UI|REST API|CRON|WORKSTREAM|WebSocket|APScheduler|QUEUE|Mission Mode/.test(t)) return 'hl-ingress';
+      // Flow lines (arrows)
+      if (/[►▼◄→←↓↑]/.test(t) || /──►|──▶|─►/.test(t))              return 'hl-flow';
+      return 'hl-normal';
+    }
+
+    function renderHybrid(raw) {
+      return raw.split('\n').map(line => {
+        const cls = classifyLine(line);
+        return `<span class="${cls}">${escHtml(line)}</span>`;
+      }).join('\n');
+    }
+
+    function renderPlain(raw) {
+      return escHtml(raw);
+    }
+
+    function setMode(mode) {
+      document.body.setAttribute('data-mode', mode);
+      document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('btn-' + mode).classList.add('active');
+
+      const pre = document.getElementById('ascii-pre');
+      pre.innerHTML = mode === 'hybrid' ? renderHybrid(RAW) : renderPlain(RAW);
+    }
+
+    // Boot in light mode
+    setMode('light');
+  </script>
+</body>
+</html>

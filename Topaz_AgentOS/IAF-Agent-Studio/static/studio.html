@@ -1,0 +1,2223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Topaz AgentOS</title>
+    <!-- Unified Light/Dark theme — FOUC guard must run before first paint -->
+    <script>(function(){try{var m={hybrid:'light',light:'light',dark:'dark'},ls=window.localStorage;var v=m[ls.getItem('iaf_theme')]||m[ls.getItem('iaf_dashboard_theme')]||m[ls.getItem('iaf_workstreams_theme')]||m[ls.getItem('iaf-theme')];if(!v)v=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';var r=document.documentElement;r.setAttribute('data-theme',v);r.classList.add(v==='light'?'light-mode':'dark-mode');r.style.colorScheme=v;}catch(e){}})();</script>
+    <link rel="stylesheet" href="/static/theme.css">
+    <script src="/static/theme.js"></script>
+    <script src="/static/vendor/tailwind.min.js"></script>
+    <script defer src="/static/vendor/alpine.min.js"></script>
+    <script src="/static/vendor/js-yaml.min.js"></script>
+    <style>
+        [x-cloak] { display: none !important; }
+        body {
+            background: #0b1120;
+            color: #e5e7eb;
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+        html[data-theme="light"] body { background: #f7f9fc; color: #172033; }
+        html[data-theme="light"] .panel { background: #ffffff; border-color: rgba(100,116,139,.18); box-shadow: 0 12px 34px rgba(15,23,42,.06); }
+        html[data-theme="light"] .card { background: #ffffff; border-color: rgba(100,116,139,.16); }
+        .panel {
+            background: rgba(15, 23, 42, 0.78);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            box-shadow: 0 16px 44px rgba(2, 6, 23, 0.28);
+        }
+        .card {
+            background: rgba(15, 23, 42, 0.68);
+            border: 1px solid rgba(148, 163, 184, 0.16);
+            transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
+        }
+        .card:hover {
+            border-color: rgba(129, 140, 248, 0.65);
+            background: rgba(30, 41, 59, 0.82);
+            transform: translateY(-1px);
+        }
+        .pill {
+            border: 1px solid rgba(148, 163, 184, 0.20);
+            background: rgba(15, 23, 42, 0.72);
+        }
+        .tab-active {
+            color: #c4b5fd;
+            border-bottom-color: #8b5cf6;
+        }
+        .scroll-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scroll-thin::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; }
+        .scroll-thin::-webkit-scrollbar-track { background: transparent; }
+    </style>
+    <script>
+// SEC-6: read user display info from readable cookie
+function _getIafUser() {
+    try {
+        const raw = document.cookie.split('; ').find(r => r.startsWith('iaf_user='));
+        if (!raw) return {};
+        return JSON.parse(decodeURIComponent(raw.replace(/^iaf_user=/, '')));
+    } catch { return {}; }
+}
+
+    // SEC-6: clean up stale localStorage tokens from before cookie migration
+        localStorage.removeItem('iaf_access_token');
+        localStorage.removeItem('iaf_user');
+        (function() {
+        const originalFetch = window.fetch;
+        window.fetch = async function(input, init = {}) {
+            const url = typeof input === 'string' ? input : (input.url || '');
+            const isApiCall = url && (url.startsWith('/') || url.startsWith(location.origin));
+            const isAuthEndpoint = url && (url.includes('/auth/login') || url.includes('/auth/register') ||
+                url.includes('/auth/refresh') || url.includes('/auth/policy') ||
+                url.includes('/auth/registration-mode'));
+            if (isApiCall && !isAuthEndpoint) {
+                // SEC-6: httponly cookie sent automatically — no manual Authorization header needed, init.headers, { Authorization: `Bearer ${token}` });
+            }
+            let response = await originalFetch(input, init);
+            if (response.status === 401 && isApiCall && !isAuthEndpoint) {
+                try {
+                    const refresh = await originalFetch('/auth/refresh', { method: 'POST', credentials: 'include' });
+                    if (refresh.ok) {
+                        const data = await refresh.json();
+                        // SEC-6: server updated httponly cookie; no localStorage write needed
+                        init.headers = Object.assign({}, init.headers, { Authorization: `Bearer ${data.access_token}` });
+                        response = await originalFetch(input, init);
+                    } else {
+                        // SEC-6: stale tokens cleaned up at interceptor init
+                        window.location.href = (window.__BASE_PATH__ || '') + '/login';
+                    }
+                } catch (_) {}
+            }
+            return response;
+        };
+    })();
+    </script>
+</head>
+<body x-data="studioApp()" x-init="init()" class="min-h-screen">
+    <div class="min-h-screen flex">
+        <aside class="w-72 border-r border-slate-800 bg-slate-950/80 flex flex-col">
+            <div class="p-5 border-b border-slate-800">
+                <a href="/" class="text-xs text-slate-400 hover:text-violet-300">Back to chat</a>
+                <div class="mt-3 flex items-center gap-3">
+                    <div class="h-10 w-10 rounded-2xl bg-violet-600 flex items-center justify-center font-bold">A</div>
+                    <div>
+                        <h1 class="text-lg font-semibold tracking-tight">Topaz AgentOS</h1>
+                        <p class="text-xs text-slate-400">Customize skills, data, and runs</p>
+                    </div>
+                </div>
+            </div>
+
+            <nav class="p-3 space-y-1 text-sm">
+                <template x-for="item in navItems" :key="item.id">
+                    <button @click="section = item.id; if (item.id === 'skills') selectedSkill = null"
+                            x-show="(item.id !== 'review' || !reviewAccessDenied) && (item.id !== 'security' || !securityAccessDenied)"
+                            class="w-full text-left px-3 py-2 rounded-xl flex items-center justify-between hover:bg-slate-800/70"
+                            :class="section === item.id || (section === 'skill' && item.id === 'skills') ? 'bg-violet-500/15 text-violet-200' : 'text-slate-300'">
+                        <span x-text="item.label"></span>
+                        <span class="text-[10px] text-slate-500" x-text="item.hint"></span>
+                    </button>
+                </template>
+            </nav>
+
+            <div class="mt-auto p-4 border-t border-slate-800 text-xs text-slate-400 space-y-2">
+                <div class="flex items-center justify-between">
+                    <span>Tenant</span>
+                    <span class="text-slate-200" x-text="tenantId"></span>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span>Agent</span>
+                    <span class="text-slate-200" x-text="agentId"></span>
+                </div>
+                <button @click="refreshAll()" class="mt-2 w-full rounded-lg border border-slate-700 px-3 py-2 hover:bg-slate-800 text-slate-200">
+                    Refresh Studio
+                </button>
+            </div>
+        </aside>
+
+        <main class="flex-1 min-w-0">
+            <header class="h-16 border-b border-slate-800 bg-slate-950/60 px-6 flex items-center justify-between">
+                <div>
+                    <p class="text-xs uppercase tracking-[0.22em] text-violet-300">Customize</p>
+                    <h2 class="text-xl font-semibold" x-text="pageTitle()"></h2>
+                </div>
+                <div class="flex items-center gap-2">
+                    <input x-model="globalSearch" type="search" placeholder="Search skills, agents, schedules..."
+                           class="w-80 rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-sm focus:outline-none focus:border-violet-400">
+                    <button @click="section = 'create'" class="rounded-xl bg-violet-600 px-3 py-2 text-sm font-medium hover:bg-violet-500">Create skill</button>
+                    <!-- REV-5: session-controls.js renders identity + Sign Out here. -->
+                    <div data-session-controls></div>
+                </div>
+            </header>
+
+            <div x-show="notice" x-cloak class="mx-6 mt-4 rounded-xl border px-4 py-3 text-sm"
+                 :class="noticeType === 'error' ? 'border-red-500/40 bg-red-950/40 text-red-200' : 'border-emerald-500/40 bg-emerald-950/40 text-emerald-200'">
+                <span x-text="notice"></span>
+            </div>
+
+            <section x-show="section === 'home'" class="p-6 space-y-6">
+                <div class="panel rounded-3xl p-8">
+                    <p class="text-sm text-violet-300 font-medium">Topaz AgentOS</p>
+                    <h3 class="mt-2 text-3xl font-semibold tracking-tight">One place to create, browse, schedule, and improve skills.</h3>
+                    <p class="mt-3 max-w-3xl text-slate-300">
+                        Build capabilities from prompts or documents, attach knowledge, connect tools, schedule runs, and inspect outcomes without jumping between admin pages.
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    <template x-for="card in actionCards" :key="card.title">
+                        <button @click="handleActionCard(card)" class="card rounded-2xl p-5 text-left">
+                            <div class="text-xs uppercase tracking-wide text-violet-300" x-text="card.kicker"></div>
+                            <h4 class="mt-2 text-lg font-semibold" x-text="card.title"></h4>
+                            <p class="mt-2 text-sm text-slate-400" x-text="card.description"></p>
+                        </button>
+                    </template>
+                </div>
+
+                <div class="grid grid-cols-1 xl:grid-cols-4 gap-4">
+                    <div class="panel rounded-2xl p-5">
+                        <p class="text-sm text-slate-400">Skills</p>
+                        <p class="mt-2 text-3xl font-semibold" x-text="skills.length"></p>
+                    </div>
+                    <div class="panel rounded-2xl p-5">
+                        <p class="text-sm text-slate-400">Schedules</p>
+                        <p class="mt-2 text-3xl font-semibold" x-text="jobs.length"></p>
+                    </div>
+                    <div class="panel rounded-2xl p-5">
+                        <p class="text-sm text-slate-400">Agents</p>
+                        <p class="mt-2 text-3xl font-semibold" x-text="agents.length"></p>
+                    </div>
+                    <div class="panel rounded-2xl p-5">
+                        <p class="text-sm text-slate-400">Connectors</p>
+                        <p class="mt-2 text-3xl font-semibold" x-text="connectorCount()"></p>
+                    </div>
+                </div>
+
+                <div class="panel rounded-2xl p-5" x-show="notifications.length">
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <h4 class="font-semibold">Skill review notifications</h4>
+                            <p class="text-sm text-slate-400">Latest approval and rejection feedback for your personal drafts.</p>
+                        </div>
+                        <button @click="loadNotifications()" class="rounded-xl border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Refresh</button>
+                    </div>
+                    <div class="mt-4 grid grid-cols-1 xl:grid-cols-2 gap-3">
+                        <template x-for="notification in notifications.slice(0, 4)" :key="notification.id">
+                            <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="font-medium" x-text="notification.skill_name"></div>
+                                    <span class="pill rounded-full px-2 py-1 text-xs" x-text="notification.verdict"></span>
+                                </div>
+                                <p class="mt-2 text-sm text-slate-300" x-text="notification.message"></p>
+                                <p class="mt-2 text-xs text-slate-500" x-text="formatDate(notification.timestamp)"></p>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </section>
+
+            <section x-show="section === 'create'" class="p-6 space-y-5">
+                <div class="panel rounded-3xl p-6">
+                    <p class="text-sm text-violet-300 font-medium">Create</p>
+                    <h3 class="mt-2 text-2xl font-semibold">Start a skill draft</h3>
+                    <p class="mt-2 text-slate-400">Create a personal draft, launch the document-to-skill wizard, or save a personal copy of an existing published skill.</p>
+                </div>
+
+                <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                    <a href="/skill-creator" target="_blank" class="card rounded-2xl p-5">
+                        <div class="text-xs uppercase tracking-wide text-violet-300">Guided</div>
+                        <h4 class="mt-2 text-lg font-semibold">From document</h4>
+                        <p class="mt-2 text-sm text-slate-400">Use the existing skill creator to generate a draft from PDFs, office docs, audio, video, or a written brief.</p>
+                    </a>
+                    <div class="card rounded-2xl p-5 xl:col-span-2">
+                        <div class="text-xs uppercase tracking-wide text-violet-300">Personal draft</div>
+                        <h4 class="mt-2 text-lg font-semibold">Blank skill</h4>
+                        <div class="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-3">
+                            <input x-model="createForm.name" class="rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-sm" placeholder="skill_name">
+                            <input x-model="createForm.keywords" class="rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-sm" placeholder="keywords, comma separated">
+                            <input x-model="createForm.description" class="lg:col-span-2 rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-sm" placeholder="Description">
+                            <textarea x-model="createForm.prompt" rows="6" class="lg:col-span-2 rounded-xl bg-slate-950 border border-slate-700 p-3 text-sm" placeholder="Skill instructions"></textarea>
+                        </div>
+                        <div class="mt-4 flex flex-wrap gap-2">
+                            <button @click="createBlankPersonalSkill()" class="rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium hover:bg-violet-500">Save personal draft</button>
+                            <button @click="section = 'skills'; workspaceFilter = 'published'" class="rounded-xl border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800">Clone existing skill</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section x-show="section === 'skills'" class="p-6 space-y-5">
+                <div class="flex flex-col lg:flex-row lg:items-center gap-3 justify-between">
+                    <div class="flex items-center gap-2">
+                        <input x-model="skillSearch" type="search" placeholder="Search skill name, description, keyword..."
+                               class="w-96 rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-sm focus:outline-none focus:border-violet-400">
+                        <select x-model="categoryFilter" class="rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-sm">
+                            <option value="">All categories</option>
+                            <template x-for="category in categories()" :key="category">
+                                <option :value="category" x-text="category"></option>
+                            </template>
+                        </select>
+                        <select x-model="modeFilter" class="rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-sm">
+                            <option value="">All modes</option>
+                            <option value="react">react</option>
+                            <option value="workflow">workflow</option>
+                            <option value="parallel">parallel</option>
+                            <option value="supervisor">supervisor</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <a href="/skill-builder/v2" target="_blank" class="rounded-xl border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Advanced editor</a>
+                        <button @click="section = 'create'" class="rounded-xl bg-violet-600 px-3 py-2 text-sm font-medium hover:bg-violet-500">Create skill</button>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap gap-2">
+                    <template x-for="filter in workspaceFilters" :key="filter.id">
+                        <button @click="workspaceFilter = filter.id"
+                                class="rounded-full px-3 py-1.5 text-xs border"
+                                :class="workspaceFilter === filter.id ? 'bg-violet-600 border-violet-500 text-white' : 'border-slate-700 text-slate-300 hover:bg-slate-800'"
+                                x-text="filter.label + ' (' + workspaceFilterCount(filter.id) + ')'"></button>
+                    </template>
+                </div>
+
+                <div x-show="loading.skills" class="text-sm text-slate-400">Loading skills...</div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4">
+                    <template x-for="skill in filteredSkills()" :key="skill.name + ':' + (skill.scope || 'org')">
+                        <div class="card rounded-2xl p-5 flex flex-col min-h-[220px]">
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                    <div class="flex items-center gap-2">
+                                        <h3 class="font-semibold truncate" x-text="skill.name"></h3>
+                                        <span class="pill rounded-full px-2 py-0.5 text-[10px]" x-text="skill.status || 'active'"></span>
+                                    </div>
+                                    <p class="mt-1 text-xs text-slate-400" x-text="categoryLabel(skill.category || 'other')"></p>
+                                </div>
+                                <span class="rounded-lg bg-slate-900 px-2 py-1 text-xs text-violet-200" x-text="skill.execution_mode || 'react'"></span>
+                            </div>
+                            <p class="mt-3 text-sm text-slate-300 line-clamp-3" x-text="skill.description || 'No description available.'"></p>
+                            <div class="mt-4 flex flex-wrap gap-2 text-[11px] text-slate-300">
+                                <span class="pill rounded-full px-2 py-1" x-text="skillLifecycleLabel(skill)"></span>
+                                <span class="pill rounded-full px-2 py-1" x-text="(skill.tools || []).length + ' tools'"></span>
+                                <span class="pill rounded-full px-2 py-1" x-text="(skill.context_files || []).length + ' context files'"></span>
+                                <span class="pill rounded-full px-2 py-1" x-text="skillJobCount(skill.name) + ' schedules'"></span>
+                                <span x-show="lastTestRun(skill.name)" class="pill rounded-full px-2 py-1" x-text="'last test: ' + lastTestRun(skill.name)?.status"></span>
+                                <span x-show="personalMeta(skill.name)?.submitted_at" class="pill rounded-full px-2 py-1" x-text="'submitted ' + formatDate(personalMeta(skill.name)?.submitted_at)"></span>
+                            </div>
+                            <div class="mt-auto pt-5 flex items-center gap-2">
+                                <button @click="selectSkill(skill)" class="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium hover:bg-violet-500">Open</button>
+                                <button @click="selectSkill(skill, 'test')" class="rounded-lg border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Test</button>
+                                <button @click="selectSkill(skill, 'schedule')" class="rounded-lg border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Schedule</button>
+                                <a :href="'/skill-builder/v2?edit=' + encodeURIComponent(skill.name)" target="_blank" class="rounded-lg border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Edit</a>
+                                <button x-show="isPersonalSkill(skill)"
+                                        @click="openPersonalDraftEditor(skill)"
+                                        class="rounded-lg border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Edit draft</button>
+                                <button x-show="isPersonalSkill(skill) && skillLifecycleScope(skill) !== 'submitted' && skillLifecycleScope(skill) !== 'approved'"
+                                        @click="submitPersonalSkill(skill)"
+                                        class="rounded-lg border border-emerald-700/70 px-3 py-2 text-sm text-emerald-200 hover:bg-emerald-950/50">Submit</button>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </section>
+
+            <section x-show="section === 'skill'" class="p-6 space-y-5">
+                <template x-if="selectedSkill">
+                    <div class="space-y-5">
+                        <div class="panel rounded-3xl p-6">
+                            <div class="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
+                                <div>
+                                    <button @click="section = 'skills'; selectedSkill = null" class="text-sm text-slate-400 hover:text-violet-300">Back to skills</button>
+                                    <h3 class="mt-3 text-3xl font-semibold" x-text="selectedSkill.name"></h3>
+                                    <p class="mt-2 max-w-4xl text-slate-300" x-text="selectedSkill.description || skillDetail.description || 'No description available.'"></p>
+                                    <div class="mt-4 flex flex-wrap gap-2 text-xs">
+                                        <span class="pill rounded-full px-3 py-1" x-text="'Mode: ' + (selectedSkill.execution_mode || skillDetail.execution_mode || 'react')"></span>
+                                        <span class="pill rounded-full px-3 py-1" x-text="'Category: ' + categoryLabel(selectedSkill.category || 'other')"></span>
+                                        <span class="pill rounded-full px-3 py-1" x-text="'Status: ' + (selectedSkill.status || 'active')"></span>
+                                        <span class="pill rounded-full px-3 py-1" x-text="'Lifecycle: ' + skillLifecycleLabel(selectedSkill)"></span>
+                                    </div>
+                                </div>
+                                <div class="flex flex-wrap gap-2">
+                                    <button @click="activeTab = 'knowledge'" class="rounded-xl border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Attach knowledge</button>
+                                    <button @click="activeTab = 'test'" class="rounded-xl border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Run test</button>
+                                    <button @click="activeTab = 'schedule'" class="rounded-xl border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Schedule</button>
+                                    <a :href="'/skill-builder/v2?edit=' + encodeURIComponent(selectedSkill.name)" target="_blank" class="rounded-xl bg-violet-600 px-3 py-2 text-sm font-medium hover:bg-violet-500">Advanced editor</a>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="border-b border-slate-800 flex gap-6 text-sm overflow-x-auto">
+                            <template x-for="tab in skillTabs" :key="tab.id">
+                                <button @click="activeTab = tab.id" class="py-3 border-b-2 border-transparent whitespace-nowrap"
+                                        :class="activeTab === tab.id ? 'tab-active' : 'text-slate-400 hover:text-slate-200'"
+                                        x-text="tab.label"></button>
+                            </template>
+                        </div>
+
+                        <div x-show="activeTab === 'overview'" class="grid grid-cols-1 xl:grid-cols-3 gap-5">
+                            <div class="panel rounded-2xl p-5 xl:col-span-2">
+                                <h4 class="font-semibold">Instructions preview</h4>
+                                <pre class="mt-3 max-h-96 overflow-auto scroll-thin whitespace-pre-wrap text-sm text-slate-300 bg-slate-950/70 rounded-xl p-4" x-text="skillDetail.prompt || 'No prompt loaded.'"></pre>
+                            </div>
+                            <div class="space-y-5">
+                                <div class="panel rounded-2xl p-5">
+                                    <h4 class="font-semibold">Tools</h4>
+                                    <div class="mt-3 flex flex-wrap gap-2">
+                                        <template x-for="tool in (skillDetail.tools || selectedSkill.tools || [])" :key="tool">
+                                            <span class="pill rounded-full px-3 py-1 text-xs" x-text="tool"></span>
+                                        </template>
+                                    </div>
+                                </div>
+                                <div class="panel rounded-2xl p-5">
+                                    <h4 class="font-semibold">Keywords</h4>
+                                    <div class="mt-3 flex flex-wrap gap-2">
+                                        <template x-for="kw in (skillDetail.keywords || selectedSkill.keywords || []).slice(0, 20)" :key="kw">
+                                            <span class="pill rounded-full px-3 py-1 text-xs" x-text="kw"></span>
+                                        </template>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div x-show="activeTab === 'knowledge'" class="panel rounded-2xl p-5">
+                            <div class="flex items-center justify-between gap-3">
+                                <div>
+                                    <h4 class="font-semibold">Knowledge files</h4>
+                                    <p class="text-sm text-slate-400">Attach context directly to this skill's knowledge directory.</p>
+                                </div>
+                                <label class="rounded-xl bg-violet-600 px-3 py-2 text-sm font-medium hover:bg-violet-500 cursor-pointer">
+                                    Upload file
+                                    <span x-ref="knowledgeUploadContainer" x-init="$nextTick(() => {
+                                        const inp = document.createElement('input');
+                                        inp.type = 'file';
+                                        inp.className = 'hidden';
+                                        inp.accept = '.pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls,.txt,.md,.csv,.json,.yaml,.yml,.png,.jpg,.jpeg,.gif';
+                                        inp.dataset.maxSizeMb = '10';
+                                        inp.addEventListener('change', (e) => uploadKnowledge(e));
+                                        $refs.knowledgeUploadContainer.appendChild(inp);
+                                    })"></span>
+                                </label>
+                            </div>
+                            <div class="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                                <template x-for="file in knowledgeFiles" :key="file.filename">
+                                    <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+                                        <div class="font-medium truncate" x-text="file.filename"></div>
+                                        <div class="mt-1 text-xs text-slate-400" x-text="formatBytes(file.size_bytes) + ' | ' + (file.ext || 'file')"></div>
+                                        <div class="mt-2 flex flex-wrap gap-2 text-[11px]">
+                                            <span class="pill rounded-full px-2 py-1" x-text="file.status || 'available'"></span>
+                                            <span class="pill rounded-full px-2 py-1" x-text="formatDate(file.modified_at)"></span>
+                                        </div>
+                                        <button @click="deleteKnowledge(file.filename)" class="mt-3 text-xs text-red-300 hover:text-red-200">Delete</button>
+                                    </div>
+                                </template>
+                            </div>
+                            <div x-show="knowledgeFiles.length === 0" class="mt-5 text-sm text-slate-400">No skill-specific knowledge files yet.</div>
+                        </div>
+
+                        <div x-show="activeTab === 'tools'" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <template x-for="tool in tools" :key="tool.id">
+                                <div class="card rounded-2xl p-5">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div>
+                                            <h4 class="font-semibold" x-text="tool.name"></h4>
+                                            <p class="mt-1 text-sm text-slate-400" x-text="tool.description"></p>
+                                        </div>
+                                        <span class="pill rounded-full px-2 py-1 text-xs" x-text="tool.category"></span>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+
+                        <div x-show="activeTab === 'test'" class="panel rounded-2xl p-5">
+                            <h4 class="font-semibold">Test this skill</h4>
+                            <p class="text-sm text-slate-400">Runs in light mode with this skill pinned.</p>
+                            <textarea x-model="testPrompt" rows="5" class="mt-4 w-full rounded-xl bg-slate-950 border border-slate-700 p-3 text-sm focus:outline-none focus:border-violet-400" placeholder="Enter a test prompt..."></textarea>
+                            <div class="mt-3 flex items-center gap-2">
+                                <button @click="runSkillTest()" :disabled="running.test || !testPrompt.trim()" class="rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium hover:bg-violet-500 disabled:opacity-50">
+                                    <span x-text="running.test ? 'Running...' : 'Run test'"></span>
+                                </button>
+                                <span class="text-xs text-slate-400" x-show="testResult.duration_ms" x-text="'Duration: ' + testResult.duration_ms + 'ms'"></span>
+                            </div>
+                            <pre x-show="testResult.response || testResult.error" class="mt-4 max-h-96 overflow-auto scroll-thin whitespace-pre-wrap rounded-xl bg-slate-950/80 p-4 text-sm" :class="testResult.error ? 'text-red-200' : 'text-slate-200'" x-text="testResult.response || testResult.error"></pre>
+                            <div class="mt-6">
+                                <div class="flex items-center justify-between gap-3">
+                                    <h5 class="font-medium">Recent Studio test runs</h5>
+                                    <button @click="loadTestRuns(selectedSkill.name)" class="rounded-lg border border-slate-700 px-2 py-1 text-xs hover:bg-slate-800">Refresh</button>
+                                </div>
+                                <div class="mt-3 space-y-3">
+                                    <template x-for="run in testRuns" :key="run.id">
+                                        <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+                                            <div class="flex items-start justify-between gap-3">
+                                                <div>
+                                                    <div class="font-medium" x-text="run.prompt_preview || run.skill"></div>
+                                                    <div class="mt-1 text-xs text-slate-400" x-text="formatDate(run.timestamp) + ' | ' + (run.duration_ms || 0) + 'ms'"></div>
+                                                </div>
+                                                <span class="pill rounded-full px-2 py-1 text-xs" x-text="run.status"></span>
+                                            </div>
+                                            <p class="mt-2 text-sm text-slate-300 line-clamp-3" x-text="run.response_preview || 'No preview captured.'"></p>
+                                        </div>
+                                    </template>
+                                    <div x-show="testRuns.length === 0" class="text-sm text-slate-400">No Studio test history yet.</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div x-show="activeTab === 'schedule'" class="grid grid-cols-1 xl:grid-cols-2 gap-5">
+                            <div class="panel rounded-2xl p-5">
+                                <h4 class="font-semibold">Create schedule</h4>
+                                <div class="mt-4 space-y-3">
+                                    <input x-model="scheduleForm.name" class="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-sm" placeholder="Schedule name">
+                                    <input x-model="scheduleForm.cron" class="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-sm" placeholder="Cron expression, e.g. 0 9 * * *">
+                                    <textarea x-model="scheduleForm.task" rows="5" class="w-full rounded-xl bg-slate-950 border border-slate-700 p-3 text-sm" placeholder="Task prompt for this skill"></textarea>
+                                    <label class="flex items-center gap-2 text-sm text-slate-300">
+                                        <input type="checkbox" x-model="scheduleForm.enabled" class="rounded border-slate-700 bg-slate-950">
+                                        Enable immediately
+                                    </label>
+                                    <button @click="createSchedule()" :disabled="running.schedule" class="rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium hover:bg-violet-500 disabled:opacity-50">Create schedule</button>
+                                </div>
+                            </div>
+                            <div class="panel rounded-2xl p-5">
+                                <h4 class="font-semibold">Existing schedules</h4>
+                                <div class="mt-4 space-y-3">
+                                    <template x-for="job in selectedSkillJobs()" :key="job.id">
+                                        <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+                                            <div class="flex items-start justify-between gap-3">
+                                                <div>
+                                                    <div class="font-medium" x-text="job.name"></div>
+                                                    <div class="text-xs text-slate-400" x-text="job.cron + ' | next: ' + (job.next_run_at || 'not scheduled')"></div>
+                                                </div>
+                                                <span class="pill rounded-full px-2 py-1 text-xs" x-text="job.enabled ? 'enabled' : 'disabled'"></span>
+                                            </div>
+                                            <p class="mt-2 text-sm text-slate-400 line-clamp-2" x-text="job.task"></p>
+                                            <div class="mt-3 flex gap-2">
+                                                <button @click="runJob(job)" class="rounded-lg border border-slate-700 px-2 py-1 text-xs hover:bg-slate-800">Run now</button>
+                                                <button @click="toggleJob(job)" class="rounded-lg border border-slate-700 px-2 py-1 text-xs hover:bg-slate-800" x-text="job.enabled ? 'Disable' : 'Enable'"></button>
+                                            </div>
+                                        </div>
+                                    </template>
+                                    <div x-show="selectedSkillJobs().length === 0" class="text-sm text-slate-400">No schedules yet for this skill.</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div x-show="activeTab === 'runs'" class="panel rounded-2xl p-5">
+                            <div class="flex items-center justify-between gap-3">
+                                <div>
+                                    <h4 class="font-semibold">Runs and observability</h4>
+                                    <p class="text-sm text-slate-400">Scheduled runs, traces, evidence links, and FinOps summary for this skill.</p>
+                                </div>
+                                <button @click="loadObservabilityForSkill(selectedSkill.name)" class="rounded-xl border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Refresh</button>
+                            </div>
+
+                            <div class="mt-5 grid grid-cols-1 md:grid-cols-4 gap-3">
+                                <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+                                    <p class="text-xs text-slate-400">Recent traces</p>
+                                    <p class="mt-2 text-2xl font-semibold" x-text="skillTraces.length"></p>
+                                </div>
+                                <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+                                    <p class="text-xs text-slate-400">Requests</p>
+                                    <p class="mt-2 text-2xl font-semibold" x-text="finopsSummary.total_requests || 0"></p>
+                                </div>
+                                <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+                                    <p class="text-xs text-slate-400">Cost</p>
+                                    <p class="mt-2 text-2xl font-semibold" x-text="formatCost(finopsSummary.total_cost_usd)"></p>
+                                </div>
+                                <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+                                    <p class="text-xs text-slate-400">Tokens</p>
+                                    <p class="mt-2 text-2xl font-semibold" x-text="formatNumber((finopsSummary.total_prompt_tokens || 0) + (finopsSummary.total_completion_tokens || 0))"></p>
+                                </div>
+                            </div>
+
+                            <div class="mt-5 grid grid-cols-1 xl:grid-cols-2 gap-5">
+                                <div>
+                                    <h5 class="font-medium">Recent scheduled runs</h5>
+                                    <div class="mt-3 space-y-3">
+                                        <template x-for="run in selectedRuns" :key="run.id">
+                                            <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+                                                <div class="flex items-center justify-between gap-3">
+                                                    <div class="font-medium" x-text="run.job_name || run.job_id"></div>
+                                                    <span class="pill rounded-full px-2 py-1 text-xs" x-text="run.status"></span>
+                                                </div>
+                                                <div class="mt-1 text-xs text-slate-400" x-text="(run.started_at || '') + ' | ' + (run.duration_seconds || 0) + 's'"></div>
+                                                <p class="mt-2 text-sm text-slate-300 line-clamp-3" x-text="run.output_response || run.error_message || 'No output captured.'"></p>
+                                            </div>
+                                        </template>
+                                        <div x-show="selectedRuns.length === 0" class="text-sm text-slate-400">No scheduled run history loaded for this skill.</div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <h5 class="font-medium">Recent traces</h5>
+                                    <div class="mt-3 space-y-3">
+                                        <template x-for="trace in skillTraces" :key="trace.trace_id">
+                                            <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+                                                <div class="flex items-start justify-between gap-3">
+                                                    <div class="min-w-0">
+                                                        <div class="font-medium truncate" x-text="trace.query_preview || trace.trace_id"></div>
+                                                        <div class="mt-1 text-xs text-slate-400" x-text="(trace.created_at || trace.started_at || '') + ' | ' + (trace.total_ms || 0) + 'ms'"></div>
+                                                    </div>
+                                                    <span class="pill rounded-full px-2 py-1 text-xs" x-text="trace.status || 'unknown'"></span>
+                                                </div>
+                                                <div class="mt-3 flex flex-wrap gap-2">
+                                                    <button @click="loadTraceDetail(trace.trace_id)" class="rounded-lg border border-slate-700 px-2 py-1 text-xs hover:bg-slate-800">Trace detail</button>
+                                                    <button @click="loadEvidence(trace.trace_id)" class="rounded-lg border border-slate-700 px-2 py-1 text-xs hover:bg-slate-800">Evidence</button>
+                                                </div>
+                                            </div>
+                                        </template>
+                                        <div x-show="skillTraces.length === 0" class="text-sm text-slate-400">No trace data available for this skill yet.</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <pre x-show="tracePreview" class="mt-5 max-h-80 overflow-auto scroll-thin whitespace-pre-wrap rounded-xl bg-slate-950/80 p-4 text-xs text-slate-200" x-text="tracePreview"></pre>
+                        </div>
+
+                        <div x-show="activeTab === 'settings'" class="panel rounded-2xl p-5">
+                            <h4 class="font-semibold">Settings and lifecycle</h4>
+                            <div class="mt-4 flex flex-wrap gap-2">
+                                <button @click="updateSkillStatus('active')" class="rounded-xl border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Mark active</button>
+                                <button @click="updateSkillStatus('draft')" class="rounded-xl border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Mark draft</button>
+                                <button @click="cloneSelectedSkill()" class="rounded-xl border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Clone org skill</button>
+                                <button @click="cloneSelectedSkillToPersonal()" class="rounded-xl border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Save personal copy</button>
+                                <button x-show="isPersonalSkill(selectedSkill)"
+                                        @click="openPersonalDraftEditor(selectedSkill)"
+                                        class="rounded-xl border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Edit personal draft</button>
+                                <button x-show="isPersonalSkill(selectedSkill) && skillLifecycleScope(selectedSkill) !== 'submitted' && skillLifecycleScope(selectedSkill) !== 'approved'"
+                                        @click="submitPersonalSkill(selectedSkill)"
+                                        class="rounded-xl border border-emerald-700/70 px-3 py-2 text-sm text-emerald-200 hover:bg-emerald-950/50">Submit for review</button>
+                                <button x-show="isPersonalSkill(selectedSkill)"
+                                        @click="deletePersonalSkill(selectedSkill)"
+                                        class="rounded-xl border border-red-700/70 px-3 py-2 text-sm text-red-200 hover:bg-red-950/50">Delete personal draft</button>
+                                <a :href="'/skill-builder/v2?edit=' + encodeURIComponent(selectedSkill.name)" target="_blank" class="rounded-xl bg-violet-600 px-3 py-2 text-sm hover:bg-violet-500">Open advanced editor</a>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </section>
+
+            <section x-show="section === 'schedules'" class="p-6 space-y-5">
+                <div class="panel rounded-2xl p-5">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-xl font-semibold">Schedules</h3>
+                            <p class="text-sm text-slate-400">Scheduled skill runs backed by the existing cron service.</p>
+                        </div>
+                        <button @click="loadCron()" class="rounded-xl border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Refresh</button>
+                    </div>
+                    <div class="mt-5 grid grid-cols-1 xl:grid-cols-2 gap-4">
+                        <template x-for="job in jobs" :key="job.id">
+                            <div class="card rounded-2xl p-5">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div>
+                                        <h4 class="font-semibold" x-text="job.name"></h4>
+                                        <p class="text-xs text-slate-400" x-text="job.skill_name + ' | ' + job.cron"></p>
+                                    </div>
+                                    <span class="pill rounded-full px-2 py-1 text-xs" x-text="job.enabled ? 'enabled' : 'disabled'"></span>
+                                </div>
+                                <p class="mt-3 text-sm text-slate-300 line-clamp-2" x-text="job.task"></p>
+                                <div class="mt-4 flex gap-2">
+                                    <button @click="openSkillByName(job.skill_name, 'schedule')" class="rounded-lg bg-violet-600 px-3 py-2 text-sm hover:bg-violet-500">Open skill</button>
+                                    <button @click="runJob(job)" class="rounded-lg border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Run now</button>
+                                    <button @click="toggleJob(job)" class="rounded-lg border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800" x-text="job.enabled ? 'Disable' : 'Enable'"></button>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </section>
+
+            <section x-show="section === 'knowledge'" class="p-6 space-y-5">
+                <div class="panel rounded-2xl p-6">
+                    <h3 class="text-xl font-semibold">Files and knowledge</h3>
+                    <p class="mt-2 text-slate-400">Upload to a skill from its detail page, or manage broader context in the existing knowledge tools.</p>
+                    <div class="mt-5 flex flex-wrap gap-2">
+                        <button @click="section = 'skills'" class="rounded-xl bg-violet-600 px-3 py-2 text-sm hover:bg-violet-500">Choose a skill to attach knowledge</button>
+                        <a href="/dashboard/v2#knowledge" target="_blank" class="rounded-xl border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Open Knowledge Manager</a>
+                        <a href="/" target="_blank" class="rounded-xl border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Use chat file upload</a>
+                    </div>
+                </div>
+            </section>
+
+            <section x-show="section === 'review'" class="p-6 space-y-5">
+                <div class="panel rounded-2xl p-5">
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <h3 class="text-xl font-semibold">Skill review queue</h3>
+                            <p class="text-sm text-slate-400">Preview submitted personal skills and approve or reject them for organization-wide publishing.</p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <select x-model="submissionStatusFilter" @change="loadSubmissions()" class="rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-sm">
+                                <option value="pending">Pending</option>
+                                <option value="approved">Approved</option>
+                                <option value="rejected">Rejected</option>
+                                <option value="cancelled">Cancelled</option>
+                                <option value="all">All</option>
+                            </select>
+                            <button @click="loadSubmissions()" class="rounded-xl border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Refresh</button>
+                        </div>
+                    </div>
+
+                    <div x-show="reviewAccessDenied" class="mt-5 rounded-xl border border-amber-500/40 bg-amber-950/30 p-4 text-sm text-amber-100">
+                        Admin access is required to review skill submissions.
+                    </div>
+
+                    <div x-show="!reviewAccessDenied" class="mt-5 grid grid-cols-1 xl:grid-cols-2 gap-5">
+                        <div class="space-y-3">
+                            <template x-for="submission in submissions" :key="submission.submission_id">
+                                <button @click="selectSubmission(submission)" class="w-full text-left rounded-xl border border-slate-800 bg-slate-950/60 p-4 hover:bg-slate-900"
+                                        :class="selectedSubmission && selectedSubmission.submission_id === submission.submission_id ? 'border-violet-500/70' : ''">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div>
+                                            <div class="font-medium" x-text="submission.skill_name"></div>
+                                            <div class="mt-1 text-xs text-slate-400" x-text="'by ' + submission.submitted_by + ' | ' + formatDate(submission.submitted_at)"></div>
+                                        </div>
+                                        <span class="pill rounded-full px-2 py-1 text-xs" x-text="submission.status"></span>
+                                    </div>
+                                    <p class="mt-2 text-sm text-slate-400 line-clamp-2" x-text="submission.notes || 'No submission notes.'"></p>
+                                </button>
+                            </template>
+                            <div x-show="submissions.length === 0" class="text-sm text-slate-400">No submissions found for this filter.</div>
+                        </div>
+
+                        <div class="rounded-2xl border border-slate-800 bg-slate-950/60 p-5">
+                            <template x-if="selectedSubmission">
+                                <div>
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div>
+                                            <h4 class="font-semibold" x-text="selectedSubmission.skill_name"></h4>
+                                            <p class="mt-1 text-xs text-slate-400" x-text="selectedSubmission.submission_id"></p>
+                                        </div>
+                                        <span class="pill rounded-full px-2 py-1 text-xs" x-text="selectedSubmission.status"></span>
+                                    </div>
+                                    <pre class="mt-4 max-h-96 overflow-auto scroll-thin whitespace-pre-wrap rounded-xl bg-slate-950 p-4 text-xs text-slate-200" x-text="submissionMd || 'Loading SKILL.md preview...'"></pre>
+                                    <div x-show="submissionPreview" class="mt-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4">
+                                        <div class="flex flex-wrap gap-2 text-xs">
+                                            <span class="pill rounded-full px-2 py-1" x-text="'target: ' + (submissionPreview?.target_skill_name || selectedSubmission.skill_name)"></span>
+                                            <span class="pill rounded-full px-2 py-1" x-text="submissionPreview?.has_conflict ? 'name conflict' : 'no conflict'"></span>
+                                            <span class="pill rounded-full px-2 py-1" x-text="submissionPreview?.conflict_strategy || 'publish_as_submitted'"></span>
+                                        </div>
+                                        <pre x-show="submissionPreview?.diff" class="mt-3 max-h-56 overflow-auto scroll-thin whitespace-pre-wrap rounded-xl bg-slate-950 p-3 text-xs text-slate-300" x-text="submissionPreview.diff"></pre>
+                                        <p x-show="submissionPreview?.diff_truncated" class="mt-2 text-xs text-amber-200">Diff preview truncated.</p>
+                                    </div>
+                                    <textarea x-model="reviewFeedback" rows="3" class="mt-4 w-full rounded-xl bg-slate-950 border border-slate-700 p-3 text-sm" placeholder="Review feedback"></textarea>
+                                    <div class="mt-3 flex flex-wrap gap-2">
+                                        <button x-show="selectedSubmission.status === 'pending'" @click="reviewSubmission('approved')" class="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium hover:bg-emerald-500">Approve and publish</button>
+                                        <button x-show="selectedSubmission.status === 'pending'" @click="reviewSubmission('rejected')" :disabled="!reviewFeedback.trim()" class="rounded-xl border border-red-700/70 px-4 py-2 text-sm text-red-200 hover:bg-red-950/50 disabled:opacity-50">Reject</button>
+                                    </div>
+                                </div>
+                            </template>
+                            <div x-show="!selectedSubmission" class="text-sm text-slate-400">Select a submission to preview and review.</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section x-show="section === 'security'" class="p-6 space-y-5">
+                <div class="panel rounded-3xl p-6">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <p class="text-sm text-violet-300 font-medium">Security Console</p>
+                            <h3 class="mt-2 text-2xl font-semibold">Policies, simulator, and entitlement audit</h3>
+                            <p class="mt-2 text-slate-400">Operate tenant policy files, test access decisions, and inspect recent allow/deny events.</p>
+                        </div>
+                        <button @click="loadSecurity()" class="rounded-xl border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Refresh security</button>
+                    </div>
+                    <div x-show="securityAccessDenied" class="mt-5 rounded-xl border border-amber-500/40 bg-amber-950/30 p-4 text-sm text-amber-100">
+                        Admin access is required to manage security policies and entitlement audit.
+                    </div>
+                </div>
+
+                <div x-show="!securityAccessDenied" class="grid grid-cols-1 2xl:grid-cols-3 gap-5">
+                    <div class="panel rounded-2xl p-5 2xl:col-span-2">
+                        <div class="flex items-start justify-between gap-4">
+                            <div>
+                                <h4 class="font-semibold">Tenant Policy YAML</h4>
+                                <p class="mt-1 text-sm text-slate-400" x-text="'Policies: ' + (securityPolicyValidation.policy_count || 0)"></p>
+                            </div>
+                            <div class="flex gap-2">
+                                <button @click="validateSecurityPolicy()" class="rounded-xl border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Validate</button>
+                                <button @click="saveSecurityPolicy()" :disabled="securityPolicySaving"
+                                        class="rounded-xl bg-violet-600 px-3 py-2 text-sm font-medium hover:bg-violet-500 disabled:opacity-50"
+                                        x-text="securityPolicySaving ? 'Saving...' : 'Save policy'"></button>
+                            </div>
+                        </div>
+                        <textarea x-model="securityPolicyRaw" rows="18"
+                                  class="mt-4 w-full rounded-xl bg-slate-950 border border-slate-700 p-4 font-mono text-xs text-slate-200 focus:outline-none focus:border-violet-400"
+                                  spellcheck="false"></textarea>
+                        <div class="mt-3 grid grid-cols-1 xl:grid-cols-2 gap-3 text-sm">
+                            <div class="rounded-xl border p-3"
+                                 :class="securityPolicyValidation.valid ? 'border-emerald-500/40 bg-emerald-950/20 text-emerald-100' : 'border-red-500/40 bg-red-950/30 text-red-100'">
+                                <span x-text="securityPolicyValidation.valid ? 'Policy validation passed' : 'Policy validation failed'"></span>
+                            </div>
+                            <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-3 text-slate-300">
+                                Deny policies take precedence over matching allow policies.
+                            </div>
+                        </div>
+                        <div x-show="(securityPolicyValidation.errors || []).length" class="mt-3 rounded-xl border border-red-500/40 bg-red-950/30 p-3 text-sm text-red-100">
+                            <template x-for="err in securityPolicyValidation.errors" :key="err">
+                                <div x-text="err"></div>
+                            </template>
+                        </div>
+                        <div x-show="(securityPolicyValidation.warnings || []).length" class="mt-3 rounded-xl border border-amber-500/40 bg-amber-950/20 p-3 text-sm text-amber-100">
+                            <template x-for="warn in securityPolicyValidation.warnings" :key="warn">
+                                <div x-text="warn"></div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <div class="panel rounded-2xl p-5">
+                        <h4 class="font-semibold">Policy Summary</h4>
+                        <p class="mt-1 text-sm text-slate-400">Parsed policies from the active tenant file.</p>
+                        <div class="mt-4 space-y-3 max-h-[34rem] overflow-auto scroll-thin">
+                            <template x-for="policy in securityPolicyRows()" :key="policy.id">
+                                <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div class="font-medium" x-text="policy.id"></div>
+                                        <span class="pill rounded-full px-2 py-1 text-xs"
+                                              :class="policy.effect === 'deny' ? 'text-red-200' : 'text-emerald-200'"
+                                              x-text="policy.effect"></span>
+                                    </div>
+                                    <p class="mt-2 text-xs text-slate-400" x-text="policy.reason || 'No reason provided.'"></p>
+                                    <div class="mt-3 flex flex-wrap gap-2 text-xs">
+                                        <span class="pill rounded-full px-2 py-1" x-text="'actions: ' + (policy.actions || []).join(', ')"></span>
+                                        <span class="pill rounded-full px-2 py-1" x-text="'resources: ' + (policy.resources || []).join(', ')"></span>
+                                    </div>
+                                </div>
+                            </template>
+                            <div x-show="securityPolicyRows().length === 0" class="text-sm text-slate-400">No policies defined.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div x-show="!securityAccessDenied" class="grid grid-cols-1 2xl:grid-cols-2 gap-5">
+                    <div class="panel rounded-2xl p-5">
+                        <div class="flex items-start justify-between gap-4">
+                            <div>
+                                <h4 class="font-semibold">Access Simulator</h4>
+                                <p class="mt-1 text-sm text-slate-400">Answer “can this principal do this action on this resource?” Reuse the same principal for effective access.</p>
+                            </div>
+                            <div class="flex gap-2">
+                                <button @click="loadEffectiveAccess()" :disabled="securityEffectiveAccessLoading" class="rounded-xl border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800 disabled:opacity-50"
+                                        x-text="securityEffectiveAccessLoading ? 'Loading...' : 'Effective access'"></button>
+                                <button @click="simulateSecurityDecision()" class="rounded-xl bg-violet-600 px-3 py-2 text-sm font-medium hover:bg-violet-500">Simulate</button>
+                            </div>
+                        </div>
+                        <div class="mt-4 grid grid-cols-1 xl:grid-cols-2 gap-3">
+                            <input x-model="securitySimulationForm.user_id" class="rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-sm" placeholder="user_id">
+                            <input x-model="securitySimulationForm.email" class="rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-sm" placeholder="email">
+                            <input x-model="securitySimulationForm.roles" class="rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-sm" placeholder="roles: user,admin">
+                            <input x-model="securitySimulationForm.groups" class="rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-sm" placeholder="groups: finance,ap">
+                            <input x-model="securitySimulationForm.action" class="rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-sm" placeholder="action: use">
+                            <div class="grid grid-cols-2 gap-2">
+                                <input x-model="securitySimulationForm.resource_type" class="rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-sm" placeholder="resource type">
+                                <input x-model="securitySimulationForm.resource_id" class="rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-sm" placeholder="resource id">
+                            </div>
+                        </div>
+                        <div x-show="securitySimulationResult" class="mt-4 rounded-xl border p-4"
+                             :class="securitySimulationResult?.allowed ? 'border-emerald-500/40 bg-emerald-950/20' : 'border-red-500/40 bg-red-950/30'">
+                            <div class="flex items-center justify-between gap-3">
+                                <div class="font-semibold" x-text="securitySimulationResult?.allowed ? 'Allowed' : 'Denied'"></div>
+                                <span class="pill rounded-full px-2 py-1 text-xs" x-text="securitySimulationResult?.matched_policy || 'no policy'"></span>
+                            </div>
+                            <p class="mt-2 text-sm text-slate-300" x-text="securitySimulationResult?.reason"></p>
+                            <p class="mt-2 text-xs text-slate-500" x-text="securitySimulationResult?.resource"></p>
+                        </div>
+                    </div>
+
+                    <div class="panel rounded-2xl p-5">
+                        <div class="flex items-start justify-between gap-4">
+                            <div>
+                                <h4 class="font-semibold">Effective Access</h4>
+                                <p class="mt-1 text-sm text-slate-400">All live agents, skills, tools, context files, external systems, DBs, and MCP connections allowed or denied for the simulator principal.</p>
+                            </div>
+                            <button @click="loadEffectiveAccess()" :disabled="securityEffectiveAccessLoading" class="rounded-xl border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800 disabled:opacity-50"
+                                    x-text="securityEffectiveAccessLoading ? 'Loading...' : 'Refresh access'"></button>
+                        </div>
+                        <div x-show="securityEffectiveAccess" class="mt-4 grid grid-cols-2 xl:grid-cols-4 gap-3">
+                            <template x-for="type in effectiveAccessTypes()" :key="type">
+                                <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                                    <div class="text-xs uppercase tracking-wide text-slate-500" x-text="type"></div>
+                                    <div class="mt-2 text-sm">
+                                        <span class="text-emerald-200" x-text="securityEffectiveAccess.summary?.[type]?.allowed || 0"></span>
+                                        <span class="text-slate-500"> allowed / </span>
+                                        <span class="text-red-200" x-text="securityEffectiveAccess.summary?.[type]?.denied || 0"></span>
+                                        <span class="text-slate-500"> denied</span>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                        <div x-show="securityEffectiveAccess" class="mt-4 space-y-4 max-h-[30rem] overflow-auto scroll-thin">
+                            <template x-for="type in effectiveAccessTypes()" :key="type">
+                                <div class="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+                                    <div class="flex items-center justify-between gap-3">
+                                        <h5 class="font-medium capitalize" x-text="type"></h5>
+                                        <span class="text-xs text-slate-500" x-text="(securityEffectiveAccess.summary?.[type]?.total || 0) + ' total'"></span>
+                                    </div>
+                                    <div class="mt-3">
+                                        <p class="text-xs uppercase tracking-wide text-emerald-300">Allowed</p>
+                                        <div class="mt-2 flex flex-wrap gap-2">
+                                            <template x-for="row in effectiveAccessRows(type, 'allowed').slice(0, 18)" :key="row.key">
+                                                <span class="pill rounded-full px-2 py-1 text-xs" x-text="row.id + ' · ' + row.allowed_actions.join('/')"></span>
+                                            </template>
+                                            <span x-show="effectiveAccessRows(type, 'allowed').length === 0" class="text-xs text-slate-500">None</span>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3">
+                                        <p class="text-xs uppercase tracking-wide text-red-300">Denied</p>
+                                        <div class="mt-2 flex flex-wrap gap-2">
+                                            <template x-for="row in effectiveAccessRows(type, 'denied').slice(0, 18)" :key="row.key">
+                                                <span class="pill rounded-full px-2 py-1 text-xs text-red-200" x-text="row.id"></span>
+                                            </template>
+                                            <span x-show="effectiveAccessRows(type, 'denied').length === 0" class="text-xs text-slate-500">None</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                        <div x-show="!securityEffectiveAccess" class="mt-4 text-sm text-slate-400">
+                            Enter a principal in the simulator and click Effective access to see the full policy result.
+                        </div>
+                        <div class="mt-5 rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+                            <div class="flex items-center justify-between gap-3">
+                                <h5 class="font-medium">External Access Inventory</h5>
+                                <span class="text-xs text-slate-500" x-text="securityExternalResources.length + ' registered'"></span>
+                            </div>
+                            <div class="mt-3 space-y-2 max-h-48 overflow-auto scroll-thin">
+                                <template x-for="resource in securityExternalResources" :key="resource.id">
+                                    <div class="rounded-lg border border-slate-800 bg-slate-950/70 p-3 text-xs">
+                                        <div class="flex items-start justify-between gap-3">
+                                            <div>
+                                                <div class="font-medium text-slate-200" x-text="resource.id"></div>
+                                                <p class="mt-1 text-slate-500" x-text="resource.label || resource.type"></p>
+                                            </div>
+                                            <span class="pill rounded-full px-2 py-1" x-text="resource.risk || resource.type"></span>
+                                        </div>
+                                        <p class="mt-2 text-slate-500" x-text="'linked credentials: ' + ((resource.credentials || []).join(', ') || 'none')"></p>
+                                    </div>
+                                </template>
+                                <div x-show="securityExternalResources.length === 0" class="text-xs text-slate-500">No external resources registered.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="panel rounded-2xl p-5">
+                        <div class="flex items-start justify-between gap-4">
+                            <div>
+                                <h4 class="font-semibold">Entitlement Audit</h4>
+                                <p class="mt-1 text-sm text-slate-400">Recent decisions from `entitlements_audit.jsonl`.</p>
+                            </div>
+                            <button @click="loadSecurityAudit()" class="rounded-xl border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Refresh audit</button>
+                        </div>
+                        <div class="mt-4 grid grid-cols-1 xl:grid-cols-4 gap-2">
+                            <input x-model="securityAuditFilters.user_id" class="rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-sm" placeholder="user/email">
+                            <input x-model="securityAuditFilters.action" class="rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-sm" placeholder="action">
+                            <input x-model="securityAuditFilters.resource" class="rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-sm" placeholder="resource">
+                            <label class="rounded-xl border border-slate-700 px-3 py-2 text-sm flex items-center gap-2">
+                                <input type="checkbox" x-model="securityAuditFilters.deniedOnly">
+                                Denied only
+                            </label>
+                        </div>
+                        <div class="mt-4 space-y-3 max-h-[30rem] overflow-auto scroll-thin">
+                            <template x-for="event in securityAuditEvents" :key="event.timestamp + event.user_id + event.resource">
+                                <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div>
+                                            <div class="font-medium" x-text="event.user_id || event.email || 'unknown user'"></div>
+                                            <p class="mt-1 text-xs text-slate-500" x-text="formatDate(event.timestamp)"></p>
+                                        </div>
+                                        <span class="pill rounded-full px-2 py-1 text-xs" x-text="event.allowed ? 'allowed' : 'denied'"></span>
+                                    </div>
+                                    <p class="mt-2 text-sm text-slate-300" x-text="event.action + ' → ' + event.resource"></p>
+                                    <p class="mt-1 text-xs text-slate-500" x-text="(event.matched_policy || 'default') + ' · ' + (event.reason || '')"></p>
+                                </div>
+                            </template>
+                            <div x-show="securityAuditEvents.length === 0" class="text-sm text-slate-400">No audit events found for the current filters.</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section x-show="section === 'connectors'" class="p-6 space-y-5">
+                <div class="panel rounded-2xl p-5">
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <h3 class="text-xl font-semibold">Connectors</h3>
+                            <p class="text-sm text-slate-400">MCP connections are validated from agent configuration. Built-in tools are shown below.</p>
+                        </div>
+                        <button @click="loadConnectorHealth()" class="rounded-xl border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Test connectors</button>
+                    </div>
+                    <div class="mt-5 grid grid-cols-1 xl:grid-cols-2 gap-4">
+                        <div>
+                            <h4 class="font-semibold mb-3">Built-in tools</h4>
+                            <div class="space-y-3">
+                                <template x-for="tool in tools" :key="tool.id">
+                                    <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+                                        <div class="font-medium" x-text="tool.name"></div>
+                                        <p class="mt-1 text-sm text-slate-400" x-text="tool.description"></p>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold mb-3">Agent MCP connections</h4>
+                            <div class="space-y-3">
+                                <template x-for="agent in agents" :key="agent.id">
+                                    <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+                                        <div class="flex items-start justify-between gap-3">
+                                            <div>
+                                                <div class="font-medium" x-text="agent.name"></div>
+                                                <p class="mt-1 text-xs text-slate-400" x-text="(agent.mcp_connections || []).length + ' MCP connections'"></p>
+                                            </div>
+                                            <span class="pill rounded-full px-2 py-1 text-xs" x-text="connectorReadiness(agent)"></span>
+                                        </div>
+                                        <template x-for="conn in (agent.mcp_connections || [])" :key="conn.name || conn.url || conn.command">
+                                            <div class="mt-2 text-xs pill rounded-lg px-2 py-1 inline-block mr-2" x-text="(conn.name || 'connection') + ' / ' + (conn.type || 'direct')"></div>
+                                        </template>
+                                        <p class="mt-3 text-xs text-slate-500" x-text="connectorReadinessHint(agent)"></p>
+                                        <template x-for="item in connectorHealthItems(agent)" :key="item.index">
+                                            <div class="mt-3 rounded-lg border border-slate-800 bg-slate-950/70 p-3 text-xs">
+                                                <div class="flex items-center justify-between gap-3">
+                                                    <span class="font-medium" x-text="item.name"></span>
+                                                    <span class="pill rounded-full px-2 py-1" x-text="item.status"></span>
+                                                </div>
+                                                <p x-show="(item.errors || []).length" class="mt-2 text-red-200" x-text="(item.errors || []).join('; ')"></p>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section x-show="section === 'agents'" class="p-6">
+                <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    <template x-for="agent in agents" :key="agent.id">
+                        <div class="card rounded-2xl p-5">
+                            <h3 class="font-semibold" x-text="agent.name"></h3>
+                            <p class="mt-1 text-sm text-slate-400" x-text="agent.description || 'No description.'"></p>
+                            <div class="mt-4 flex flex-wrap gap-2 text-xs">
+                                <span class="pill rounded-full px-2 py-1" x-text="'Skills: ' + agent.skills_mode"></span>
+                                <span class="pill rounded-full px-2 py-1" x-text="(agent.tools_allowed || []).length + ' tools'"></span>
+                                <span class="pill rounded-full px-2 py-1" x-text="(agent.mcp_connections || []).length + ' connectors'"></span>
+                                <span class="pill rounded-full px-2 py-1" x-text="connectorReadiness(agent)"></span>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </section>
+
+            <section x-show="section === 'observability'" class="p-6 space-y-5">
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                    <a href="/dashboard/v2" target="_blank" class="card rounded-2xl p-5">
+                        <h3 class="font-semibold">Command Center</h3>
+                        <p class="mt-2 text-sm text-slate-400">HITL, knowledge, cron, queue, and dashboard controls.</p>
+                    </a>
+                    <a href="/finops" target="_blank" class="card rounded-2xl p-5">
+                        <h3 class="font-semibold">FinOps</h3>
+                        <p class="mt-2 text-sm text-slate-400">Cost, token, and model usage reporting.</p>
+                    </a>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div x-show="draftEditorOpen" x-cloak class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-6">
+        <div class="panel rounded-3xl w-full max-w-5xl max-h-[90vh] flex flex-col">
+            <div class="p-5 border-b border-slate-800 flex items-start justify-between gap-4">
+                <div>
+                    <p class="text-xs uppercase tracking-wide text-violet-300">Personal Draft Editor</p>
+                    <h3 class="mt-1 text-xl font-semibold" x-text="draftEditorSkill?.name || 'Draft'"></h3>
+                    <p class="mt-1 text-sm text-slate-400">Edit the full SKILL.md for this personal draft, then save it back to your workspace.</p>
+                </div>
+                <button @click="closeDraftEditor()" class="rounded-xl border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Close</button>
+            </div>
+            <div class="p-5 flex-1 min-h-0">
+                <textarea x-model="draftEditorContent"
+                          @input="validateDraftEditor()"
+                          class="w-full h-[58vh] rounded-xl bg-slate-950 border border-slate-700 p-4 font-mono text-xs text-slate-200 focus:outline-none focus:border-violet-400"
+                          spellcheck="false"></textarea>
+                <div class="mt-4 grid grid-cols-1 xl:grid-cols-3 gap-3">
+                    <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+                        <p class="text-xs text-slate-400">Parsed name</p>
+                        <p class="mt-1 font-medium" x-text="draftEditorMeta.name || 'Not parsed'"></p>
+                    </div>
+                    <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+                        <p class="text-xs text-slate-400">Execution mode</p>
+                        <p class="mt-1 font-medium" x-text="draftEditorMeta.execution_mode || 'react'"></p>
+                    </div>
+                    <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+                        <p class="text-xs text-slate-400">Tools</p>
+                        <p class="mt-1 font-medium" x-text="(draftEditorMeta.tools || []).join(', ') || 'none'"></p>
+                    </div>
+                </div>
+                <div x-show="draftEditorError" class="mt-3 rounded-xl border border-red-500/40 bg-red-950/40 p-3 text-sm text-red-200" x-text="draftEditorError"></div>
+                <div x-show="draftEditorWarning" class="mt-3 rounded-xl border border-amber-500/40 bg-amber-950/40 p-3 text-sm text-amber-100" x-text="draftEditorWarning"></div>
+            </div>
+            <div class="p-5 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                <p class="text-xs text-slate-400">Saving updates the personal skill index metadata from the frontmatter.</p>
+                <div class="flex gap-2">
+                    <button @click="saveDraftEditor()" :disabled="running.draft || !draftEditorSkill || !!draftEditorError"
+                            class="rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium hover:bg-violet-500 disabled:opacity-50">
+                        <span x-text="running.draft ? 'Saving...' : 'Save draft'"></span>
+                    </button>
+                    <button @click="closeDraftEditor()" class="rounded-xl border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    function studioApp() {
+        return {
+            section: 'home',
+            activeTab: 'overview',
+            tenantId: 'company',
+            agentId: 'enterprise_agent',
+            userId: 'demo',
+            globalSearch: '',
+            skillSearch: '',
+            workspaceFilter: 'all',
+            categoryFilter: '',
+            modeFilter: '',
+            skills: [],
+            personalSkills: [],
+            categoryLabels: {},
+            categoryOrder: [],
+            jobs: [],
+            agents: [],
+            tools: [],
+            submissions: [],
+            selectedSubmission: null,
+            submissionMd: '',
+            submissionPreview: null,
+            submissionStatusFilter: 'pending',
+            reviewFeedback: '',
+            reviewAccessDenied: false,
+            securityAccessDenied: false,
+            securityPolicies: { raw: '', parsed: { policies: [] }, validation: { valid: true, errors: [], warnings: [], policy_count: 0 } },
+            securityPolicyRaw: '',
+            securityPolicyValidation: { valid: true, errors: [], warnings: [], policy_count: 0 },
+            securityPolicySaving: false,
+            securitySimulationForm: {
+                user_id: 'demo',
+                email: '',
+                roles: 'user',
+                groups: '',
+                action: 'use',
+                resource_type: 'skill',
+                resource_id: '*',
+            },
+            securitySimulationResult: null,
+            securityEffectiveAccess: null,
+            securityEffectiveAccessLoading: false,
+            securityExternalResources: [],
+            securityAuditFilters: { user_id: '', action: '', resource: '', deniedOnly: true },
+            securityAuditEvents: [],
+            selectedSkill: null,
+            skillDetail: {},
+            knowledgeFiles: [],
+            testRuns: [],
+            connectorHealth: {},
+            selectedRuns: [],
+            skillTraces: [],
+            finopsSummary: {},
+            tracePreview: '',
+            draftEditorOpen: false,
+            draftEditorSkill: null,
+            draftEditorContent: '',
+            draftEditorMeta: {},
+            draftEditorError: '',
+            draftEditorWarning: '',
+            notifications: [],
+            testPrompt: '',
+            testResult: {},
+            notice: '',
+            noticeType: 'success',
+            loading: { skills: false, cron: false, agents: false, submissions: false },
+            running: { test: false, schedule: false, draft: false },
+            scheduleForm: { name: '', cron: '0 9 * * *', task: '', enabled: true },
+            createForm: { name: '', description: '', keywords: '', prompt: '' },
+            workspaceFilters: [
+                { id: 'all', label: 'All' },
+                { id: 'drafts', label: 'My Drafts' },
+                { id: 'submitted', label: 'Submitted' },
+                { id: 'approved', label: 'Approved' },
+                { id: 'published', label: 'Published' },
+            ],
+            navItems: [
+                { id: 'home', label: 'Home', hint: '' },
+                { id: 'create', label: 'Create', hint: 'draft' },
+                { id: 'skills', label: 'Skills', hint: 'build' },
+                { id: 'schedules', label: 'Schedules', hint: 'cron' },
+                { id: 'knowledge', label: 'Files & Knowledge', hint: 'docs' },
+                { id: 'review', label: 'Review', hint: 'admin' },
+                { id: 'security', label: 'Security', hint: 'policy' },
+                { id: 'connectors', label: 'Connectors', hint: 'MCP' },
+                { id: 'agents', label: 'Agents', hint: 'config' },
+                { id: 'observability', label: 'Observability', hint: 'runs' },
+            ],
+            skillTabs: [
+                { id: 'overview', label: 'Overview' },
+                { id: 'knowledge', label: 'Knowledge' },
+                { id: 'tools', label: 'Tools' },
+                { id: 'test', label: 'Test' },
+                { id: 'schedule', label: 'Schedule' },
+                { id: 'runs', label: 'Runs' },
+                { id: 'settings', label: 'Settings' },
+            ],
+            actionCards: [
+                { kicker: 'Author', title: 'Create Skill', description: 'Start from a document, prompt, or personal draft.', action: 'create' },
+                { kicker: 'Directory', title: 'Browse Skills', description: 'Search organization and personal skills by category, mode, and status.', action: 'skills' },
+                { kicker: 'Automation', title: 'Schedule Skill', description: 'Run a skill on a cron schedule or trigger it manually.', action: 'schedules' },
+                { kicker: 'Grounding', title: 'Upload Knowledge', description: 'Attach PDFs, docs, markdown, and datasets to a skill.', action: 'knowledge' },
+                { kicker: 'Integration', title: 'Connect Systems', description: 'Review tools, MCP connections, databases, APIs, and credentials.', action: 'connectors' },
+                { kicker: 'Governance', title: 'Manage Agents', description: 'Assign skill access, tools, connectors, and policies to agents.', action: 'agents' },
+            ],
+
+            init() {
+                const params = new URLSearchParams(window.location.search);
+                this.tenantId = params.get('tenant_id') || this.tenantId;
+                this.agentId = params.get('agent_id') || this.agentId;
+                this.userId = params.get('user_id') || this.inferUserId();
+                this.refreshAll();
+            },
+
+            inferUserId() {
+                try {
+                    const user = _getIafUser();
+                    return user.username || user.user_id || user.id || user.email || 'demo';
+                } catch (_) {
+                    return 'demo';
+                }
+            },
+
+            async refreshAll() {
+                await Promise.allSettled([this.loadSkills(), this.loadCron(), this.loadAgents(), this.loadTools(), this.loadSubmissions(), this.loadNotifications(), this.loadSecurity()]);
+            },
+
+            async loadSkills() {
+                this.loading.skills = true;
+                try {
+                    const [skillsResult, personalResult] = await Promise.allSettled([
+                        fetch(`/api/skills?tenant_id=${encodeURIComponent(this.tenantId)}&user_id=${encodeURIComponent(this.userId)}`).then(r => r.json()),
+                        this.loadPersonalSkills(),
+                    ]);
+                    const data = skillsResult.status === 'fulfilled' ? skillsResult.value : {};
+                    const personal = personalResult.status === 'fulfilled' ? personalResult.value : [];
+                    this.personalSkills = personal;
+                    this.skills = this.mergeSkillLists(data.skills || [], personal);
+                    this.categoryLabels = data.category_labels || {};
+                    this.categoryOrder = data.category_order || [];
+                } catch (err) {
+                    this.showNotice(`Failed to load skills: ${err.message}`, 'error');
+                } finally {
+                    this.loading.skills = false;
+                }
+            },
+
+            async loadPersonalSkills() {
+                try {
+                    const res = await fetch(`/api/personal-skills/${encodeURIComponent(this.userId)}?tenant_id=${encodeURIComponent(this.tenantId)}`);
+                    if (res.status === 403 || res.status === 404) return [];
+                    const data = await res.json();
+                    return data.skills || [];
+                } catch (_) {
+                    return [];
+                }
+            },
+
+            mergeSkillLists(skills, personal) {
+                const byName = new Map(skills.map(skill => [skill.name, { ...skill }]));
+                personal.forEach(personalSkill => {
+                    const existing = byName.get(personalSkill.name) || {};
+                    byName.set(personalSkill.name, {
+                        ...existing,
+                        ...personalSkill,
+                        category: existing.category || personalSkill.category || 'personal',
+                        execution_mode: existing.execution_mode || personalSkill.execution_mode || 'react',
+                        personal: true,
+                    });
+                });
+                return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+            },
+
+            async loadCron() {
+                this.loading.cron = true;
+                try {
+                    const res = await fetch(`/api/cron?tenant_id=${encodeURIComponent(this.tenantId)}`);
+                    const data = await res.json();
+                    this.jobs = data.jobs || [];
+                } catch (err) {
+                    this.jobs = [];
+                } finally {
+                    this.loading.cron = false;
+                }
+            },
+
+            async loadAgents() {
+                this.loading.agents = true;
+                try {
+                    const res = await fetch(`/api/agents?tenant_id=${encodeURIComponent(this.tenantId)}`);
+                    const data = await res.json();
+                    this.agents = data.agents || [];
+                    await this.loadConnectorHealth();
+                } catch (err) {
+                    this.agents = [];
+                } finally {
+                    this.loading.agents = false;
+                }
+            },
+
+            async loadConnectorHealth() {
+                const results = await Promise.allSettled(this.agents.map(async agent => {
+                    const res = await fetch(`/api/agents/${encodeURIComponent(agent.id)}/connectors/health?tenant_id=${encodeURIComponent(this.tenantId)}`);
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || 'Connector health unavailable');
+                    return [agent.id, data];
+                }));
+                const health = {};
+                results.forEach((result, idx) => {
+                    const agent = this.agents[idx];
+                    if (result.status === 'fulfilled') {
+                        health[result.value[0]] = result.value[1];
+                    } else if (agent) {
+                        health[agent.id] = { agent_id: agent.id, status: 'unknown', connectors: [], error: result.reason?.message || 'Health unavailable' };
+                    }
+                });
+                this.connectorHealth = health;
+            },
+
+            async loadTools() {
+                try {
+                    const res = await fetch('/api/tools');
+                    const data = await res.json();
+                    this.tools = data.tools || [];
+                } catch (err) {
+                    this.tools = [];
+                }
+            },
+
+            async loadSubmissions() {
+                this.loading.submissions = true;
+                try {
+                    const res = await fetch(`/api/skill-submissions?tenant_id=${encodeURIComponent(this.tenantId)}&status=${encodeURIComponent(this.submissionStatusFilter)}`);
+                    if (res.status === 403) {
+                        this.reviewAccessDenied = true;
+                        this.submissions = [];
+                        return;
+                    }
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || 'Failed to load submissions');
+                    this.reviewAccessDenied = false;
+                    this.submissions = data.submissions || [];
+                    if (this.selectedSubmission && !this.submissions.some(s => s.submission_id === this.selectedSubmission.submission_id)) {
+                        this.selectedSubmission = null;
+                        this.submissionMd = '';
+                    }
+                } catch (_) {
+                    this.reviewAccessDenied = true;
+                    this.submissions = [];
+                } finally {
+                    this.loading.submissions = false;
+                }
+            },
+
+            async loadNotifications() {
+                try {
+                    const res = await fetch(`/api/personal-skills/${encodeURIComponent(this.userId)}/notifications?tenant_id=${encodeURIComponent(this.tenantId)}&limit=10`);
+                    if (res.status === 403 || res.status === 404) {
+                        this.notifications = [];
+                        return;
+                    }
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || 'Failed to load notifications');
+                    this.notifications = data.notifications || [];
+                } catch (_) {
+                    this.notifications = [];
+                }
+            },
+
+            async loadSecurity() {
+                await Promise.allSettled([this.loadSecurityPolicies(), this.loadSecurityExternalAccess(), this.loadSecurityAudit()]);
+            },
+
+            async loadSecurityPolicies() {
+                try {
+                    const res = await fetch(`/api/security/policies?tenant_id=${encodeURIComponent(this.tenantId)}`);
+                    if (res.status === 403) {
+                        this.securityAccessDenied = true;
+                        return;
+                    }
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || 'Failed to load security policies');
+                    this.securityAccessDenied = false;
+                    this.securityPolicies = data;
+                    this.securityPolicyRaw = data.raw || '';
+                    this.securityPolicyValidation = data.validation || { valid: true, errors: [], warnings: [], policy_count: 0 };
+                } catch (err) {
+                    this.securityAccessDenied = true;
+                }
+            },
+
+            async loadSecurityExternalAccess() {
+                try {
+                    const res = await fetch(`/api/security/external-access?tenant_id=${encodeURIComponent(this.tenantId)}`);
+                    if (res.status === 403) {
+                        this.securityAccessDenied = true;
+                        return;
+                    }
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || 'Failed to load external access registry');
+                    this.securityExternalResources = data.resources || [];
+                } catch (err) {
+                    this.showNotice(`Failed to load external access registry: ${err.message}`, 'error');
+                }
+            },
+
+            async validateSecurityPolicy() {
+                try {
+                    const res = await fetch('/api/security/policies/validate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ raw: this.securityPolicyRaw }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || 'Validation failed');
+                    this.securityPolicyValidation = data;
+                    this.showNotice(data.valid ? 'Policy YAML is valid.' : 'Policy YAML has validation errors.', data.valid ? 'success' : 'error');
+                } catch (err) {
+                    this.showNotice(`Policy validation failed: ${err.message}`, 'error');
+                }
+            },
+
+            async saveSecurityPolicy() {
+                this.securityPolicySaving = true;
+                try {
+                    const res = await fetch('/api/security/policies', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ tenant_id: this.tenantId, raw: this.securityPolicyRaw }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(Array.isArray(data.detail?.errors) ? data.detail.errors.join('; ') : (data.detail || 'Save failed'));
+                    this.securityPolicies = data;
+                    this.securityPolicyRaw = data.raw || '';
+                    this.securityPolicyValidation = data.validation || { valid: true, errors: [], warnings: [], policy_count: 0 };
+                    this.showNotice('Security policy saved.');
+                } catch (err) {
+                    this.showNotice(`Security policy save failed: ${err.message}`, 'error');
+                } finally {
+                    this.securityPolicySaving = false;
+                }
+            },
+
+            securityPolicyRows() {
+                return this.securityPolicies?.parsed?.policies || [];
+            },
+
+            csvToList(value) {
+                return (value || '').split(',').map(v => v.trim()).filter(Boolean);
+            },
+
+            async simulateSecurityDecision() {
+                this.securitySimulationResult = null;
+                try {
+                    const res = await fetch('/api/security/simulate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            tenant_id: this.tenantId,
+                            principal: {
+                                user_id: this.securitySimulationForm.user_id,
+                                email: this.securitySimulationForm.email,
+                                roles: this.csvToList(this.securitySimulationForm.roles),
+                                groups: this.csvToList(this.securitySimulationForm.groups),
+                            },
+                            action: this.securitySimulationForm.action,
+                            resource: {
+                                type: this.securitySimulationForm.resource_type,
+                                id: this.securitySimulationForm.resource_id,
+                            },
+                        }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || 'Simulation failed');
+                    this.securitySimulationResult = data;
+                } catch (err) {
+                    this.showNotice(`Simulation failed: ${err.message}`, 'error');
+                }
+            },
+
+            async loadEffectiveAccess() {
+                this.securityEffectiveAccess = null;
+                this.securityEffectiveAccessLoading = true;
+                try {
+                    const res = await fetch('/api/security/effective-access', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            tenant_id: this.tenantId,
+                            principal: {
+                                user_id: this.securitySimulationForm.user_id,
+                                email: this.securitySimulationForm.email,
+                                roles: this.csvToList(this.securitySimulationForm.roles),
+                                groups: this.csvToList(this.securitySimulationForm.groups),
+                            },
+                            include_denied: true,
+                        }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || 'Effective access lookup failed');
+                    this.securityEffectiveAccess = data;
+                } catch (err) {
+                    this.showNotice(`Effective access lookup failed: ${err.message}`, 'error');
+                } finally {
+                    this.securityEffectiveAccessLoading = false;
+                }
+            },
+
+            effectiveAccessTypes() {
+                return ['agents', 'skills', 'tools', 'contexts', 'external_resources', 'databases', 'mcp_connections'];
+            },
+
+            effectiveAccessRows(type, bucket = 'allowed') {
+                return this.securityEffectiveAccess?.resources?.[type]?.[bucket] || [];
+            },
+
+            async loadSecurityAudit() {
+                try {
+                    const params = new URLSearchParams({
+                        tenant_id: this.tenantId,
+                        limit: '100',
+                    });
+                    if (this.securityAuditFilters.user_id) params.set('user_id', this.securityAuditFilters.user_id);
+                    if (this.securityAuditFilters.action) params.set('action', this.securityAuditFilters.action);
+                    if (this.securityAuditFilters.resource) params.set('resource', this.securityAuditFilters.resource);
+                    if (this.securityAuditFilters.deniedOnly) params.set('allowed', 'false');
+                    const res = await fetch(`/api/security/audit?${params.toString()}`);
+                    if (res.status === 403) {
+                        this.securityAccessDenied = true;
+                        return;
+                    }
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || 'Failed to load audit events');
+                    this.securityAccessDenied = false;
+                    this.securityAuditEvents = data.events || [];
+                } catch (_) {
+                    this.securityAuditEvents = [];
+                }
+            },
+
+            async selectSubmission(submission) {
+                this.selectedSubmission = submission;
+                this.submissionMd = '';
+                this.submissionPreview = null;
+                this.reviewFeedback = submission.review?.feedback || '';
+                try {
+                    const [mdResult, previewResult] = await Promise.all([
+                        fetch(`/api/skill-submissions/${encodeURIComponent(submission.submission_id)}/skill-md?tenant_id=${encodeURIComponent(this.tenantId)}`),
+                        fetch(`/api/skill-submissions/${encodeURIComponent(submission.submission_id)}/preview?tenant_id=${encodeURIComponent(this.tenantId)}`),
+                    ]);
+                    const mdData = await mdResult.json();
+                    const previewData = await previewResult.json();
+                    if (!mdResult.ok) throw new Error(mdData.detail || 'Failed to load SKILL.md');
+                    this.submissionMd = mdData.content || '';
+                    this.submissionPreview = previewResult.ok ? previewData : null;
+                } catch (err) {
+                    this.submissionMd = `Unable to load SKILL.md preview: ${err.message}`;
+                }
+            },
+
+            async reviewSubmission(verdict) {
+                if (!this.selectedSubmission) return;
+                try {
+                    const res = await fetch(`/api/skill-submissions/${encodeURIComponent(this.selectedSubmission.submission_id)}/review`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            verdict,
+                            feedback: this.reviewFeedback,
+                            tenant_id: this.tenantId,
+                        }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || data.message || 'Review failed');
+                    this.showNotice(data.message || `Submission ${verdict}`);
+                    this.selectedSubmission = null;
+                    this.submissionMd = '';
+                    this.submissionPreview = null;
+                    this.reviewFeedback = '';
+                    await Promise.allSettled([this.loadSubmissions(), this.loadSkills()]);
+                } catch (err) {
+                    this.showNotice(`Review failed: ${err.message}`, 'error');
+                }
+            },
+
+            pageTitle() {
+                if (this.section === 'skill' && this.selectedSkill) return this.selectedSkill.name;
+                const item = this.navItems.find(i => i.id === this.section);
+                return item ? item.label : 'Studio';
+            },
+
+            handleActionCard(card) {
+                this.section = card.action;
+            },
+
+            categories() {
+                const set = new Set(this.skills.map(s => s.category || 'other'));
+                const ordered = this.categoryOrder.filter(c => set.has(c));
+                return [...ordered, ...[...set].filter(c => !ordered.includes(c)).sort()];
+            },
+
+            categoryLabel(category) {
+                return this.categoryLabels[category] || category || 'other';
+            },
+
+            personalMeta(skillName) {
+                return this.personalSkills.find(skill => skill.name === skillName) || null;
+            },
+
+            skillLifecycleScope(skill) {
+                const meta = this.personalMeta(skill.name);
+                return meta?.scope || skill.scope || (skill.personal ? 'personal' : 'published');
+            },
+
+            skillLifecycleLabel(skill) {
+                const scope = this.skillLifecycleScope(skill);
+                if (scope === 'personal') return 'personal draft';
+                if (scope === 'submitted') return 'submitted';
+                if (scope === 'approved') return 'approved personal';
+                return 'published';
+            },
+
+            isPersonalSkill(skill) {
+                return Boolean(skill?.personal || this.personalMeta(skill?.name));
+            },
+
+            workspaceFilterCount(filterId) {
+                return this.skills.filter(skill => this.matchesWorkspaceFilter(skill, filterId)).length;
+            },
+
+            matchesWorkspaceFilter(skill, filterId = this.workspaceFilter) {
+                const scope = this.skillLifecycleScope(skill);
+                if (filterId === 'all') return true;
+                if (filterId === 'drafts') return scope === 'personal';
+                if (filterId === 'submitted') return scope === 'submitted';
+                if (filterId === 'approved') return scope === 'approved';
+                if (filterId === 'published') return !this.isPersonalSkill(skill) || scope === 'published';
+                return true;
+            },
+
+            filteredSkills() {
+                const q = (this.skillSearch || this.globalSearch || '').toLowerCase().trim();
+                return this.skills.filter(skill => {
+                    const text = [
+                        skill.name,
+                        skill.description,
+                        skill.category,
+                        skill.execution_mode,
+                        ...(skill.keywords || []),
+                    ].join(' ').toLowerCase();
+                    const categoryOk = !this.categoryFilter || (skill.category || 'other') === this.categoryFilter;
+                    const modeOk = !this.modeFilter || (skill.execution_mode || 'react') === this.modeFilter;
+                    const workspaceOk = this.matchesWorkspaceFilter(skill);
+                    return categoryOk && modeOk && workspaceOk && (!q || text.includes(q));
+                });
+            },
+
+            async openSkillByName(skillName, tab = 'overview') {
+                let skill = this.skills.find(s => s.name === skillName);
+                if (!skill) {
+                    await this.loadSkills();
+                    skill = this.skills.find(s => s.name === skillName);
+                }
+                if (skill) this.selectSkill(skill, tab);
+            },
+
+            async selectSkill(skill, tab = 'overview') {
+                this.selectedSkill = skill;
+                this.section = 'skill';
+                this.activeTab = tab;
+                this.testResult = {};
+                this.testPrompt = this.testPrompt || this.defaultTestPrompt(skill);
+                this.scheduleForm = {
+                    name: `${skill.name}-daily`,
+                    cron: '0 9 * * *',
+                    task: this.defaultTestPrompt(skill),
+                    enabled: true,
+                };
+                await Promise.allSettled([
+                    this.loadSkillDetail(skill.name),
+                    this.loadKnowledge(skill.name),
+                    this.loadTestRuns(skill.name),
+                    this.loadRunsForSkill(skill.name),
+                    this.loadObservabilityForSkill(skill.name),
+                ]);
+            },
+
+            async loadSkillDetail(skillName) {
+                try {
+                    const res = await fetch(`/api/skills/${encodeURIComponent(skillName)}`);
+                    if (!res.ok) throw new Error(await res.text());
+                    this.skillDetail = await res.json();
+                } catch (err) {
+                    const meta = this.personalMeta(skillName);
+                    this.skillDetail = meta ? {
+                        name: skillName,
+                        description: meta.description || '',
+                        prompt: 'Personal draft details are stored in the personal workspace. Open the guided creator or advanced editor to continue editing.',
+                        keywords: meta.keywords || [],
+                        tools: [],
+                    } : {};
+                    if (!meta) this.showNotice(`Failed to load skill details: ${err.message}`, 'error');
+                }
+            },
+
+            async loadKnowledge(skillName) {
+                try {
+                    const res = await fetch(`/api/skills/${encodeURIComponent(skillName)}/knowledge`);
+                    const data = await res.json();
+                    this.knowledgeFiles = data.files || [];
+                } catch (err) {
+                    this.knowledgeFiles = [];
+                }
+            },
+
+            async loadTestRuns(skillName) {
+                try {
+                    const res = await fetch(`/api/skills/${encodeURIComponent(skillName)}/test-runs?tenant_id=${encodeURIComponent(this.tenantId)}&agent_id=${encodeURIComponent(this.agentId)}&user_id=${encodeURIComponent(this.userId + '_studio_test')}&limit=8`);
+                    const data = await res.json();
+                    this.testRuns = res.ok ? (data.runs || []) : [];
+                } catch (_) {
+                    this.testRuns = [];
+                }
+            },
+
+            async loadRunsForSkill(skillName) {
+                this.selectedRuns = [];
+                const relevant = this.jobs.filter(job => job.skill_name === skillName);
+                const batches = await Promise.allSettled(relevant.map(job =>
+                    fetch(`/api/cron/${encodeURIComponent(job.id)}/runs?limit=5`).then(r => r.json())
+                ));
+                this.selectedRuns = batches
+                    .filter(b => b.status === 'fulfilled')
+                    .flatMap(b => (b.value.runs || []).map(run => ({ ...run, job_name: b.value.job_name })));
+            },
+
+            async loadObservabilityForSkill(skillName) {
+                this.tracePreview = '';
+                await Promise.allSettled([
+                    this.loadTracesForSkill(skillName),
+                    this.loadFinopsForSkill(skillName),
+                ]);
+            },
+
+            async loadTracesForSkill(skillName) {
+                try {
+                    const res = await fetch(`/api/traces?tenant_id=${encodeURIComponent(this.tenantId)}&skill=${encodeURIComponent(skillName)}&limit=8`);
+                    if (!res.ok) throw new Error(await res.text());
+                    const data = await res.json();
+                    this.skillTraces = data.traces || data.entries || [];
+                } catch (_) {
+                    this.skillTraces = [];
+                }
+            },
+
+            async loadFinopsForSkill(skillName) {
+                try {
+                    const res = await fetch(`/api/finops/summary?tenant_id=${encodeURIComponent(this.tenantId)}&skill=${encodeURIComponent(skillName)}&period=30`);
+                    if (!res.ok) throw new Error(await res.text());
+                    this.finopsSummary = await res.json();
+                } catch (_) {
+                    this.finopsSummary = {};
+                }
+            },
+
+            async loadTraceDetail(traceId) {
+                try {
+                    const res = await fetch(`/api/traces/${encodeURIComponent(traceId)}`);
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || 'Trace detail unavailable');
+                    this.tracePreview = JSON.stringify(data, null, 2);
+                } catch (err) {
+                    this.showNotice(`Trace detail failed: ${err.message}`, 'error');
+                }
+            },
+
+            async loadEvidence(traceId) {
+                try {
+                    const res = await fetch(`/api/evidence/${encodeURIComponent(traceId)}?tenant_id=${encodeURIComponent(this.tenantId)}`);
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || 'Evidence unavailable');
+                    this.tracePreview = JSON.stringify(data, null, 2);
+                } catch (err) {
+                    this.showNotice(`Evidence lookup failed: ${err.message}`, 'error');
+                }
+            },
+
+            defaultTestPrompt(skill) {
+                return `Run a quick smoke test for ${skill.name}. Explain what this skill can do and one example task.`;
+            },
+
+            skillJobCount(skillName) {
+                return this.jobs.filter(job => job.skill_name === skillName).length;
+            },
+
+            selectedSkillJobs() {
+                if (!this.selectedSkill) return [];
+                return this.jobs.filter(job => job.skill_name === this.selectedSkill.name);
+            },
+
+            connectorCount() {
+                return this.agents.reduce((sum, agent) => sum + ((agent.mcp_connections || []).length), 0);
+            },
+
+            connectorReadiness(agent) {
+                const health = this.connectorHealth[agent?.id];
+                if (health?.status) return health.status;
+                const connections = agent?.mcp_connections || [];
+                return connections.length ? 'unchecked' : 'not_configured';
+            },
+
+            connectorReadinessHint(agent) {
+                const health = this.connectorHealth[agent?.id];
+                if (health?.error) return health.error;
+                if (health?.status === 'valid_config') return 'Connector configuration is valid. Runtime launch is intentionally not performed by the health check.';
+                if (health?.status === 'invalid_config') return 'One or more connector definitions need configuration fixes.';
+                return 'No MCP connectors are configured for this agent.';
+            },
+
+            connectorHealthItems(agent) {
+                return this.connectorHealth[agent?.id]?.connectors || [];
+            },
+
+            lastTestRun(skillName) {
+                if (!this.selectedSkill || this.selectedSkill.name !== skillName) return null;
+                return this.testRuns[0] || null;
+            },
+
+            async runSkillTest() {
+                if (!this.selectedSkill || !this.testPrompt.trim()) return;
+                this.running.test = true;
+                this.testResult = {};
+                try {
+                    const res = await fetch(`/api/skills/${encodeURIComponent(this.selectedSkill.name)}/test`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            prompt: this.testPrompt,
+                            tenant_id: this.tenantId,
+                            agent_id: this.agentId,
+                            user_id: `${this.userId}_studio_test`,
+                        }),
+                    });
+                    this.testResult = await res.json();
+                    if (this.testResult.status === 'error') this.showNotice(this.testResult.error || 'Skill test failed', 'error');
+                    await this.loadTestRuns(this.selectedSkill.name);
+                } catch (err) {
+                    this.testResult = { error: err.message };
+                    this.showNotice(`Skill test failed: ${err.message}`, 'error');
+                } finally {
+                    this.running.test = false;
+                }
+            },
+
+            async createSchedule() {
+                if (!this.selectedSkill) return;
+                this.running.schedule = true;
+                try {
+                    const payload = {
+                        name: this.scheduleForm.name,
+                        skill_name: this.selectedSkill.name,
+                        task: this.scheduleForm.task,
+                        cron: this.scheduleForm.cron,
+                        description: `Studio schedule for ${this.selectedSkill.name}`,
+                        tenant_id: this.tenantId,
+                        agent_id: this.agentId,
+                        user_id: `${this.userId}_scheduler`,
+                        enabled: this.scheduleForm.enabled,
+                        tags: ['studio', this.selectedSkill.name],
+                    };
+                    const res = await fetch('/api/cron', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || data.message || 'Failed to create schedule');
+                    await this.loadCron();
+                    await this.loadRunsForSkill(this.selectedSkill.name);
+                    this.showNotice(data.message || 'Schedule created');
+                } catch (err) {
+                    this.showNotice(`Schedule failed: ${err.message}`, 'error');
+                } finally {
+                    this.running.schedule = false;
+                }
+            },
+
+            async runJob(job) {
+                try {
+                    const res = await fetch(`/api/cron/${encodeURIComponent(job.id)}/run`, { method: 'POST' });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || data.message || 'Failed to run job');
+                    this.showNotice(data.message || 'Job started');
+                } catch (err) {
+                    this.showNotice(`Run failed: ${err.message}`, 'error');
+                }
+            },
+
+            async toggleJob(job) {
+                try {
+                    const action = job.enabled ? 'disable' : 'enable';
+                    const res = await fetch(`/api/cron/${encodeURIComponent(job.id)}/${action}`, { method: 'POST' });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || data.message || `Failed to ${action} job`);
+                    await this.loadCron();
+                    this.showNotice(data.message || `Job ${action}d`);
+                } catch (err) {
+                    this.showNotice(`Update failed: ${err.message}`, 'error');
+                }
+            },
+
+            async uploadKnowledge(event) {
+                const MAX_FILE_SIZE = 10 * 1024 * 1024;
+                const ALLOWED_EXTENSIONS = ['.pdf','.docx','.doc','.pptx','.ppt','.xlsx','.xls','.txt','.md','.csv','.json','.yaml','.yml','.png','.jpg','.jpeg','.gif'];
+                const file = event.target.files && event.target.files[0];
+                event.target.value = '';
+                if (!file || !this.selectedSkill) return;
+                const ext = '.' + file.name.split('.').pop().toLowerCase();
+                if (!ALLOWED_EXTENSIONS.includes(ext)) { alert('File type not allowed: ' + file.name); return; }
+                if (file.size > MAX_FILE_SIZE) { alert('File too large (max 10MB): ' + file.name); return; }
+                const form = new FormData();
+                form.append('file', file);
+                try {
+                    const res = await fetch(`/api/skills/${encodeURIComponent(this.selectedSkill.name)}/knowledge/upload`, {
+                        method: 'POST',
+                        body: form,
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || data.message || 'Upload failed');
+                    await this.loadKnowledge(this.selectedSkill.name);
+                    this.showNotice(data.message || 'Knowledge uploaded');
+                } catch (err) {
+                    this.showNotice(`Upload failed: ${err.message}`, 'error');
+                }
+            },
+
+            async deleteKnowledge(filename) {
+                if (!this.selectedSkill || !confirm(`Delete ${filename}?`)) return;
+                try {
+                    const res = await fetch(`/api/skills/${encodeURIComponent(this.selectedSkill.name)}/knowledge/${encodeURIComponent(filename)}`, {
+                        method: 'DELETE',
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || data.message || 'Delete failed');
+                    await this.loadKnowledge(this.selectedSkill.name);
+                    this.showNotice(data.message || 'Knowledge file deleted');
+                } catch (err) {
+                    this.showNotice(`Delete failed: ${err.message}`, 'error');
+                }
+            },
+
+            async updateSkillStatus(status) {
+                if (!this.selectedSkill) return;
+                try {
+                    const res = await fetch(`/api/skills/${encodeURIComponent(this.selectedSkill.name)}/status`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || data.message || 'Status update failed');
+                    this.selectedSkill.status = status;
+                    await this.loadSkills();
+                    this.showNotice(data.message || 'Status updated');
+                } catch (err) {
+                    this.showNotice(`Status update failed: ${err.message}`, 'error');
+                }
+            },
+
+            async cloneSelectedSkill() {
+                if (!this.selectedSkill) return;
+                const newName = prompt('New skill name', `${this.selectedSkill.name}_copy`);
+                if (!newName) return;
+                try {
+                    const res = await fetch(`/api/skills/${encodeURIComponent(this.selectedSkill.name)}/clone`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ new_name: newName }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || data.message || 'Clone failed');
+                    await this.loadSkills();
+                    this.showNotice(data.message || 'Skill cloned');
+                } catch (err) {
+                    this.showNotice(`Clone failed: ${err.message}`, 'error');
+                }
+            },
+
+            async cloneSelectedSkillToPersonal() {
+                if (!this.selectedSkill) return;
+                const newName = prompt('Personal draft name', `${this.selectedSkill.name}_draft`);
+                if (!newName) return;
+                try {
+                    let detail = this.skillDetail;
+                    if (!detail.raw_content) {
+                        const detailRes = await fetch(`/api/skills/${encodeURIComponent(this.selectedSkill.name)}`);
+                        detail = await detailRes.json();
+                        if (!detailRes.ok) throw new Error(detail.detail || 'Cannot read source skill');
+                    }
+                    const content = (detail.raw_content || this.buildSkillMd({
+                        name: newName,
+                        description: detail.description || this.selectedSkill.description || '',
+                        keywords: detail.keywords || this.selectedSkill.keywords || [],
+                        prompt: detail.prompt || '',
+                    })).replace(/name:\s*.+/, `name: ${newName}`);
+                    await this.savePersonalSkill(newName, content);
+                    this.workspaceFilter = 'drafts';
+                    this.section = 'skills';
+                } catch (err) {
+                    this.showNotice(`Personal copy failed: ${err.message}`, 'error');
+                }
+            },
+
+            async createBlankPersonalSkill() {
+                const name = this.normalizeSkillName(this.createForm.name);
+                if (!name) {
+                    this.showNotice('Enter a valid skill name first', 'error');
+                    return;
+                }
+                const keywords = this.createForm.keywords
+                    .split(',')
+                    .map(item => item.trim())
+                    .filter(Boolean);
+                const content = this.buildSkillMd({
+                    name,
+                    description: this.createForm.description || `Personal draft skill ${name}`,
+                    keywords,
+                    prompt: this.createForm.prompt || 'You are a helpful domain skill. Clarify the task, use available tools when needed, and provide a concise answer.',
+                });
+                try {
+                    await this.savePersonalSkill(name, content);
+                    this.createForm = { name: '', description: '', keywords: '', prompt: '' };
+                    this.workspaceFilter = 'drafts';
+                    this.section = 'skills';
+                } catch (err) {
+                    this.showNotice(`Draft creation failed: ${err.message}`, 'error');
+                }
+            },
+
+            async savePersonalSkill(skillName, skillMdContent) {
+                const res = await fetch(`/api/personal-skills/${encodeURIComponent(this.userId)}/save`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        skill_name: skillName,
+                        skill_md_content: skillMdContent,
+                        tenant_id: this.tenantId,
+                    }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || data.message || 'Save failed');
+                await this.loadSkills();
+                this.showNotice(data.message || `Saved personal skill ${skillName}`);
+                return data;
+            },
+
+            async openPersonalDraftEditor(skill) {
+                if (!skill || !this.isPersonalSkill(skill)) return;
+                this.draftEditorSkill = skill;
+                this.draftEditorContent = '';
+                this.draftEditorOpen = true;
+                try {
+                    const res = await fetch(`/api/personal-skills/${encodeURIComponent(this.userId)}/${encodeURIComponent(skill.name)}/skill-md?tenant_id=${encodeURIComponent(this.tenantId)}`);
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || data.message || 'Unable to load personal draft');
+                    this.draftEditorContent = data.content || '';
+                    this.validateDraftEditor();
+                } catch (err) {
+                    this.showNotice(`Draft load failed: ${err.message}`, 'error');
+                    this.closeDraftEditor();
+                }
+            },
+
+            closeDraftEditor() {
+                this.draftEditorOpen = false;
+                this.draftEditorSkill = null;
+                this.draftEditorContent = '';
+                this.draftEditorMeta = {};
+                this.draftEditorError = '';
+                this.draftEditorWarning = '';
+                this.running.draft = false;
+            },
+
+            async saveDraftEditor() {
+                if (!this.draftEditorSkill || !this.draftEditorContent.trim()) return;
+                if (!this.validateDraftEditor()) return;
+                this.running.draft = true;
+                try {
+                    await this.savePersonalSkill(this.draftEditorSkill.name, this.draftEditorContent);
+                    const updated = this.skills.find(skill => skill.name === this.draftEditorSkill.name);
+                    if (updated) this.selectedSkill = updated;
+                    this.closeDraftEditor();
+                } catch (err) {
+                    this.showNotice(`Draft save failed: ${err.message}`, 'error');
+                } finally {
+                    this.running.draft = false;
+                }
+            },
+
+            validateDraftEditor() {
+                this.draftEditorError = '';
+                this.draftEditorWarning = '';
+                this.draftEditorMeta = {};
+                try {
+                    const parsed = this.parseSkillMdFrontmatter(this.draftEditorContent);
+                    this.draftEditorMeta = parsed;
+                    if (!parsed.name) {
+                        this.draftEditorError = 'SKILL.md frontmatter must include a name field.';
+                        return false;
+                    }
+                    if (this.draftEditorSkill && parsed.name !== this.draftEditorSkill.name) {
+                        this.draftEditorWarning = `The frontmatter name (${parsed.name}) differs from the saved draft folder (${this.draftEditorSkill.name}). Save keeps the existing folder name.`;
+                    }
+                    return true;
+                } catch (err) {
+                    this.draftEditorError = `Invalid SKILL.md frontmatter: ${err.message}`;
+                    return false;
+                }
+            },
+
+            parseSkillMdFrontmatter(content) {
+                const match = (content || '').match(/^---\s*\n([\s\S]*?)\n---/);
+                if (!match) return {};
+                if (!window.jsyaml || typeof window.jsyaml.load !== 'function') {
+                    throw new Error('YAML parser is not loaded');
+                }
+                const parsed = window.jsyaml.load(match[1]) || {};
+                if (parsed.tools && !Array.isArray(parsed.tools)) parsed.tools = [String(parsed.tools)];
+                return parsed;
+            },
+
+            async submitPersonalSkill(skill) {
+                const notes = prompt('Optional submission notes', 'Please review this skill for publication.');
+                if (notes === null) return;
+                try {
+                    const res = await fetch(`/api/personal-skills/${encodeURIComponent(this.userId)}/${encodeURIComponent(skill.name)}/submit`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ tenant_id: this.tenantId, notes }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || data.message || 'Submit failed');
+                    await Promise.allSettled([this.loadSkills(), this.loadSubmissions()]);
+                    this.workspaceFilter = 'submitted';
+                    this.showNotice(data.message || `Submitted ${skill.name} for review`);
+                } catch (err) {
+                    this.showNotice(`Submit failed: ${err.message}`, 'error');
+                }
+            },
+
+            async deletePersonalSkill(skill) {
+                if (!confirm(`Delete personal draft ${skill.name}?`)) return;
+                try {
+                    const res = await fetch(`/api/personal-skills/${encodeURIComponent(this.userId)}/${encodeURIComponent(skill.name)}?tenant_id=${encodeURIComponent(this.tenantId)}`, {
+                        method: 'DELETE',
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || data.message || 'Delete failed');
+                    this.selectedSkill = null;
+                    this.section = 'skills';
+                    await this.loadSkills();
+                    this.showNotice(data.message || `Deleted ${skill.name}`);
+                } catch (err) {
+                    this.showNotice(`Delete failed: ${err.message}`, 'error');
+                }
+            },
+
+            normalizeSkillName(value) {
+                return (value || '')
+                    .trim()
+                    .toLowerCase()
+                    .replace(/[^a-z0-9_-]+/g, '_')
+                    .replace(/^_+|_+$/g, '');
+            },
+
+            buildSkillMd({ name, description, keywords, prompt }) {
+                const quotedKeywords = (keywords || []).map(item => `"${String(item).replace(/"/g, '\\"')}"`).join(', ');
+                return `---\nname: ${name}\ndescription: ${description || name}\nversion: \"1.0\"\nexecution_mode: react\ntools:\n  - shell\nkeywords: [${quotedKeywords}]\n---\n\n${prompt || ''}\n`;
+            },
+
+            formatBytes(bytes) {
+                if (!bytes) return '0 B';
+                const units = ['B', 'KB', 'MB', 'GB'];
+                let size = bytes;
+                let idx = 0;
+                while (size >= 1024 && idx < units.length - 1) {
+                    size /= 1024;
+                    idx += 1;
+                }
+                return `${size.toFixed(idx === 0 ? 0 : 1)} ${units[idx]}`;
+            },
+
+            formatDate(value) {
+                if (!value) return '';
+                try {
+                    return new Date(value).toLocaleString();
+                } catch (_) {
+                    return value;
+                }
+            },
+
+            formatCost(value) {
+                const amount = Number(value || 0);
+                return `$${amount.toFixed(amount < 1 ? 4 : 2)}`;
+            },
+
+            formatNumber(value) {
+                return Number(value || 0).toLocaleString();
+            },
+
+            showNotice(message, type = 'success') {
+                this.notice = message;
+                this.noticeType = type;
+                setTimeout(() => {
+                    if (this.notice === message) this.notice = '';
+                }, 5000);
+            },
+        };
+    }
+    </script>
+    <script>
+    window.AgentProPageContext = function() {
+        const app = window.Alpine ? Alpine.$data(document.body) : {};
+        return {
+            source_page: 'studio',
+            page: app.section || 'skills',
+            tenant_id: app.tenantId,
+            globalSearch: app.globalSearch,
+            skillSearch: app.skillSearch,
+            workspaceFilter: app.workspaceFilter,
+            selectedSkill: app.selectedSkill ? {
+                name: app.selectedSkill.name,
+                mode: app.selectedSkill.execution_mode,
+                category: app.selectedSkill.category,
+                status: app.selectedSkill.status,
+            } : null,
+            activeTab: app.activeTab,
+            selectedSubmission: app.selectedSubmission ? {
+                id: app.selectedSubmission.submission_id,
+                skill: app.selectedSubmission.skill_name,
+                status: app.selectedSubmission.status,
+            } : null,
+            counts: {
+                skills: Array.isArray(app.skills) ? app.skills.length : 0,
+                submissions: Array.isArray(app.submissions) ? app.submissions.length : 0,
+                runs: Array.isArray(app.selectedRuns) ? app.selectedRuns.length : 0,
+            },
+        };
+    };
+    </script>
+    <script src="/static/ask-twin.js"></script>
+<script src="/static/session-controls.js"></script>
+</body>
+</html>

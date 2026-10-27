@@ -1,0 +1,334 @@
+version: '1.0'
+default_skill: general
+category_labels:
+  platform: PLATFORM / UTILITIES — agent building, setup, general assistant
+  it_ops: IT OPERATIONS — infrastructure monitoring, incident response, K8s management
+  finance: FINANCE & ACCOUNTING — AP, AR, GL, period close, collections, tax
+category_order:
+- finance
+- it_ops
+- platform
+entity_types:
+- customer
+- company_code
+- erp_system
+- invoice_portal
+- document_archive
+- einvoicing
+- expense_system
+- bi_system
+- consolidation
+- k8s_cluster
+- k8s_platform
+- k8s_namespace
+- service_mesh
+- ingress
+- dns
+- cni
+- storage
+- tls
+- secrets
+- security
+- monitoring
+- alerting
+entity_guide_path: ../shared/contexts/entity_guide.md
+skills:
+  multi_component_demo:
+    description: Demo skill showcasing multiple named UI components (default + approval + summary)
+    category: platform
+    keywords: [multi component demo, component demo, approval card, summary card]
+  fa_ap:
+    description: Accounts Payable — invoice processing, vendor management, 3-way matching,
+      payment authorisation, and AP exception handling
+    category: finance
+  fa_ar:
+    description: Accounts Receivable — multi-source invoice status investigation (customer
+      portals, email, ERP), collections escalation, and next best action recommendations
+    category: finance
+  fa_gl:
+    description: General Ledger / Record-to-Report — period close sequencing, journal
+      entry approval, balance sheet reconciliation, intercompany matching, and tax
+      statutory accounting
+    category: finance
+  invoice_processing_ap:
+    description: AP Invoice Processing — searches, validates and reports on AP invoices,
+      vendors and POs from the live AP transactions database (ap_ops.db).
+    category: finance
+    keywords:
+    - process invoices
+    - AP invoice status
+    - invoice report
+    - validate invoice
+    - open payables
+    - AP transactions
+  payment_processing:
+    description: Payment Processing — validates payment batches, checks vendor status,
+      runs pre-payment controls, and prepares payment runs.
+    category: finance
+    keywords:
+    - payment run
+    - prepare payment batch
+    - pre-payment controls
+    - vendor payment
+    - release payment
+  send_email:
+    description: Governed Email Sender — drafts editable email payloads from chat
+      or workstream context, renders an in-chat email form, and sends only after user
+      confirmation.
+    category: platform
+    keywords:
+    - send email
+    - email
+    - mail
+    - notify
+    - share by email
+    - compose email
+  post_to_sap:
+    description: Governed SAP Posting — drafts editable SAP posting payloads from
+      chat or workstream context, renders an in-chat SAP form, and posts only after
+      user confirmation.
+    category: finance
+    keywords:
+    - post to SAP
+    - SAP posting
+    - ERP posting
+    - post journal
+    - post correction
+    - post GR
+    - post SES
+  ar_ops:
+    description: Accounts Receivable operations — daily activities, aging analysis,
+      and collections follow-up over the receivables database.
+    category: finance
+    keywords:
+    - accounts receivable
+    - AR aging
+    - collections follow-up
+    - overdue receivables
+    - dunning
+  dispute_management:
+    description: Dispute Management — tracks, categorizes and resolves AR disputes
+      with human-in-the-loop approval gates.
+    category: finance
+    keywords:
+    - dispute
+    - AR dispute
+    - resolve dispute
+    - disputed invoice
+    - customer dispute
+  period_close_check:
+    description: Period Close Readiness — validates month-end close prerequisites
+      across AP, AR and GL with checklist tracking.
+    category: finance
+    keywords:
+    - period close
+    - month-end close
+    - close readiness
+    - close checklist
+    - reconciliation status
+  debit_balance_report:
+    description: AP Debit Balance Report — analyzes vendor debit balances, aging,
+      disputes and recovery actions.
+    category: finance
+    keywords:
+    - debit balance
+    - vendor debit balance
+    - debit balance report
+    - recover debit
+  ap_account_maintenance:
+    description: AP Account Maintenance — reconciles balances, identifies discrepancies
+      and manages vendor accounts.
+    category: finance
+    keywords:
+    - account reconciliation
+    - reconcile AP
+    - account discrepancy
+    - vendor account balance
+  ccdops:
+    description: CCD Kubernetes Operations — investigates pod, node, cluster, and
+      network issues on the Infosys KaaS platform (Rancher RKE2)
+    category: it_ops
+  general:
+    description: General-purpose assistant for questions, explanations, and tasks
+    category: platform
+  vaultcheck:
+    description: Verifies that secrets in the Infosys HashiCorp Vault are reachable
+      from AgentOS — loads the F5 network credential and confirms it resolved without
+      printing the secret.
+    category: platform
+    keywords:
+    - vault
+    - hashicorp
+    - vault check
+    - test vault
+    - f5 credential
+  vault_probe:
+    description: Diagnostic skill that reads a secret from a scoped HashiCorp Vault
+      connection (credentials.yaml type=vault) to verify per-connection ${VAULT:...}
+      / get_credential resolution and consumer-scope enforcement.
+    category: platform
+    keywords:
+    - vault probe
+    - vault test
+    - read vault secret
+    - hashicorp vault
+    - scoped vault
+  policy_authoring:
+    description: Policy Control Authoring — converts natural-language governance intent
+      into managed policy YAML drafts for validation, simulation, and publishing.
+    category: platform
+    keywords:
+    - create policy
+    - policy control
+    - hook policy
+    - approval policy
+    - governance rule
+  component_authoring:
+    description: Component Authoring — drafts and revises skill-local component.html
+      templates from a skill_component contract for Skill Builder review.
+    category: platform
+    keywords:
+    - component authoring
+    - html component
+    - skill component
+    - component.html
+    - skill builder component
+  queue_ingest:
+    description: Posts a single work item to the Command Center queue ingest API with
+      a bucketed timestamp so two firings within the same scheduling window collapse
+      to one queue item via the UNIQUE constraint. Used by cron jobs in Queue mode.
+    category: platform
+    keywords:
+    - post to queue
+    - ingest queue item
+    - queue ingest
+    - add to queue
+    - schedule queue item
+    - feed queue item
+  mission_mode:
+    description: Mission Mode wrapper — processes one item per call from a Workstream
+      backlog (YAML file at /workstreams/<name>.yaml). Pair with a cron in Direct
+      mode to grind through a multi-item backlog autonomously, with HITL escalation
+      and per-item evidence bundles. The cron's `task` field should be the workstream
+      name (no .yaml suffix).
+    category: platform
+    keywords:
+    - mission mode
+    - workstream
+    - run workstream
+    - process workstream item
+    - grind backlog
+    - autonomous backlog
+  deep_research:
+    description: Multi-perspective research with consensus synthesis. Investigates
+      a question from 3 independent angles (verified facts, sceptical / contrarian,
+      recent live data), then synthesizes ONE report with confidence ratings — flagging
+      contested claims and unique findings. Inspired by Claude Code's /deep-research
+      feature. (Phase 1 — superseded by research_orchestrator for domain-aware decomposition.)
+    category: platform
+    keywords:
+    - deep research
+    - investigate question
+    - research from multiple angles
+    - cross-check claim
+    - verify with sources
+    - consensus check
+    - multi-perspective
+  research_decomposer:
+    description: Domain-aware decomposer used by research_orchestrator. Breaks a research
+      question into 3–5 sub-questions, each assigned to the most appropriate worker
+      skill, using taxonomy + ContextOS for accuracy. Returns structured JSON. Not
+      intended for direct end-user invocation.
+    category: platform
+    keywords:
+    - decompose question
+    - research planning
+    - break down research
+  research_orchestrator:
+    description: Multi-perspective research using the framework's full stack. Calls
+      research_decomposer for domain-aware decomposition, drafts a workstream YAML
+      with per-angle target_skill assignment, submits to /api/workstreams, replies
+      with a live link. Mission Mode drives parallel execution with HITL escalation
+      and per-item evidence bundles. Inspired by Claude Code's /deep-research but
+      built on workstreams + items_source for persistent, auditable, pause-resumable
+      research.
+    category: platform
+    keywords:
+    - deep research
+    - investigate question
+    - multi-perspective research
+    - research from multiple angles
+    - cross-check claim
+    - research workflow
+  agentos_guide:
+    description: Self-documenting AgentOS guide — answers questions about the harness
+      itself (skill authoring, execution modes, hooks, entitlements, HITL, memory,
+      scheduling, observability, portability). Use when learning, evaluating, or onboarding
+      to IAF AgentOS.
+    category: platform
+    keywords:
+    - what is agentos
+    - explain agentos
+    - how does agentos
+    - what is the harness
+    - explain skill.md
+    - how do i author a skill
+    - what are execution modes
+    - how do hooks work
+    - how do entitlements work
+    - what is hitl
+    - what is contextos
+    - what is skill pack
+    - model registry
+    - explain finops
+    - memory and learning
+    - cron scheduler
+    - what is mcp
+    - tell me about the platform
+  iaf_guide:
+    description: IAF AgentPro platform guide used by Ask Twin for page-aware help
+      across Chat, Dashboard, Skill Builder, Workstreams, FinOps, and Optimization.
+    category: platform
+    keywords:
+    - ask twin
+    - help
+    - how to
+    - what is
+    - dashboard
+    - skill builder
+    - workstreams
+    - finops
+    - optimization
+    - approval
+    - hitl
+  knowledge_bundle_maintainer:
+    description: Generic maintainer for shared knowledge bundles; proposes and applies
+      approved updates to bundle pages, indexes, and logs.
+    category: platform
+    keywords:
+    - knowledge bundle
+    - maintain wiki
+    - update knowledge base
+    - ingest source
+    - refresh runbook
+    - update bundle
+  ai_pursuit_to_deployment_pods:
+    description: Guide users in structuring, operating, and governing AI-first Pursuit,
+      Deployment, and Service R&D PODs to win and deliver large, competitive deals.
+    keywords:
+    - AI-first pursuit model
+    - pursuit POD setup
+    - deployment POD operations
+    - service R&D PODs
+    - large deal AI solutioning
+    - AI deployment governance
+    - Topaz Fabric assets
+    - AI solution templates
+    - AI deal win ratio
+    - TCV driven pursuits
+    - AI service transformation
+    - horizontal PODs IT Ops
+    - vertical industry PODs
+    status: active
+    promoted_from: c2770406-80db-484f-8536-8093af3910f3
+    promoted_at: '2026-05-14T17:35:48.654238'

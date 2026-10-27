@@ -1,0 +1,28 @@
+<div class="skill-card" data-skill-component="example_skill">
+  <div class="skill-card-head">
+    <div>
+      <div class="skill-card-kicker">Governed Action</div>
+      <h4>{{title}}</h4>
+    </div>
+    <span class="skill-status" data-status>Draft</span>
+  </div>
+  <div class="skill-form-grid">
+    <label>
+      <span>Recipient</span>
+      <input data-field="recipient" value="{{recipient}}" placeholder="name@example.com">
+    </label>
+    <label>
+      <span>Subject</span>
+      <input data-field="subject" value="{{subject}}" placeholder="Action subject">
+    </label>
+    <label class="wide">
+      <span>Message</span>
+      <textarea data-field="message" rows="5" placeholder="Review before sending">{{message}}</textarea>
+    </label>
+  </div>
+  <div class="skill-card-actions">
+    <button type="button" class="btn secondary" data-action="skill-reset">Reset Draft</button>
+    <button type="button" class="btn" data-action="submit-action">Submit</button>
+  </div>
+  <div class="skill-card-note" data-message>Review the draft before submitting.</div>
+</div>

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Authorization Server — Register</title>
+</head>
+<body>
+    <form method="post" action="/register" autocomplete="on">
+        <div class="form-group">
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" required autocomplete="email">
+        </div>
+
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required minlength="12" autocomplete="new-password">
+            <div class="help-text">Minimum 12 characters</div>
+        </div>
+
+        <div class="form-group">
+            <label for="confirmPassword">Confirm Password</label>
+            <input type="password" id="confirmPassword" name="confirmPassword" required autocomplete="new-password">
+        </div>
+
+        <div class="form-group">
+            <button type="submit">Create Account</button>
+        </div>
+    </form>
+</body>
+</html>

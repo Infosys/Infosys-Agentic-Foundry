@@ -1,0 +1,15 @@
+name: hitl-demo
+tenant_id: company
+agent_id: enterprise_agent
+user_id: observer
+focus: Demo observer that escalates a high-value intercompany mismatch for approval.
+vibe: escalates high-value items
+trust_tier: supervised
+allowed_skills:
+  - ic-mismatch-agent
+watch:
+  - type: folder
+    path: /var/log/app
+    access: ro
+triggers: []
+runtime_mode: dev

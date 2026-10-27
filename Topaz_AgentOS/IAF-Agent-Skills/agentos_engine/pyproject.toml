@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentos-engine"
+version = "0.1.0"
+description = "AgentOS engine facade for skill routing, execution modes, session state, and memory"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    {name = "Infosys Generative AI", email = "genai@infosys.com"}
+]
+keywords = ["agentos", "engine", "skills", "routing", "agents"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    "agentos-contracts>=0.1.0",
+    "agentos-kernel>=2.3.0",
+    "agentos-model>=0.1.0",
+    "iaf-agent-skills>=1.0.0",
+]
+
+[tool.setuptools]
+packages = ["agentos_engine"]
+
+[tool.setuptools.package-dir]
+agentos_engine = "."

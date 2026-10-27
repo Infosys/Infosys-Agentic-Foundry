@@ -1,0 +1,547 @@
+version: '1.0'
+policies:
+- policy_id: fa_ar_sql_write_deny
+  name: AR SQL Write Deny
+  description: Block non-read SQL statements for AR analysis skills so AR users can
+    query but cannot mutate finance data.
+  owner: Finance Controls Team
+  version: 1
+  status: draft
+  risk_tier: L3
+  event: PreToolUse
+  matcher: run_sql_query
+  decision: deny
+  fail_policy: closed
+  block_on_nonzero: true
+  mode: blocking
+  timeout_seconds: 10
+  priority: 140
+  scope:
+    tenant_id: company
+    agent_id: enterprise_agent
+    skills:
+    - fa_ar
+  conditions:
+    any:
+    - field: command
+      operator: regex
+      value: \b(update|delete|insert|drop|alter|truncate|merge|create|replace)\b
+  approval:
+    approver_role: finance_controller
+    sla_minutes: 30
+    on_timeout: escalate
+  evidence:
+    required:
+    - trace_id
+    - tool_input
+    - matched_conditions
+    - sql_statement
+  created_at: '2026-06-08T14:21:00+00:00'
+  updated_at: '2026-06-17T17:52:05.992635+00:00'
+- policy_id: cron_finance_freeze_window_guard
+  name: Cron Finance Freeze Window Guard
+  description: Skip finance cron executions while a month-end or quarter-close freeze
+    window is active.
+  owner: Finance Operations Governance
+  version: 1
+  status: draft
+  risk_tier: L3
+  event: BeforeScheduleFire
+  matcher: .*
+  decision: deny
+  fail_policy: closed
+  block_on_nonzero: true
+  mode: blocking
+  timeout_seconds: 10
+  priority: 130
+  scope:
+    tenant_id: company
+    agent_id: enterprise_agent
+    skills:
+    - fa_ap
+    - invoice_processing_ap
+    - fa_ar
+    - fa_gl
+  conditions:
+    all:
+    - field: env.IAF_ENTRYPOINT
+      operator: equals
+      value: cron
+    - field: env.FINANCE_FREEZE_WINDOW
+      operator: equals
+      value: active
+  approval:
+    approver_role: finance_ops_lead
+    sla_minutes: 60
+    on_timeout: escalate
+  evidence:
+    required:
+    - trace_id
+    - cron_job_id
+    - matched_conditions
+    - freeze_window
+  created_at: '2026-06-08T14:21:00+00:00'
+  updated_at: '2026-06-17T17:52:05.992667+00:00'
+- policy_id: high_risk_shell_command_approval
+  name: High Risk Shell Command Approval
+  description: Require HITL approval before shell commands that look destructive,
+    mutating, or payment-related.
+  owner: Platform Risk Governance
+  version: 1
+  status: draft
+  risk_tier: CRITICAL
+  event: PreToolUse
+  matcher: shell
+  decision: approve
+  fail_policy: closed
+  block_on_nonzero: true
+  mode: blocking
+  timeout_seconds: 10
+  priority: 120
+  scope:
+    tenant_id: company
+    agent_id: enterprise_agent
+    skills: []
+  conditions:
+    any:
+    - field: command
+      operator: regex
+      value: \b(rm\s+-rf|curl\s+.*-X\s+(POST|PUT|PATCH|DELETE)|payment|release|delete|write-?off|transfer|chmod|chown)\b
+  approval:
+    approver_role: operations_approver
+    sla_minutes: 15
+    on_timeout: escalate
+  evidence:
+    required:
+    - trace_id
+    - tool_input
+    - matched_conditions
+    - approval_decision
+    - final_tool_result
+  created_at: '2026-06-08T14:21:00+00:00'
+  updated_at: '2026-06-17T17:52:05.992685+00:00'
+- policy_id: invoice_payment_region_gate
+  name: Invoice Payment Region Gate
+  description: Require approval before invoice payment API calls for regions outside
+    the standard operating set.
+  owner: AP Controls Team
+  version: 1
+  status: draft
+  risk_tier: L3
+  event: PreToolUse
+  matcher: shell
+  decision: approve
+  fail_policy: closed
+  block_on_nonzero: true
+  mode: blocking
+  timeout_seconds: 10
+  priority: 145
+  scope:
+    tenant_id: company
+    agent_id: enterprise_agent
+    skills:
+    - fa_ap
+    - invoice_processing_ap
+  conditions:
+    all:
+    - field: command
+      operator: regex
+      value: payment|payments|invoice
+    - field: command
+      operator: regex
+      value: region=(?!US|CA|UK)
+  approval:
+    approver_role: regional_finance_manager
+    sla_minutes: 30
+    on_timeout: escalate
+  evidence:
+    required:
+    - trace_id
+    - tool_input
+    - matched_conditions
+    - region
+    - approval_decision
+  created_at: '2026-06-08T14:24:00+00:00'
+  updated_at: '2026-06-17T17:52:05.992704+00:00'
+- policy_id: invoice_source_evidence_required
+  name: Invoice Source Evidence Required
+  description: Escalate invoice-processing turns that do not carry evidence trace
+    metadata for source documents.
+  owner: AP Controls Team
+  version: 1
+  status: draft
+  risk_tier: L2
+  event: PostTurn
+  matcher: .*
+  decision: escalate
+  fail_policy: open
+  block_on_nonzero: true
+  mode: blocking
+  timeout_seconds: 10
+  priority: 180
+  scope:
+    tenant_id: company
+    agent_id: enterprise_agent
+    skills:
+    - invoice_processing_ap
+  conditions:
+    all:
+    - field: env.IAF_EVIDENCE_TRACE_ID
+      operator: equals
+      value: ''
+  approval:
+    approver_role: evidence_reviewer
+    sla_minutes: 60
+    on_timeout: escalate
+  evidence:
+    required:
+    - trace_id
+    - evidence_trace_id
+    - source_documents
+    - matched_conditions
+  created_at: '2026-06-08T14:24:00+00:00'
+  updated_at: '2026-06-17T17:52:05.992721+00:00'
+- policy_id: vendor_master_change_approval
+  name: Vendor Master Change Approval
+  description: Require HITL approval before vendor master updates such as bank account,
+    tax ID, address, or payment terms changes.
+  owner: Vendor Governance Team
+  version: 1
+  status: draft
+  risk_tier: CRITICAL
+  event: PreToolUse
+  matcher: shell
+  decision: approve
+  fail_policy: closed
+  block_on_nonzero: true
+  mode: blocking
+  timeout_seconds: 10
+  priority: 110
+  scope:
+    tenant_id: company
+    agent_id: enterprise_agent
+    skills:
+    - fa_ap
+  conditions:
+    any:
+    - field: command
+      operator: regex
+      value: vendor.*(bank|account|iban|routing|tax|address|payment terms|terms)
+    - field: command
+      operator: regex
+      value: (bank|iban|routing|tax id).*(vendor|supplier)
+  approval:
+    approver_role: vendor_master_approver
+    sla_minutes: 20
+    on_timeout: escalate
+  evidence:
+    required:
+    - trace_id
+    - tool_input
+    - matched_conditions
+    - vendor_id
+    - approval_decision
+  created_at: '2026-06-08T14:24:00+00:00'
+  updated_at: '2026-06-17T17:52:05.992740+00:00'
+- policy_id: ar_writeoff_approval
+  name: AR Write-Off Approval
+  description: Require approval before AR write-off actions or credit memo creation
+    above operational thresholds.
+  owner: AR Controls Team
+  version: 1
+  status: draft
+  risk_tier: L3
+  event: PreToolUse
+  matcher: shell
+  decision: approve
+  fail_policy: closed
+  block_on_nonzero: true
+  mode: blocking
+  timeout_seconds: 10
+  priority: 135
+  scope:
+    tenant_id: company
+    agent_id: enterprise_agent
+    skills:
+    - fa_ar
+  conditions:
+    any:
+    - field: command
+      operator: regex
+      value: write-?off|credit memo|bad debt
+  approval:
+    approver_role: ar_manager
+    sla_minutes: 30
+    on_timeout: escalate
+  evidence:
+    required:
+    - trace_id
+    - tool_input
+    - matched_conditions
+    - customer_id
+    - approval_decision
+  created_at: '2026-06-08T14:24:00+00:00'
+  updated_at: '2026-06-17T17:52:05.992756+00:00'
+- policy_id: gl_journal_posting_approval
+  name: GL Journal Posting Approval
+  description: Require approval before journal posting, reversal, or close-period
+    adjustments.
+  owner: GL Controls Team
+  version: 1
+  status: draft
+  risk_tier: L3
+  event: PreToolUse
+  matcher: shell
+  decision: approve
+  fail_policy: closed
+  block_on_nonzero: true
+  mode: blocking
+  timeout_seconds: 10
+  priority: 132
+  scope:
+    tenant_id: company
+    agent_id: enterprise_agent
+    skills:
+    - fa_gl
+  conditions:
+    any:
+    - field: command
+      operator: regex
+      value: journal.*(post|posting|reverse|reversal)|close period|period adjustment
+  approval:
+    approver_role: gl_controller
+    sla_minutes: 30
+    on_timeout: escalate
+  evidence:
+    required:
+    - trace_id
+    - tool_input
+    - matched_conditions
+    - journal_id
+    - approval_decision
+  created_at: '2026-06-08T14:24:00+00:00'
+  updated_at: '2026-06-17T17:52:05.992771+00:00'
+- policy_id: sharepoint_finance_folder_scope_guard
+  name: SharePoint Finance Folder Scope Guard
+  description: Deny attempts by finance skills to read SharePoint or file paths outside
+    approved finance folders.
+  owner: Data Access Governance
+  version: 1
+  status: draft
+  risk_tier: L2
+  event: PreToolUse
+  matcher: shell
+  decision: deny
+  fail_policy: closed
+  block_on_nonzero: true
+  mode: blocking
+  timeout_seconds: 10
+  priority: 155
+  scope:
+    tenant_id: company
+    agent_id: enterprise_agent
+    skills:
+    - fa_ap
+    - fa_ar
+    - fa_gl
+    - invoice_processing_ap
+  conditions:
+    all:
+    - field: command
+      operator: regex
+      value: sharepoint|/shared/|source_uri|download
+    - field: command
+      operator: not_contains
+      value: /Finance/
+  approval:
+    approver_role: data_owner
+    sla_minutes: 60
+    on_timeout: escalate
+  evidence:
+    required:
+    - trace_id
+    - tool_input
+    - source_uri
+    - matched_conditions
+  created_at: '2026-06-08T14:24:00+00:00'
+  updated_at: '2026-06-17T17:52:05.992789+00:00'
+- policy_id: external_api_post_approval
+  name: External API POST Approval
+  description: Require approval before external HTTP mutation calls to APIs from finance
+    skills.
+  owner: Integration Governance
+  version: 1
+  status: draft
+  risk_tier: L3
+  event: PreToolUse
+  matcher: shell
+  decision: approve
+  fail_policy: closed
+  block_on_nonzero: true
+  mode: blocking
+  timeout_seconds: 10
+  priority: 125
+  scope:
+    tenant_id: company
+    agent_id: enterprise_agent
+    skills:
+    - fa_ap
+    - fa_ar
+    - fa_gl
+    - invoice_processing_ap
+  conditions:
+    all:
+    - field: command
+      operator: regex
+      value: curl|http
+    - field: command
+      operator: regex
+      value: -X\s+(POST|PUT|PATCH|DELETE)
+  approval:
+    approver_role: integration_approver
+    sla_minutes: 20
+    on_timeout: escalate
+  evidence:
+    required:
+    - trace_id
+    - tool_input
+    - matched_conditions
+    - external_system
+    - approval_decision
+  created_at: '2026-06-08T14:24:00+00:00'
+  updated_at: '2026-06-17T17:52:05.992807+00:00'
+- policy_id: pii_secret_prompt_guard
+  name: PII And Secret Prompt Guard
+  description: Escalate user turns that ask finance agents to expose secrets, tokens,
+    passwords, or high-risk PII.
+  owner: Security Governance
+  version: 1
+  status: draft
+  risk_tier: CRITICAL
+  event: BeforeTurn
+  matcher: .*
+  decision: escalate
+  fail_policy: closed
+  block_on_nonzero: true
+  mode: blocking
+  timeout_seconds: 10
+  priority: 105
+  scope:
+    tenant_id: company
+    agent_id: enterprise_agent
+    skills: []
+  conditions:
+    any:
+    - field: env.IAF_INPUT_PREVIEW
+      operator: regex
+      value: \b(password|secret|token|api key|private key|ssn|social security|credit
+        card)\b
+  approval:
+    approver_role: security_reviewer
+    sla_minutes: 15
+    on_timeout: escalate
+  evidence:
+    required:
+    - trace_id
+    - user_id
+    - input_preview
+    - matched_conditions
+  created_at: '2026-06-08T14:24:00+00:00'
+  updated_at: '2026-06-17T17:52:05.992822+00:00'
+- policy_id: ap_high_value_payment_approval
+  name: AP High Value Payment Approval
+  description: Require HITL approval before releasing high-value AP payments.
+  owner: Finance Controls Team
+  version: 1
+  status: active
+  risk_tier: L3
+  event: PreToolUse
+  matcher: shell
+  decision: approve
+  fail_policy: closed
+  scope:
+    tenant_id: company
+    agent_id: enterprise_agent
+    skills:
+    - fa_ap
+    - invoice_processing_ap
+  conditions:
+    all:
+    - field: command
+      operator: contains
+      value: /payments/release
+    - field: extracted.amount
+      operator: greater_than_or_equal
+      value: '500000'
+  approval:
+    approver_role: finance_manager
+    sla_minutes: 30
+    on_timeout: escalate
+  evidence:
+    required:
+    - trace_id
+    - tool_input
+    - matched_conditions
+    - approval_decision
+    - final_tool_result
+  block_on_nonzero: true
+  mode: blocking
+  timeout_seconds: 10
+  priority: 150
+  created_at: '2026-06-08T11:21:05.187921+00:00'
+  updated_at: '2026-06-17T17:52:05.992839+00:00'
+- policy_id: model_response_sensitive_data_redaction
+  name: Model Response Sensitive Data Redaction
+  description: Redact sensitive-looking values from model responses before they are
+    returned to users or parsed by downstream runtime logic.
+  owner: Security Governance
+  version: 1
+  status: active
+  risk_tier: L2
+  event: AfterModelCall
+  matcher: .*
+  decision: redact
+  fail_policy: open
+  mode: observe
+  timeout_seconds: 10
+  priority: 90
+  scope:
+    tenant_id: company
+    agent_id: enterprise_agent
+    skills: []
+  conditions:
+    any:
+    - field: response_content
+      operator: regex
+      value: \b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b
+    - field: response_content
+      operator: regex
+      value: \b\d{3}-\d{2}-\d{4}\b
+    - field: response_content
+      operator: regex
+      value: \b(?:\d[ -]*?){13,19}\b
+    - field: response_content
+      operator: regex
+      value: \b(api[_ -]?key|token|secret|password)\s*[:=]\s*['"]?[^'"\s,;]+
+  redaction:
+    patterns:
+    - name: email
+      regex: \b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b
+      replacement: '[REDACTED_EMAIL]'
+    - name: ssn
+      regex: \b\d{3}-\d{2}-\d{4}\b
+      replacement: '[REDACTED_SSN]'
+    - name: card
+      regex: \b(?:\d[ -]*?){13,19}\b
+      replacement: '[REDACTED_CARD]'
+    - name: secret_assignment
+      regex: \b(?:api[_ -]?key|token|secret|password)\s*[:=]\s*['"]?[^'"\s,;]+
+      replacement: '[REDACTED_SECRET]'
+  evidence:
+    required:
+    - trace_id
+    - model_name
+    - matched_conditions
+    - redaction_applied
+  created_at: '2026-06-29T14:55:00+05:30'
+  updated_at: '2026-06-29T14:55:00+05:30'

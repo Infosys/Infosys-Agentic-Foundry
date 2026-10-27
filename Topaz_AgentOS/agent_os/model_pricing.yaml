@@ -1,0 +1,28 @@
+# AgentPro Model Pricing — USD per 1,000 tokens (input / output)
+# Edit this file to update pricing. No code changes needed.
+# Keys are matched as substrings of the deployment/model name (case-insensitive).
+# Order matters — first match wins. Put more specific names first.
+models:
+  # ── GPT-5 series (update with actual Azure pricing from your portal) ──────
+  gpt-5-nano:    { input: 0.000150, output: 0.000600 }   # TODO: update
+  gpt-5-mini:    { input: 0.000500, output: 0.002000 }   # TODO: update
+  gpt-5.2-chat:  { input: 0.002500, output: 0.010000 }   # TODO: update
+  gpt-5:         { input: 0.002500, output: 0.010000 }   # TODO: update
+
+  # ── GPT-4 series ──────────────────────────────────────────────────────────
+  gpt-4o-mini:   { input: 0.000150, output: 0.000600 }
+  gpt-4o:        { input: 0.002500, output: 0.010000 }
+  gpt-4-turbo:   { input: 0.010000, output: 0.030000 }
+  gpt-4:         { input: 0.030000, output: 0.060000 }
+  gpt-35-turbo:  { input: 0.000500, output: 0.001500 }
+  o1-mini:       { input: 0.003000, output: 0.012000 }
+  o1:            { input: 0.015000, output: 0.060000 }
+
+  # ── Claude (Anthropic) series ───────────────────────────────────────────
+  claude-opus-4:     { input: 0.015000, output: 0.075000 }
+  claude-sonnet-5:   { input: 0.002000, output: 0.010000 }
+  claude-sonnet-4:   { input: 0.003000, output: 0.015000 }
+  claude-3-5-haiku:  { input: 0.000800, output: 0.004000 }
+  claude-3-5-sonnet: { input: 0.003000, output: 0.015000 }
+  claude-3-opus:     { input: 0.015000, output: 0.075000 }
+  claude-3-haiku:    { input: 0.000250, output: 0.001250 }

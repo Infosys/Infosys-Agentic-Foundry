@@ -1,0 +1,1112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>IAF AgentOS — Detailed Architecture</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: #E0E4ED; color: #2B3A4E; padding: 40px 30px 80px;
+    line-height: 1.35;
+  }
+  .page {
+    max-width: 1480px; margin: 0 auto; background: #F4F6FA;
+    padding: 30px 36px; border: 1px solid #A4B5CC;
+  }
+
+  /* Header */
+  header { border-bottom: 4px solid #007CC3; padding-bottom: 14px; margin-bottom: 22px; }
+  header h1 { font-size: 32px; color: #002B50; font-weight: 800; }
+  header p  { font-size: 14px; color: #56697F; margin-top: 4px; }
+  header .meta {
+    margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;
+    font-size: 11px; font-weight: 700; letter-spacing: 1px;
+  }
+  header .meta span {
+    background: #002B50; color: #fff; padding: 4px 10px; border-radius: 14px;
+  }
+  header .meta span.orange { background: #C15A1F; }
+  header .meta span.green  { background: #2E8B57; }
+  header .meta span.purple { background: #5B2D8E; }
+
+  /* Stack arrow */
+  .down-arrow {
+    text-align: center; font-size: 26px; color: #007CC3; font-weight: 700;
+    margin: 4px 0;
+  }
+
+  /* Layer band */
+  .layer {
+    background: #fff; border: 1px solid #A4B5CC; margin-bottom: 6px;
+    position: relative;
+  }
+  .layer-header {
+    display: flex; justify-content: space-between; align-items: center;
+    background: linear-gradient(90deg, #002B50, #005A8E);
+    color: #fff; padding: 10px 18px;
+  }
+  .layer-header h2 { font-size: 17px; font-weight: 700; }
+  .layer-header .tag {
+    font-size: 11px; font-weight: 700; letter-spacing: 1px;
+    background: #00AEEF; color: #002B50; padding: 3px 10px; border-radius: 12px;
+  }
+  .layer-header .role {
+    font-size: 12px; color: #7DD3FC; margin-top: 2px;
+  }
+  .layer-header .lh-l { display: flex; flex-direction: column; }
+  .layer-body { padding: 14px 16px; }
+
+  /* Cards inside a layer */
+  .grid { display: grid; gap: 10px; }
+  .g-2 { grid-template-columns: 1fr 1fr; }
+  .g-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .g-4 { grid-template-columns: repeat(4, 1fr); }
+  .g-5 { grid-template-columns: repeat(5, 1fr); }
+  .g-6 { grid-template-columns: repeat(6, 1fr); }
+
+  .card {
+    border: 1px solid #A4B5CC; background: #fff; padding: 10px 12px;
+    border-top: 3px solid #007CC3;
+  }
+  .card.green  { border-top-color: #2E8B57; }
+  .card.red    { border-top-color: #C0392B; }
+  .card.orange { border-top-color: #C15A1F; }
+  .card.purple { border-top-color: #5B2D8E; }
+  .card.cyan   { border-top-color: #00AEEF; }
+  .card.gray   { border-top-color: #8897A9; }
+
+  .card h3 {
+    font-size: 12px; color: #002B50; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;
+  }
+  .card .sub { font-size: 11px; color: #56697F; margin-bottom: 6px; font-style: italic; }
+  .card ul   { list-style: none; }
+  .card li   {
+    font-size: 11.5px; color: #2B3A4E; padding: 1px 0 1px 12px;
+    position: relative; line-height: 1.4;
+  }
+  .card li::before {
+    content: '·'; position: absolute; left: 2px; color: #007CC3; font-weight: 700;
+  }
+  .card code {
+    background: #EAF4FB; padding: 1px 4px; border-radius: 3px;
+    font-size: 10.5px; color: #002B50; font-family: 'SF Mono', Menlo, monospace;
+  }
+
+  /* Pipeline visual */
+  .pipeline {
+    display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px;
+    background: #EAF4FB; border: 1px solid #007CC3; padding: 10px;
+  }
+  .pipe-step {
+    background: #fff; border: 1px solid #A4B5CC;
+    padding: 8px 6px; text-align: center; font-size: 10px;
+    color: #002B50; font-weight: 600;
+  }
+  .pipe-step strong { display: block; font-size: 11px; color: #C15A1F; margin-bottom: 2px; }
+  .pipe-step.start { background: #002B50; color: #fff; }
+  .pipe-step.start strong { color: #7DD3FC; }
+  .pipe-step.end { background: #2E8B57; color: #fff; }
+  .pipe-step.end strong { color: #C8E8D2; }
+
+  /* Tag pills */
+  .pill {
+    display: inline-block; font-size: 9.5px; font-weight: 700;
+    padding: 1px 6px; border-radius: 8px; letter-spacing: 0.3px;
+    margin: 1px 2px 1px 0;
+  }
+  .pill.b { background: #D1E7F5; color: #007CC3; }
+  .pill.g { background: #D4EDDA; color: #2E8B57; }
+  .pill.r { background: #F8D7DA; color: #C0392B; }
+  .pill.o { background: #FFE2CC; color: #C15A1F; }
+  .pill.p { background: #E4D7F0; color: #5B2D8E; }
+  .pill.k { background: #003D6B; color: #fff; }
+
+  /* Side strip (left-edge color) */
+  .layer.k0::before, .layer.k1::before, .layer.k2::before, .layer.k3::before, .layer.k4::before, .layer.k5::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 6px;
+  }
+  .layer.k0::before { background: #00AEEF; }
+  .layer.k1::before { background: #C15A1F; }
+  .layer.k2::before { background: #5B2D8E; }
+  .layer.k3::before { background: #2E8B57; }
+  .layer.k4::before { background: #007CC3; }
+  .layer.k5::before { background: #C0392B; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; font-size: 11.5px; background: #fff; }
+  table th { background: #002B50; color: #fff; text-align: left; padding: 6px 8px; font-size: 10.5px; }
+  table td { padding: 5px 8px; border-bottom: 1px solid #DCE2EA; vertical-align: top; }
+  table tr:nth-child(even) td { background: #F4F6FA; }
+  table code { background: #EAF4FB; padding: 1px 4px; font-size: 10.5px; }
+
+  /* Cross-cutting strip */
+  .crosscut {
+    background: linear-gradient(135deg, #C15A1F 0%, #5B2D8E 100%);
+    color: #fff; padding: 14px 18px; margin: 8px 0;
+  }
+  .crosscut h2 { font-size: 16px; margin-bottom: 8px; }
+  .crosscut .items {
+    display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px;
+  }
+  .crosscut .item {
+    background: rgba(255,255,255,0.12); padding: 6px 8px; font-size: 10.5px;
+    border-left: 3px solid #FFD580;
+  }
+  .crosscut .item strong { color: #FFD580; display: block; font-size: 10px; letter-spacing: 0.5px; }
+
+  /* Lifecycle banner */
+  .lifecycle {
+    background: #002B50; color: #fff; padding: 14px 18px; margin: 12px 0;
+  }
+  .lifecycle h2 { color: #00AEEF; font-size: 15px; margin-bottom: 10px; letter-spacing: 1px; }
+  .lifecycle .flow {
+    display: grid; grid-template-columns: repeat(11, 1fr); gap: 4px; align-items: stretch;
+  }
+  .lifecycle .node {
+    background: #003D6B; border: 1px solid #00AEEF; padding: 6px 4px;
+    text-align: center; font-size: 9.5px; line-height: 1.3;
+  }
+  .lifecycle .node strong { display: block; color: #FFD580; font-size: 10px; }
+  .lifecycle .arr { color: #00AEEF; font-size: 16px; text-align: center; }
+
+  /* Footer */
+  footer { margin-top: 20px; font-size: 11px; color: #8897A9; text-align: center; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <h1>IAF AgentOS — Hook-Harness Adapter</h1>
+  <p>Detailed top-to-bottom architecture · Kernel → Skills → Studio → Enterprise Root</p>
+  <div class="meta">
+    <span>ENTERPRISE-GRADE</span>
+    <span class="orange">MULTI-TENANT</span>
+    <span class="green">HOOK-DRIVEN</span>
+    <span class="purple">TRACE + REWARD</span>
+    <span>ONE-TOOL KERNEL</span>
+    <span class="orange">4 EXECUTION ENGINES</span>
+    <span class="purple">TAXONOMY ROUTING</span>
+    <span class="green">HITL-FIRST</span>
+  </div>
+</header>
+
+<!-- ═══════════════════════════ TRIGGERS ═══════════════════════════ -->
+<div class="layer k0">
+  <div class="layer-header">
+    <div class="lh-l">
+      <h2>Layer 0 · Triggers · How Work Enters the System</h2>
+      <div class="role">Human chat · Event stream · Scheduled cron · Agent-to-agent (workstream) · External queue ingest</div>
+    </div>
+    <span class="tag">ENTRY</span>
+  </div>
+  <div class="layer-body">
+    <div class="grid g-5">
+      <div class="card cyan">
+        <h3>Human · Chat UI</h3>
+        <ul>
+          <li>FastAPI <code>/chat</code> + <code>/ws/chat/&lt;session&gt;</code> WebSocket</li>
+          <li>Conversation state in Redis or SQLite</li>
+          <li>JWT-bound tenant + user</li>
+        </ul>
+      </div>
+      <div class="card cyan">
+        <h3>Event · Queue Ingest</h3>
+        <ul>
+          <li>JSON / CSV / ServiceNow / webhook feeders</li>
+          <li><code>cc_queue.db</code> SQLite backend</li>
+          <li>Queued items routed to skill</li>
+        </ul>
+      </div>
+      <div class="card cyan">
+        <h3>Schedule · Cron</h3>
+        <ul>
+          <li>APScheduler in studio process</li>
+          <li>One cron tick → <code>mission_engine.run_iteration()</code></li>
+          <li>Cron jobs tracked per tenant</li>
+        </ul>
+      </div>
+      <div class="card cyan">
+        <h3>Agent · Workstream</h3>
+        <ul>
+          <li>Workstream YAML + runtime DB</li>
+          <li>Sub-skills callable from supervisor</li>
+          <li>Pause / resume on HITL</li>
+        </ul>
+      </div>
+      <div class="card cyan">
+        <h3>External · MCP / API</h3>
+        <ul>
+          <li>MCP server exposes skills</li>
+          <li>REST router endpoints</li>
+          <li>Email integration</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="down-arrow">↓</div>
+
+<!-- ═══════════════════════════ LAYER 1 · AUTH + TENANT ═══════════════════════════ -->
+<div class="layer k4">
+  <div class="layer-header">
+    <div class="lh-l">
+      <h2>Layer 1 · Studio Edge · Auth · Tenant Resolution · Routing</h2>
+      <div class="role">IAF-Agent-Studio · FastAPI app · 25+ routers · WebSocket protocols</div>
+    </div>
+    <span class="tag">EDGE</span>
+  </div>
+  <div class="layer-body">
+    <div class="grid g-4">
+      <div class="card">
+        <h3>Auth Providers</h3>
+        <div class="sub">auth/factory.py picks at startup</div>
+        <ul>
+          <li>Local SQLite (dev)</li>
+          <li>Keycloak (OAuth2, group RBAC)</li>
+          <li>Azure AD (JWT)</li>
+          <li>Generic OIDC</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Middleware</h3>
+        <ul>
+          <li>JWT validation</li>
+          <li>Tenant extraction → <code>request.state.tenant_id</code></li>
+          <li>Rate limiter per user</li>
+          <li>Password policy</li>
+          <li>Audit log writes</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>RBAC Roles</h3>
+        <ul>
+          <li><span class="pill b">USER</span> own folder only</li>
+          <li><span class="pill g">MANAGER</span> team via TeamResolver</li>
+          <li><span class="pill o">ADMIN</span> tenant-wide</li>
+          <li><span class="pill r">AUDITOR</span> global read-only</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>WebSocket Channels</h3>
+        <ul>
+          <li><code>/ws/chat</code> · stream tool/reasoning</li>
+          <li><code>/ws/approvals</code> · HITL queue</li>
+          <li><code>/ws/dashboard</code> · ops KPIs</li>
+          <li><code>/ws/twin</code> · Digital Twin</li>
+          <li><code>/ws/workstreams/&lt;name&gt;</code></li>
+        </ul>
+      </div>
+    </div>
+    <div style="margin-top: 10px;" class="grid g-6">
+      <div class="card gray">
+        <h3>Router · agents</h3>
+        <ul><li>create / list / delete</li><li>config edits</li></ul>
+      </div>
+      <div class="card gray">
+        <h3>Router · workstreams</h3>
+        <ul><li>backlog · items · actions</li></ul>
+      </div>
+      <div class="card gray">
+        <h3>Router · approvals</h3>
+        <ul><li>HITL queue + resolve</li></ul>
+      </div>
+      <div class="card gray">
+        <h3>Router · cron</h3>
+        <ul><li>schedule jobs · APScheduler</li></ul>
+      </div>
+      <div class="card gray">
+        <h3>Router · skills</h3>
+        <ul><li>library · test · deploy</li></ul>
+      </div>
+      <div class="card gray">
+        <h3>Router · policy_control</h3>
+        <ul><li>hook policy author + compile</li></ul>
+      </div>
+      <div class="card gray">
+        <h3>Router · knowledge</h3>
+        <ul><li>graph CRUD · query · merge</li></ul>
+      </div>
+      <div class="card gray">
+        <h3>Router · audit</h3>
+        <ul><li>command + access logs</li></ul>
+      </div>
+      <div class="card gray">
+        <h3>Router · twin</h3>
+        <ul><li>Digital Twin stream</li></ul>
+      </div>
+      <div class="card gray">
+        <h3>Router · finops</h3>
+        <ul><li>token + cost dashboard</li></ul>
+      </div>
+      <div class="card gray">
+        <h3>Router · evolution</h3>
+        <ul><li>self-evolution analysis</li></ul>
+      </div>
+      <div class="card gray">
+        <h3>Router · doc_to_skill</h3>
+        <ul><li>upload doc → SKILL.md</li></ul>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="down-arrow">↓</div>
+
+<!-- ═══════════════════════════ LAYER 2 · SKILL ROUTING ═══════════════════════════ -->
+<div class="layer k2">
+  <div class="layer-header">
+    <div class="lh-l">
+      <h2>Layer 2 · Skill Routing · TaxonomySignalIndex · Loader</h2>
+      <div class="role">Enterprise_Context.md L1→L5 → embedding index → cosine match → SKILL.md</div>
+    </div>
+    <span class="tag">ROUTING</span>
+  </div>
+  <div class="layer-body">
+    <div class="grid g-3">
+      <div class="card purple">
+        <h3>TaxonomySignalIndex</h3>
+        <div class="sub">taxonomy_signal_index.py</div>
+        <ul>
+          <li>Parses <code>Enterprise_Context.md</code></li>
+          <li>L3 boundary via <code>###</code> headings</li>
+          <li><code>&lt;!-- skill: name --&gt;</code> marker per L3</li>
+          <li>Embeds L4–L5 leaf activities</li>
+          <li>Cosine + term-boost · <code>COSINE_CLEAR=0.65</code></li>
+          <li><strong>Zero LLM calls at query time</strong></li>
+        </ul>
+      </div>
+      <div class="card purple">
+        <h3>SkillRouter</h3>
+        <div class="sub">router.py</div>
+        <ul>
+          <li>Merge global + personal skills</li>
+          <li>Allow / deny list filter</li>
+          <li>LLM classify fallback when index unsure</li>
+          <li>Returns (skill_name, meta)</li>
+        </ul>
+      </div>
+      <div class="card purple">
+        <h3>SkillLoader</h3>
+        <div class="sub">loader.py</div>
+        <ul>
+          <li>Parse SKILL.md frontmatter</li>
+          <li>Load <code>context_*.md</code> referenced</li>
+          <li>Lazy-load on first use</li>
+          <li>Validate <code>execution_mode:</code></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="down-arrow">↓</div>
+
+<!-- ═══════════════════════════ LAYER 3 · EXECUTION ENGINES ═══════════════════════════ -->
+<div class="layer k1">
+  <div class="layer-header">
+    <div class="lh-l">
+      <h2>Layer 3 · SkillAgent · 4 Execution Engines · ReAct + Native Runtimes</h2>
+      <div class="role">execution.py · react_runtime/ · planner.py · plan_critic.py · progress_phases.py</div>
+    </div>
+    <span class="tag">EXECUTION</span>
+  </div>
+  <div class="layer-body">
+    <div class="grid g-4">
+      <div class="card orange">
+        <h3>WorkflowEngine</h3>
+        <div class="sub">Deterministic steps</div>
+        <ul>
+          <li>No LLM between steps</li>
+          <li>Config-driven sequence</li>
+          <li>Best for SOP-shaped work</li>
+        </ul>
+      </div>
+      <div class="card orange">
+        <h3>ParallelEngine</h3>
+        <div class="sub">DAG, concurrent</div>
+        <ul>
+          <li>Dependency-resolved fan-out</li>
+          <li>Async tool execution</li>
+          <li>Best for independent lookups</li>
+        </ul>
+      </div>
+      <div class="card orange">
+        <h3>SupervisorEngine</h3>
+        <div class="sub">Fan-out · fixed</div>
+        <ul>
+          <li>Manager + workers</li>
+          <li>SKILL.md declares workers</li>
+          <li>Best for multi-domain queries</li>
+        </ul>
+      </div>
+      <div class="card orange">
+        <h3>OrchestratorEngine</h3>
+        <div class="sub">LLM-driven adaptive</div>
+        <ul>
+          <li>Manager loop chooses next skill</li>
+          <li>Goal-driven dispatch</li>
+          <li>Best for open-ended work</li>
+        </ul>
+      </div>
+    </div>
+    <div style="margin-top: 10px;" class="grid g-3">
+      <div class="card cyan">
+        <h3>React Runtime Factory</h3>
+        <div class="sub">react_runtime/factory.py</div>
+        <ul>
+          <li>Native Azure Responses path</li>
+          <li>Native Anthropic thinking path</li>
+          <li>LangGraph fallback otherwise</li>
+        </ul>
+      </div>
+      <div class="card cyan">
+        <h3>Planner · PlanCritic</h3>
+        <ul>
+          <li>DAG planner for multi-step</li>
+          <li>Plan validator (feasibility)</li>
+          <li>Re-plan on hook block</li>
+        </ul>
+      </div>
+      <div class="card cyan">
+        <h3>Progress Phases</h3>
+        <ul>
+          <li>analysis → execution → validation → completion</li>
+          <li>Status streamed to <code>/ws/chat</code></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="down-arrow">↓</div>
+
+<!-- ═══════════════════════════ LAYER 4 · HOOKS ═══════════════════════════ -->
+<div class="layer k5">
+  <div class="layer-header">
+    <div class="lh-l">
+      <h2>Layer 4 · Hook Runner · 4 Authorable Phases + ~20 Platform Event Junctions</h2>
+      <div class="role">hook_runner.py · hook_context.py · hook_approval.py · platform_hooks/ · policy_control.py · trace_callback.py · tool_governance.py</div>
+    </div>
+    <span class="tag">HOOKS</span>
+  </div>
+  <div class="layer-body">
+
+    <!-- USER-AUTHORABLE PHASES -->
+    <div style="font-size:11px; font-weight:700; color:#C0392B; letter-spacing:1px; margin-bottom:6px;">
+      A · USER-AUTHORABLE LIFECYCLE PHASES (declared in <code>config.yaml</code>)
+    </div>
+    <div class="grid g-4">
+      <div class="card red">
+        <h3>PreToolUse</h3>
+        <div class="sub">SYNC · can block</div>
+        <ul>
+          <li>Fires before every tool call</li>
+          <li>Approve dangerous ops</li>
+          <li>Returns <code>{blocked, reason}</code></li>
+          <li>Routes to HITL queue if needed</li>
+        </ul>
+      </div>
+      <div class="card red">
+        <h3>PostToolUse</h3>
+        <div class="sub">ASYNC fire-and-forget</div>
+        <ul>
+          <li>Fires after tool completes</li>
+          <li>Audit log · Splunk · result check</li>
+          <li>Non-blocking</li>
+        </ul>
+      </div>
+      <div class="card red">
+        <h3>PostTurn</h3>
+        <div class="sub">SYNC · can block</div>
+        <ul>
+          <li>Fires before HTTP response</li>
+          <li>PII redaction · compliance</li>
+          <li>Can modify or block response</li>
+        </ul>
+      </div>
+      <div class="card red">
+        <h3>PostSampling</h3>
+        <div class="sub">ASYNC background</div>
+        <ul>
+          <li>After response sent</li>
+          <li>Analytics · feedback · Slack</li>
+          <li>Non-blocking</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- PLATFORM EVENT JUNCTIONS -->
+    <div style="font-size:11px; font-weight:700; color:#5B2D8E; letter-spacing:1px; margin-top:14px; margin-bottom:6px;">
+      B · PLATFORM EVENT JUNCTIONS (fired by the runtime · subscribable via <code>platform_hooks/</code> · gated by <code>policy_control</code> · emitted as spans by <code>trace_callback</code>)
+    </div>
+    <div class="grid g-5">
+      <div class="card purple">
+        <h3>Routing &amp; Plan</h3>
+        <ul>
+          <li>Skill-route decision (TaxonomySignalIndex)</li>
+          <li>Plan critic validate</li>
+          <li>Pre-step / Post-step per workflow step</li>
+          <li>Progress phase transition (analysis → exec → validate → done)</li>
+        </ul>
+      </div>
+      <div class="card purple">
+        <h3>Tool &amp; Credential</h3>
+        <ul>
+          <li>Tool governance pre-check</li>
+          <li>Credential access (name only, no value)</li>
+          <li>External access entitlement (HTTP / DB / MCP)</li>
+          <li>SQL connection governance</li>
+          <li>SafePath virtual → real rewrite</li>
+        </ul>
+      </div>
+      <div class="card purple">
+        <h3>Data &amp; Memory</h3>
+        <ul>
+          <li>Memory write + VectorStore auto-index</li>
+          <li>Knowledge extraction trigger</li>
+          <li>Knowledge confirm / reject</li>
+          <li>Entity registry resolution</li>
+          <li>Atomic IO read-modify-write</li>
+        </ul>
+      </div>
+      <div class="card purple">
+        <h3>Workstream &amp; Approval</h3>
+        <ul>
+          <li>Workstream item state transition</li>
+          <li>Queue claim · DLQ move</li>
+          <li>Approval rule eval</li>
+          <li>Approval decision (approve / reject)</li>
+          <li>Cron tick</li>
+        </ul>
+      </div>
+      <div class="card purple">
+        <h3>LLM &amp; Telemetry</h3>
+        <ul>
+          <li>LLM call (token / cost tracker)</li>
+          <li>Trace span open / close per type</li>
+          <li>Telemetry fanout (OTLP / Datadog / Splunk)</li>
+          <li>Twin KPI emit</li>
+          <li>Response composition</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- META + CONTEXT + RULES -->
+    <div style="margin-top: 12px;" class="grid g-3">
+      <div class="card">
+        <h3>Hook Context env (passed to scripts)</h3>
+        <ul>
+          <li><code>IAF_HOOK_PHASE</code> · <code>IAF_TOOL_NAME</code> · <code>IAF_TOOL_INPUT</code></li>
+          <li><code>IAF_TOOL_OUTPUT</code> · <code>IAF_AGENT_ID</code> · <code>IAF_SKILL_NAME</code></li>
+          <li><code>IAF_TENANT_ID</code> · <code>IAF_USER_ID</code> · <code>IAF_REQUEST_ID</code></li>
+          <li><code>IAF_SKILL_CONTEXT</code> JSON blob</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Approval Rules · approval_rules.py</h3>
+        <ul>
+          <li><code>always_require</code> · <code>never_require</code></li>
+          <li><code>thresholds</code> · numeric operators</li>
+          <li><code>conditions</code> · keyword patterns</li>
+          <li>Urgency: critical · high · medium · low</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Why this matters</h3>
+        <ul>
+          <li>Every junction = labeled span in <code>traces.db</code></li>
+          <li>Every junction = candidate reward channel for RL</li>
+          <li>Every junction = policy-enforcement point</li>
+          <li>Every junction = audit / compliance evidence</li>
+          <li>Compare: DeepAgents has only 4 middleware wrap points</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="down-arrow">↓</div>
+
+<!-- ═══════════════════════════ LAYER 5 · SAFE KERNEL ═══════════════════════════ -->
+<div class="layer k3">
+  <div class="layer-header">
+    <div class="lh-l">
+      <h2>Layer 5 · SafeKernel · One Tool · Many Guards</h2>
+      <div class="role">agent_os/kernel.py · safe_path.py · the trust boundary of the entire stack</div>
+    </div>
+    <span class="tag">KERNEL</span>
+  </div>
+  <div class="layer-body">
+
+    <!-- Pipeline -->
+    <div class="pipeline">
+      <div class="pipe-step start"><strong>1</strong>run_shell_command(cmd)</div>
+      <div class="pipe-step"><strong>2</strong>RateLimiter<br>60/60s sliding</div>
+      <div class="pipe-step"><strong>3</strong>_parse_command<br>tokenize · block &amp;&amp; ; \` $( </div>
+      <div class="pipe-step"><strong>4</strong>BLOCKED_COMMANDS<br>static denylist</div>
+      <div class="pipe-step"><strong>5</strong>_requires_confirmation<br>2-step write gate</div>
+      <div class="pipe-step"><strong>6</strong>RBAC + SafePath<br>role + tenant scope</div>
+      <div class="pipe-step"><strong>7</strong>handler<br>_cmd_*</div>
+      <div class="pipe-step"><strong>8</strong>_log_command<br>JSONL audit</div>
+      <div class="pipe-step end"><strong>9</strong>return output</div>
+    </div>
+
+    <!-- Commands + Sandbox -->
+    <div style="margin-top: 12px;" class="grid g-2">
+      <div class="card">
+        <h3>Commands · Unix subset re-implemented in kernel</h3>
+        <table>
+          <tr><th>Cmd</th><th>Handler</th><th>Notes</th></tr>
+          <tr><td><code>ls</code></td><td>_cmd_ls</td><td>Directory listing</td></tr>
+          <tr><td><code>cat</code></td><td>_cmd_cat</td><td>Bounded read</td></tr>
+          <tr><td><code>head/tail</code></td><td>_cmd_head/tail</td><td>Partial read</td></tr>
+          <tr><td><code>grep</code></td><td>_cmd_grep</td><td>ripgrep if present</td></tr>
+          <tr><td><code>find</code></td><td>_cmd_find</td><td>Path + glob</td></tr>
+          <tr><td><code>mkdir/touch</code></td><td>_cmd_*</td><td>Write — needs confirm</td></tr>
+          <tr><td><code>echo &gt; f</code></td><td>_cmd_echo</td><td>Write + auto-index</td></tr>
+          <tr><td><code>semgrep</code></td><td>_cmd_semgrep</td><td>Vector + BM25</td></tr>
+          <tr><td><code>tree / wc</code></td><td>_cmd_*</td><td>Visualisation</td></tr>
+          <tr><td><code>curl</code></td><td>_cmd_curl</td><td>Credential injection</td></tr>
+          <tr><td><code>python3</code></td><td>_cmd_python3</td><td>5-layer sandbox</td></tr>
+        </table>
+      </div>
+      <div class="card red">
+        <h3>Python3 5-Layer Sandbox</h3>
+        <ul>
+          <li><strong>L1 AST scan</strong> · blocks <code>subprocess</code>, <code>socket</code>, <code>ctypes</code>, <code>requests</code>, <code>os.system</code>, <code>exec</code>, <code>eval</code>, <code>__import__</code></li>
+          <li><strong>L2 External SQL gov</strong> · <code>sqlite3.connect(...)</code> checked vs entitlements</li>
+          <li><strong>L3 Virtual path rewrite</strong> · <code>/me/ /shared/ /users/</code> → real paths</li>
+          <li><strong>L4 Clean env</strong> · keep only PATH PYTHONPATH HOME LANG</li>
+          <li><strong>L5 rlimit + sandbox user</strong> · <code>sudo -u sandbox</code> optional</li>
+        </ul>
+        <h3 style="margin-top:8px">Blocked Commands · static denylist</h3>
+        <ul>
+          <li>rm · sudo · ssh · docker · kubectl</li>
+          <li>pip · npm · apt · brew</li>
+          <li>eval · exec · source · .</li>
+          <li>nc · wget · crontab · mkfs</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- SafePath + credentials + vector -->
+    <div style="margin-top: 10px;" class="grid g-4">
+      <div class="card">
+        <h3>SafePath</h3>
+        <ul>
+          <li>Virtual → real path resolver</li>
+          <li><code>..</code> traversal blocked</li>
+          <li>Symlink-attack detection</li>
+          <li>Tenant-scoped roots</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>CredentialStore + SecretProvider</h3>
+        <ul>
+          <li>Fernet at rest · masked <code>$CRED_*</code> to LLM</li>
+          <li>Pluggable: env · file · Redis · Vault</li>
+          <li>Skill-scoped consumer identity</li>
+          <li>Hook fires on credential access (metadata only)</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>ExternalAccess Governance</h3>
+        <ul>
+          <li>HTTP / DB / MCP entitlement check</li>
+          <li>Resource label + risk level</li>
+          <li>Separate audit log</li>
+          <li>Policy adapter input</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>VectorStore</h3>
+        <ul>
+          <li>Auto-index on writes to <code>/memory/</code></li>
+          <li>BM25 ranking · top 10 results</li>
+          <li>SQLite + embedding store</li>
+          <li>Powers <code>semgrep</code></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="down-arrow">↓</div>
+
+<!-- ═══════════════════════════ LAYER 6 · MEMORY + KNOWLEDGE ═══════════════════════════ -->
+<div class="layer k2">
+  <div class="layer-header">
+    <div class="lh-l">
+      <h2>Layer 6 · Memory · Knowledge · Context Graph · Entity Registry</h2>
+      <div class="role">memory.py · memory_search.py · knowledge_crud.py · knowledge_extractor.py · entity_registry.py</div>
+    </div>
+    <span class="tag">CONTEXT</span>
+  </div>
+  <div class="layer-body">
+    <div class="grid g-4">
+      <div class="card purple">
+        <h3>Memory Types</h3>
+        <ul>
+          <li>Short-term · conversation context</li>
+          <li>Long-term · facts · preferences</li>
+          <li>Episodic · past episodes JSONL</li>
+          <li>Procedural · learned patterns</li>
+        </ul>
+      </div>
+      <div class="card purple">
+        <h3>Memory Files</h3>
+        <ul>
+          <li><code>memory/learnings/episode_*.jsonl</code></li>
+          <li><code>memory/learnings/compact_learnings.jsonl</code></li>
+          <li><code>memory/history/conversation_*.jsonl</code></li>
+          <li><code>memory/context/context_graph.md</code></li>
+        </ul>
+      </div>
+      <div class="card purple">
+        <h3>Knowledge Lifecycle</h3>
+        <ul>
+          <li>Extractor chunks episodes</li>
+          <li>Facts: pending → confirmed/rejected</li>
+          <li>Confirmed → SQLite + embeddings</li>
+          <li>Dedup detection · merge</li>
+        </ul>
+      </div>
+      <div class="card purple">
+        <h3>Entity Registry</h3>
+        <ul>
+          <li>Ontology-aware resolution</li>
+          <li>Exact → alias → embedding</li>
+          <li>Cosine threshold 0.75</li>
+          <li>Seeded from domain contexts</li>
+        </ul>
+      </div>
+    </div>
+    <div style="margin-top: 10px;" class="grid g-2">
+      <div class="card">
+        <h3>Knowledge Types</h3>
+        <ul>
+          <li><span class="pill b">entity</span> · person · company · vendor · account</li>
+          <li><span class="pill g">fact</span> · assertion</li>
+          <li><span class="pill o">decision</span> · approval granted / denied</li>
+          <li><span class="pill p">pattern</span> · recurring behaviour</li>
+          <li><span class="pill k">metric</span> · DSO, ageing, etc.</li>
+          <li><span class="pill r">risk</span> · detected exception</li>
+          <li><span class="pill o">policy</span> · learned rule</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Context Assembly</h3>
+        <ul>
+          <li><code>grep_context_graph(keywords)</code> · semantic search</li>
+          <li><code>format_context_for_prompt(results)</code> · token-bounded</li>
+          <li><code>prompt_assembler.py</code> · skill + context + memory</li>
+          <li>Implicit-learning signals from feedback</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="down-arrow">↓</div>
+
+<!-- ═══════════════════════════ LAYER 7 · WORKSTREAM + APPROVALS + CRON ═══════════════════════════ -->
+<div class="layer k1">
+  <div class="layer-header">
+    <div class="lh-l">
+      <h2>Layer 7 · Workstream Runtime · HITL · CC Queue · Cron</h2>
+      <div class="role">mission_engine.py · workstream_store.py · approval_store.py · cc_queue/ · scheduler/</div>
+    </div>
+    <span class="tag">ORCHESTRATION</span>
+  </div>
+  <div class="layer-body">
+    <div class="grid g-2">
+      <div class="card orange">
+        <h3>MissionEngine · run_iteration()</h3>
+        <ul>
+          <li>One workstream item per tick</li>
+          <li>Status: pending → in_progress → done / awaiting_human / failed</li>
+          <li>Priority strategies: sequential · highest_amount · highest_aged · round_robin</li>
+          <li>Retries with max_retries cap</li>
+          <li>Result includes <code>trace_id</code>, <code>approval_id</code>, duration_ms</li>
+        </ul>
+      </div>
+      <div class="card orange">
+        <h3>CC Queue · QueueProcessor</h3>
+        <ul>
+          <li>Background loop polls <code>cc_queue.db</code></li>
+          <li>Atomic claim → status=in_progress</li>
+          <li>Routes via SkillRouter</li>
+          <li>Pause on HITL · resume on decision</li>
+          <li>Result writes <code>result_summary</code> + <code>job_steps</code></li>
+          <li>Dead-letter queue (dlq) after max retries</li>
+        </ul>
+      </div>
+    </div>
+    <div style="margin-top: 10px;" class="grid g-3">
+      <div class="card">
+        <h3>HITL Approval Store · Redis</h3>
+        <ul>
+          <li>Key <code>approval:&lt;id&gt;</code></li>
+          <li>tenant · user · skill · tool · args (redacted)</li>
+          <li>reason · urgency · created_at · resolved_at</li>
+          <li>decision · approve / reject · decision_note</li>
+          <li>Streams to <code>/ws/approvals</code></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Workstream Runtime DB</h3>
+        <ul>
+          <li><code>workstream_runtime.db</code> SQLite</li>
+          <li>status: running · paused · completed · failed</li>
+          <li>total_items · completed_items</li>
+          <li>Independent of YAML persistence</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Cron Scheduler</h3>
+        <ul>
+          <li>APScheduler in studio process</li>
+          <li>Per-tenant jobs</li>
+          <li>Triggers mission iteration or cc_queue feed</li>
+          <li><code>scheduler/</code> module</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="down-arrow">↓</div>
+
+<!-- ═══════════════════════════ LAYER 8 · TRACE / TWIN / TELEMETRY ═══════════════════════════ -->
+<div class="layer k5">
+  <div class="layer-header">
+    <div class="lh-l">
+      <h2>Layer 8 · Trace + Telemetry + Digital Twin — the RL data plane</h2>
+      <div class="role">trace_emitter.py · telemetry_providers.py · twin_emitter.py · traces.db</div>
+    </div>
+    <span class="tag">TELEMETRY</span>
+  </div>
+  <div class="layer-body">
+    <div class="grid g-2">
+      <div class="card red">
+        <h3>3-Layer Trace Schema</h3>
+        <ul>
+          <li><strong>traces</strong> · trace_id · session · tenant · agent · skill · status · total_ms</li>
+          <li><strong>spans</strong> · span_type ∈ {route · knowledge · llm · tool · hitl · memory · response}</li>
+          <li><strong>metadata</strong> · input/output previews · token usage · reasoning preview</li>
+          <li>5,000+ episodes in <code>traces.db</code></li>
+          <li>All linked by <code>trace_id</code></li>
+        </ul>
+      </div>
+      <div class="card red">
+        <h3>Telemetry Fanout</h3>
+        <ul>
+          <li><code>TelemetryProviderFanout</code> in studio</li>
+          <li>OTLP JSON provider (default)</li>
+          <li>Datadog · Splunk pluggable</li>
+          <li>Redaction-aware key list</li>
+          <li>Safe to add providers without touching core</li>
+        </ul>
+      </div>
+    </div>
+    <div style="margin-top: 10px;" class="grid g-3">
+      <div class="card">
+        <h3>Digital Twin</h3>
+        <ul>
+          <li><code>twin_emitter.py</code> writes KPIs</li>
+          <li>Streams to <code>/ws/twin</code></li>
+          <li><code>/api/twin/*</code> summary, drill-down &amp; trend routes</li>
+          <li>Policy improvement recommendations</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>FinOps / Token Cost</h3>
+        <ul>
+          <li><code>llm_tracker.py</code> per call</li>
+          <li><code>model_pricing.yaml</code></li>
+          <li>Cost analysis dashboard router</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Audit Logs</h3>
+        <ul>
+          <li><code>.audit/commands_YYYY-MM-DD.jsonl</code> · per-day</li>
+          <li>gzip after 1d · delete after 30d</li>
+          <li>external_access_audit.jsonl separately</li>
+          <li>file-locked writes</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="down-arrow">↓</div>
+
+<!-- ═══════════════════════════ LAYER 9 · ENTERPRISE ROOT ═══════════════════════════ -->
+<div class="layer k4">
+  <div class="layer-header">
+    <div class="lh-l">
+      <h2>Layer 9 · Enterprise Root · The Tenant + Context Filesystem</h2>
+      <div class="role">enterprise_root/tenants/&lt;id&gt;/ · the source of truth for skills, hooks, context, workstreams, users</div>
+    </div>
+    <span class="tag">DATA</span>
+  </div>
+  <div class="layer-body">
+    <div class="grid g-3">
+      <div class="card">
+        <h3>tenants/&lt;id&gt;/agents/</h3>
+        <ul>
+          <li><code>config.yaml</code> per agent</li>
+          <li>hooks (Pre/Post/PostTurn/PostSampling)</li>
+          <li>approval_rules · model selection · skill filter</li>
+          <li>Per-agent rate limit</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>tenants/&lt;id&gt;/shared/</h3>
+        <ul>
+          <li><strong>Enterprise_Context.md</strong> master taxonomy</li>
+          <li><code>contexts/*.md</code> domain knowledge</li>
+          <li><code>hooks/</code> orchestrator hooks</li>
+          <li><code>policy/policy_registry.yaml</code></li>
+          <li><code>security/entitlements.yaml</code></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>tenants/&lt;id&gt;/skills/</h3>
+        <ul>
+          <li>Tenant-scoped <strong>SKILL.md</strong></li>
+          <li>Override globals</li>
+          <li>Optional context files + scripts</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>tenants/&lt;id&gt;/workstreams/</h3>
+        <ul>
+          <li>YAML per workstream</li>
+          <li>Items · priorities · status</li>
+          <li>Templates folder</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>tenants/&lt;id&gt;/users/&lt;u&gt;/</h3>
+        <ul>
+          <li><code>profile.md</code></li>
+          <li>Personal skills</li>
+          <li>Per-user memory + learnings</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>tenants/&lt;id&gt;/config/</h3>
+        <ul>
+          <li><code>runtime.yaml</code> feature flags</li>
+          <li>Model selection</li>
+          <li>Per-tenant overrides</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="down-arrow">↓</div>
+
+<!-- ═══════════════════════════ MODEL LAYER ═══════════════════════════ -->
+<div class="layer k3">
+  <div class="layer-header">
+    <div class="lh-l">
+      <h2>Layer 10 · Model Provider Abstraction</h2>
+      <div class="role">model_provider.py · model_registry.py · llm_tracker.py · provider chats</div>
+    </div>
+    <span class="tag">MODELS</span>
+  </div>
+  <div class="layer-body">
+    <div class="grid g-4">
+      <div class="card green">
+        <h3>Azure OpenAI</h3>
+        <ul>
+          <li><code>azure_responses_chat.py</code></li>
+          <li>Structured response mode</li>
+          <li>GPT-4o · GPT-5.2 (closed weights)</li>
+        </ul>
+      </div>
+      <div class="card green">
+        <h3>Anthropic</h3>
+        <ul>
+          <li><code>anthropic_thinking_chat.py</code></li>
+          <li>Extended thinking · reasoning preview</li>
+          <li>Prompt caching</li>
+        </ul>
+      </div>
+      <div class="card green">
+        <h3>Google Vertex AI</h3>
+        <ul>
+          <li><code>vertex_chat.py</code></li>
+          <li>Gemini family</li>
+          <li>Service account auth</li>
+        </ul>
+      </div>
+      <div class="card green">
+        <h3>OpenAI-compat</h3>
+        <ul>
+          <li>vLLM · Ollama · OpenAI direct</li>
+          <li>Self-hosted open weights</li>
+          <li>Cost / latency control</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════ CROSS-CUTTING ═══════════════════════════ -->
+<div class="crosscut">
+  <h2>Cross-Cutting · Same enforcement on every layer</h2>
+  <div class="items">
+    <div class="item"><strong>TENANT ISOLATION</strong>JWT claim · path scoping · DB filter</div>
+    <div class="item"><strong>RBAC</strong>USER · MANAGER · ADMIN · AUDITOR</div>
+    <div class="item"><strong>CREDENTIAL VAULT</strong>Fernet · masked vars · vault provider</div>
+    <div class="item"><strong>EXTERNAL ACCESS</strong>HTTP · DB · MCP entitlement</div>
+    <div class="item"><strong>RATE LIMITS</strong>Per-user · per-agent · kernel-wide</div>
+    <div class="item"><strong>AUDIT EVERYTHING</strong>Commands · access · hooks · approvals</div>
+    <div class="item"><strong>TRACE LINK</strong>trace_id threads request → tool → reward</div>
+    <div class="item"><strong>HOOKS EVERY STEP</strong>Pre/Post/Turn/Sampling</div>
+    <div class="item"><strong>REDACTION</strong>Deny-list keys in telemetry</div>
+    <div class="item"><strong>WORKSTREAM RESILIENCE</strong>Retry · DLQ · resume</div>
+    <div class="item"><strong>POLICY-AS-CODE</strong>YAML · compiled hook policy</div>
+    <div class="item"><strong>OBSERVABILITY</strong>OTLP · Datadog · Splunk · Twin</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════ END-TO-END LIFECYCLE ═══════════════════════════ -->
+<div class="lifecycle">
+  <h2>END-TO-END REQUEST LIFECYCLE · ONE TRACE_ID</h2>
+  <div class="flow">
+    <div class="node"><strong>1</strong>Trigger<br>(human · cron · event)</div>
+    <div class="arr">→</div>
+    <div class="node"><strong>2</strong>Auth + Tenant<br>JWT · RBAC</div>
+    <div class="arr">→</div>
+    <div class="node"><strong>3</strong>Taxonomy<br>Route to skill</div>
+    <div class="arr">→</div>
+    <div class="node"><strong>4</strong>SkillAgent<br>execution_mode</div>
+    <div class="arr">→</div>
+    <div class="node"><strong>5</strong>Hook<br>PreToolUse</div>
+    <div class="arr">→</div>
+    <div class="node"><strong>6</strong>Kernel<br>parse · RBAC · audit</div>
+  </div>
+  <div class="flow" style="margin-top: 6px;">
+    <div class="node"><strong>7</strong>Tool exec<br>(or python3 sandbox)</div>
+    <div class="arr">→</div>
+    <div class="node"><strong>8</strong>Hook<br>PostToolUse</div>
+    <div class="arr">→</div>
+    <div class="node"><strong>9</strong>Memory<br>auto-index</div>
+    <div class="arr">→</div>
+    <div class="node"><strong>10</strong>HITL?<br>approvals</div>
+    <div class="arr">→</div>
+    <div class="node"><strong>11</strong>Hook<br>PostTurn</div>
+    <div class="arr">→</div>
+    <div class="node"><strong>12</strong>Trace + Twin<br>reward join</div>
+  </div>
+</div>
+
+<footer>
+  Generated from <code>agent_os/</code>, <code>IAF-Agent-Skills/iaf_agent_skills/</code>,
+  <code>IAF-Agent-Studio/</code>, and <code>enterprise_root/</code> in the
+  IAF AgentOS Hook-Harness Adapter repo · Infosys Agentic Foundry
+</footer>
+
+</div>
+</body>
+</html>

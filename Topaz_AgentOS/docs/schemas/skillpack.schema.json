@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iaf-agentos.local/schemas/skillpack.schema.json",
+  "title": "Skill Pack Manifest (manifest.yaml)",
+  "description": "Portable spec for an agent package that runs on IAF AgentOS, Claude Cowork / Claude Code, Anthropic Managed Agents, or any compatible harness. A skill pack is a single folder containing this manifest plus a SKILL.md and optional context/hooks/tools/viewers.",
+  "type": "object",
+  "required": ["spec_version", "name", "version", "description", "agent_type", "requires"],
+  "additionalProperties": true,
+  "properties": {
+    "spec_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Pack spec version this manifest conforms to. Currently fixed at 1.0."
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "Package identifier. Lower-case snake_case. Must match the folder name."
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(-[a-z0-9.]+)?$",
+      "description": "Semantic version of this pack."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 10,
+      "description": "One-paragraph summary used by catalogs, marketplaces, and router prompts."
+    },
+    "authors": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Author emails or team names."
+    },
+    "licence": {
+      "type": "string",
+      "description": "SPDX identifier preferred (Apache-2.0, MIT, Proprietary)."
+    },
+    "homepage": {
+      "type": "string",
+      "format": "uri"
+    },
+    "tags": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Discovery tags: domain, vertical, capability."
+    },
+    "agent_type": {
+      "type": "string",
+      "enum": ["react", "workflow", "parallel", "supervisor", "orchestrator", "planned"],
+      "description": "Execution mode expected by this pack. Maps directly to IAF AgentOS execution_mode. Other harnesses translate per the mapping table in SKILL_PACK_SPEC.md."
+    },
+    "recommended_model": {
+      "type": "object",
+      "description": "Model recommendations. Hosts resolve provider+tier to a concrete model. Use {provider: any} to let the host pick.",
+      "properties": {
+        "primary":  {"$ref": "#/$defs/modelHint"},
+        "light":    {"$ref": "#/$defs/modelHint"},
+        "router":   {"$ref": "#/$defs/modelHint"},
+        "fallback": {"$ref": "#/$defs/modelHint"}
+      }
+    },
+    "requires": {
+      "type": "object",
+      "description": "Capabilities this pack needs from the host. Host MUST reject installation if any required capability is unsupported.",
+      "required": ["tools"],
+      "properties": {
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["shell", "write_file", "run_sql_query", "execute_code", "query_memory", "invoke_skill", "invoke_plan", "create_plan", "request_human_approval", "web_search", "fetch_url"]
+          }
+        },
+        "storage": {
+          "type": "array",
+          "items": {"type": "string", "enum": ["sqlite", "postgres", "redis", "file_only", "vector_store"]},
+          "description": "Storage backends needed."
+        },
+        "hooks": {
+          "type": "array",
+          "items": {"type": "string", "enum": ["pre_tool", "post_tool", "pre_step", "post_step", "pre_turn", "post_turn", "on_failure"]},
+          "description": "Lifecycle hook points the pack registers handlers at."
+        },
+        "ui": {
+          "type": "string",
+          "enum": ["none", "optional", "required"],
+          "default": "optional",
+          "description": "Whether HTML viewers are required, optional, or absent."
+        },
+        "network": {
+          "type": "array",
+          "items": {"type": "string", "enum": ["outbound_http", "outbound_sql", "outbound_smtp", "none"]},
+          "description": "Outbound network capabilities. Host's entitlement layer enforces these."
+        },
+        "mcp_servers": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "MCP server names the pack expects available (e.g. servicenow, gmail, jira)."
+        },
+        "min_harness_version": {
+          "type": "string",
+          "description": "Lower bound on harness version. Host rejects install if older."
+        }
+      }
+    },
+    "callable_agents": {
+      "type": "array",
+      "description": "Sub-agent / worker skill packs this pack invokes. Use NAME or NAME>=VERSION syntax.",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*(\\s*(>=|>|=|<=|<)\\s*\\d+\\.\\d+(\\.\\d+)?)?$"
+      }
+    },
+    "inputs": {
+      "type": "array",
+      "description": "Variables the deployer must set at install time. Hosts surface these in their install UI.",
+      "items": {
+        "type": "object",
+        "required": ["name", "type"],
+        "properties": {
+          "name":        {"type": "string"},
+          "type":        {"type": "string", "enum": ["string", "number", "boolean", "secret", "url", "enum", "file"]},
+          "description": {"type": "string"},
+          "required":    {"type": "boolean", "default": false},
+          "default":     {},
+          "enum":        {"type": "array"},
+          "pattern":     {"type": "string"}
+        }
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "description": "Structured outputs the pack produces. Used by UI viewers and for chaining packs.",
+      "items": {
+        "type": "object",
+        "required": ["name", "type"],
+        "properties": {
+          "name":   {"type": "string"},
+          "type":   {"type": "string", "enum": ["file", "json", "markdown", "html", "table", "image", "url"]},
+          "format": {"type": "string", "description": "MIME or format hint (pdf, csv, png, ...)"},
+          "description": {"type": "string"}
+        }
+      }
+    },
+    "viewers": {
+      "type": "array",
+      "description": "HTML viewers shipped with the pack. Hosts that render UI may load these inline (postMessage contract) or standalone.",
+      "items": {
+        "type": "object",
+        "required": ["name", "file"],
+        "properties": {
+          "name": {"type": "string"},
+          "file": {"type": "string", "description": "Path relative to pack root, e.g. viewers/result_card.html"},
+          "mode": {"type": "string", "enum": ["inline", "standalone"], "default": "inline"},
+          "renders_output": {"type": "string", "description": "Name of an output (from outputs[]) this viewer can render."}
+        }
+      }
+    },
+    "tests": {
+      "type": "array",
+      "description": "Portable smoke tests. Hosts that support automated validation run these.",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name":        {"type": "string"},
+          "input":       {"type": "string"},
+          "expects":     {"type": "array", "items": {"type": "string"}, "description": "Substrings that MUST appear in the final response."},
+          "rejects":     {"type": "array", "items": {"type": "string"}, "description": "Substrings that MUST NOT appear."},
+          "max_tokens":  {"type": "integer"},
+          "max_latency_ms": {"type": "integer"}
+        }
+      }
+    },
+    "compatibility": {
+      "type": "object",
+      "description": "Optional per-host adaptation hints. Used by host shims when translating this pack into native form.",
+      "properties": {
+        "iaf_agentos":  {"type": "object"},
+        "claude_cowork": {"type": "object"},
+        "claude_code":   {"type": "object"},
+        "managed_agents": {"type": "object"}
+      }
+    }
+  },
+  "$defs": {
+    "modelHint": {
+      "type": "object",
+      "properties": {
+        "provider": {"type": "string", "enum": ["any", "anthropic", "openai", "azure", "vertex", "bedrock"]},
+        "tier":     {"type": "string", "enum": ["frontier", "balanced", "fast", "any"], "description": "frontier=Opus/GPT-5/Gemini-Pro · balanced=Sonnet/GPT-4o · fast=Haiku/4o-mini/Flash"},
+        "exact":    {"type": "string", "description": "Optional exact model id override."},
+        "max_context_tokens": {"type": "integer", "description": "Minimum context window the model must support."}
+      }
+    }
+  }
+}

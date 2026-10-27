@@ -1,0 +1,16 @@
+name: guide-watch
+tenant_id: company
+agent_id: enterprise_agent
+user_id: observer
+focus: Demo observer that asks the AgentOS guide skill to explain something.
+vibe: concise
+trust_tier: recommend
+allowed_skills:
+  - agentos_guide
+  - collection-chase-agent
+watch:
+  - type: folder
+    path: /var/log/app
+    access: ro
+triggers: []
+runtime_mode: dev

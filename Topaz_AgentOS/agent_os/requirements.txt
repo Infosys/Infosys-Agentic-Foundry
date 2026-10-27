@@ -1,0 +1,29 @@
+# Dependencies for AgentOS Framework
+
+# Core (no external dependencies for basic usage)
+# The kernel core works standalone with just Python stdlib.
+
+# For LangGraph/LangChain integration
+langgraph>=0.2.0
+langchain-core>=0.3.0
+langchain-openai>=0.2.0
+langchain-anthropic>=0.3.0
+
+# For Azure OpenAI
+python-dotenv>=1.0.0
+
+# For testing
+pytest>=8.0.0
+
+# ─── Optional extras ──────────────────────────────────────────────
+# Required only if using CredentialStore with the file backend:
+#   pyyaml>=6.0
+# Required only if using CredentialStore with at-rest encryption:
+#   cryptography>=41.0
+#
+# Both are imported lazily — the kernel itself does not need them.
+# Install with: pip install pyyaml cryptography
+# Or define an extra in pyproject.toml: agent_os[credentials]
+
+# Optional: Better embeddings (currently uses simple hash-based embedder)
+# sentence-transformers>=2.2.0  # Uncomment for better semantic search

@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Topaz AgentOS — Finance Demo Guide</title>
+<style>
+  :root{
+    --bg:#eef2f8; --card:#ffffff; --ink:#0f1b30; --muted:#5b6880; --line:#e2e8f2;
+    --blue:#2f5bd0; --blue-soft:#eaf0ff; --amber:#9a6b12; --amber-soft:#fdf3dd;
+    --green:#159c6b; --green-soft:#e5f5ee; --purple:#6d4fc7; --navy:#111d3a;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Aptos','Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--ink);line-height:1.5;}
+  .wrap{max-width:1080px;margin:0 auto;padding:30px 26px 80px;}
+  header.top{display:flex;align-items:center;gap:14px;}
+  .mark{width:44px;height:44px;border-radius:12px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+        background:linear-gradient(135deg,#5b8cff,#8b7cf6);box-shadow:0 8px 20px rgba(91,140,255,.4);}
+  h1{font-size:25px;margin:0;letter-spacing:-.02em;}
+  .sub{color:var(--muted);font-size:14px;margin-top:2px;}
+  /* tabs */
+  .tabs{display:flex;gap:6px;margin:22px 0 20px;border-bottom:1px solid var(--line);flex-wrap:wrap;}
+  .tab{padding:10px 18px;font-size:14px;font-weight:650;color:var(--muted);cursor:pointer;border:none;background:none;
+       border-bottom:2.5px solid transparent;margin-bottom:-1px;}
+  .tab:hover{color:var(--ink);}
+  .tab.active{color:var(--blue);border-bottom-color:var(--blue);}
+  .panel{display:none;}
+  .panel.active{display:block;}
+
+  .lead{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px 24px;margin:0 0 20px;box-shadow:0 1px 2px rgba(20,30,60,.05),0 12px 30px rgba(20,30,60,.06);}
+  .lead h2{margin:0 0 10px;font-size:17px;}
+  .lead p{margin:8px 0;font-size:14.5px;}
+  .lead b{color:var(--blue);}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-top:14px;padding-top:14px;border-top:1px solid var(--line);}
+  .legend span{display:inline-flex;align-items:center;gap:6px;}
+  .chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;}
+  .chip.gate{background:var(--amber-soft);color:var(--amber);}
+  .chip.stage{background:var(--blue-soft);color:var(--blue);}
+
+  .tower{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px;margin:0 0 20px;box-shadow:0 1px 2px rgba(20,30,60,.05),0 12px 30px rgba(20,30,60,.06);}
+  .tower .eyebrow{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--blue);}
+  .tower.graph .eyebrow{color:var(--purple);}
+  .tower h2{margin:5px 0 2px;font-size:21px;letter-spacing:-.02em;}
+  .tower .what{color:var(--muted);font-size:14.5px;margin:6px 0 16px;}
+  .tower .what b{color:var(--ink);}
+  pre.flow{background:var(--navy);color:#dbe6ff;border-radius:12px;padding:16px 18px;overflow-x:auto;
+           font-family:'SF Mono','Consolas',monospace;font-size:12.5px;line-height:1.9;margin:0 0 18px;}
+  pre.flow .g{color:#ffcf6b;font-weight:700;} pre.flow .s{color:#8fb4ff;} pre.flow .v{color:#c4b5fd;font-weight:700;}
+  table.stages{width:100%;border-collapse:collapse;font-size:13.5px;margin-bottom:16px;}
+  table.stages td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top;}
+  table.stages td.n{width:26px;color:var(--muted);font-weight:700;}
+  table.stages td.st{width:170px;font-weight:650;}
+  table.stages tr.gate td{background:var(--amber-soft);}
+  table.stages tr.gate td.st{color:var(--amber);}
+  .gatetag{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:6px;background:var(--amber);color:#fff;font-size:10px;font-weight:800;vertical-align:middle;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:4px;}
+  .box{background:#f7f9fd;border:1px solid var(--line);border-radius:12px;padding:14px 16px;}
+  .box h4{margin:0 0 9px;font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);}
+  .box .row{display:flex;justify-content:space-between;font-size:13px;padding:3px 0;border-bottom:1px dashed var(--line);}
+  .box .row:last-child{border-bottom:none;}
+  .skills{font-size:12.5px;color:var(--muted);line-height:1.9;}
+  .skills code{background:#eef2fb;color:var(--blue);padding:1px 6px;border-radius:5px;font-size:11.5px;}
+  .skills .orch{color:var(--purple);font-weight:700;}
+
+  table.at{width:100%;border-collapse:collapse;font-size:13.5px;background:var(--card);border-radius:12px;overflow:hidden;box-shadow:0 1px 2px rgba(20,30,60,.05),0 8px 22px rgba(20,30,60,.05);}
+  table.at th{background:#f2f5fb;text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
+  table.at td{padding:10px 12px;border-top:1px solid var(--line);vertical-align:top;}
+  table.at code{background:#eef2fb;color:var(--blue);padding:1px 6px;border-radius:5px;font-size:12px;}
+
+  .steps{counter-reset:step;list-style:none;padding:0;margin:0;}
+  .steps li{position:relative;padding:12px 0 12px 44px;border-bottom:1px solid var(--line);font-size:14px;}
+  .steps li::before{counter-increment:step;content:counter(step);position:absolute;left:0;top:11px;width:28px;height:28px;border-radius:50%;
+    background:var(--blue);color:#fff;font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center;}
+  .steps li b{color:var(--ink);}
+  .cmd{display:flex;gap:10px;align-items:stretch;margin:6px 0 2px;}
+  .cmd code{flex:1;background:var(--navy);color:#dbe6ff;border-radius:10px;padding:12px 14px;font-family:'SF Mono','Consolas',monospace;font-size:12px;overflow-x:auto;white-space:pre;}
+  .btn{border:none;border-radius:10px;padding:0 16px;font-size:13px;font-weight:650;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:7px;white-space:nowrap;}
+  .btn.primary{background:var(--blue);color:#fff;}
+  .btn.ghost{background:var(--card);color:var(--ink);border:1px solid var(--line);}
+  .btn.copy{background:#e7edfb;color:var(--blue);}
+  .launch{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0 0;}
+  .launch .btn{padding:10px 16px;}
+
+  .glossary h2{margin:0 0 14px;font-size:18px;}
+  .gl{display:grid;grid-template-columns:1fr 1fr;gap:10px 26px;}
+  .gl div{font-size:13.5px;padding:5px 0;border-bottom:1px solid var(--line);}
+  .gl b{color:var(--blue);}
+  footer{color:var(--muted);font-size:12.5px;text-align:center;margin-top:30px;}
+     it needs no style-src-attr 'unsafe-inline' allowance. */
+  .lead-accent{border-left:4px solid var(--blue);}
+  .note-tight{margin-bottom:0;font-size:13.5px;color:var(--muted);}
+  .note-sm{font-size:13px;color:var(--muted);}
+  .h2-sub{font-size:13px;color:var(--muted);font-weight:500;}
+  .muted-text{color:var(--muted);}
+  @media(max-width:760px){.grid2,.gl{grid-template-columns:1fr;}.cmd{flex-direction:column;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="mark"><svg width="22" height="22" viewBox="0 0 24 24" fill="#fff"><path d="M12 2l2.5 6.9L21.4 11l-6.9 2.4L12 20.4 9.5 13.4 2.6 11l6.9-2.1z"/></svg></div>
+    <div><h1>Topaz AgentOS — Finance Demo Guide</h1><div class="sub">What each workstream is, how it runs, and exactly how to demo it — written for a finance newcomer.</div></div>
+  </header>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="overview">Overview</button>
+    <button class="tab" data-tab="workstreams">Workstreams</button>
+    <button class="tab" data-tab="run">Run the Demo</button>
+    <button class="tab" data-tab="glossary">Glossary</button>
+  </div>
+
+  <!-- ===================== OVERVIEW ===================== -->
+  <div class="panel active" id="overview">
+    <div class="lead">
+      <h2>The big idea (in one minute)</h2>
+      <p>A <b>workstream</b> is a finance process — paying supplier invoices, chasing money customers owe us, closing the monthly books, reconciling the bank. Traditionally a person does every step by hand.</p>
+      <p>Here, an <b>AI agent runs each case</b> (one invoice, one customer, one account) through a fixed sequence of stages, automatically. Most cases flow straight through with no human touch.</p>
+      <p>But finance needs control. So at key points the agent <b>stops and asks a person to decide</b> — a <b>human gate</b> (HITL, "human-in-the-loop"): before releasing a large payment, writing off a debt, or signing off the close. The human owns the risky calls; the agent does the rest.</p>
+      <p>We built <b>five workstreams</b>: four straight-line <b>workflows</b> (P2P, O2C, R2R, Treasury) plus a document-reading step — and one advanced <b>graph</b> that reconciles many accounts at once and checks its own work.</p>
+      <div class="legend">
+        <span><span class="chip stage">stage</span> agent does it automatically</span>
+        <span><span class="chip gate">⛔ human gate</span> agent pauses for a person</span>
+        <span>→ order of the flow</span>
+      </div>
+    </div>
+
+    <div class="lead">
+      <h2>The five workstreams at a glance</h2>
+      <table class="at">
+        <tr><th>Workstream</th><th>What it does</th><th>Mode</th><th>Human gates</th></tr>
+        <tr><td><b>AP Invoice-to-Pay</b> (P2P)</td><td>Pay supplier invoices correctly</td><td>workflow · 9 stages</td><td>goods-receipt · payment release</td></tr>
+        <tr><td><b>Credit &amp; Collections</b> (O2C)</td><td>Collect money customers owe</td><td>workflow · 9 stages</td><td>credit-hold · write-off</td></tr>
+        <tr><td><b>Period-End Close</b> (R2R)</td><td>Close the books each month</td><td>workflow · 9 stages</td><td>variance sign-off · journal</td></tr>
+        <tr><td><b>Bank Reconciliation</b> (Treasury)</td><td>Match bank to books &amp; settle</td><td>workflow · 9 stages</td><td>suspense · settlement</td></tr>
+        <tr><td><b>Entity Close</b> (R2R)</td><td>Reconcile all accounts at once, self-check</td><td><b>graph</b> · parallel + verifier</td><td>escalate on unresolved break</td></tr>
+        <tr><td><b>Document Ingestion</b></td><td>Read the invoice/PO/GR PDFs → feeds P2P</td><td>single skill</td><td>—</td></tr>
+      </table>
+    </div>
+
+    <div class="lead lead-accent">
+      <h2>How the towers connect — the exception cascade</h2>
+      <p>These aren't four islands. When a case hits an exception it creates downstream work in another tower — a <b>missing goods receipt in P2P</b> becomes a <b>GR/IR imbalance at the R2R close</b>; an <b>over-limit customer in O2C</b> hits <b>Treasury's cash</b>; unreconciled <b>Treasury suspense</b> lands back at <b>R2R</b>.</p>
+      <pre class="flow">  P2P ─┐
+  O2C ─┼──▶  <span class="g">R2R (the sink)</span>  ──▶  External (audit / IR)
+  TREASURY ─┘</pre>
+      <p class="note-tight">In the demo data: <b>68 cascade links</b>, and <b>R2R absorbs ~41%</b> — the classic "everything ends up at the close" story.</p>
+    </div>
+  </div>
+
+  <!-- ===================== WORKSTREAMS ===================== -->
+  <div class="panel" id="workstreams">
+
+    <div class="tower">
+      <div class="eyebrow">P2P · feeds the invoice workstream</div>
+      <h2>Document Ingestion <span class="h2-sub">(the "IDP" step)</span></h2>
+      <p class="what">Opens each <b>invoice, PO and goods-receipt PDF</b>, extracts the supplier, amount, PO reference and totals, and lands them in a staging table — so the figures the agent decides on came from the <b>real document</b>.</p>
+      <pre class="flow"><span class="s">read invoice PDF</span> → <span class="s">read PO + GR PDFs</span> → extract supplier / amount / PO / variance → write to <span class="s">invoice_extractions</span></pre>
+      <div class="grid2">
+        <div class="box"><h4>Data</h4><div class="row"><span>Documents</span><b>36 invoices · 35 POs · 27 GRs</b></div><div class="row"><span>Exceptions baked in</span><b>price variance, no-PO, partial GR</b></div></div>
+        <div class="box"><h4>Skill</h4><div class="skills"><code>fin_document_ingestion</code> runs <code>fin_extract_invoice</code> → tool <code>fin_ingest_invoice_doc</code> opens the PDFs and persists the figures.</div></div>
+      </div>
+    </div>
+
+    <div class="tower">
+      <div class="eyebrow">Procure-to-Pay (P2P) · Accounts Payable</div>
+      <h2>AP Invoice-to-Pay</h2>
+      <p class="what"><b>Paying supplier invoices — correctly and only when we should.</b> Each invoice is checked against what we ordered (PO) and received (goods receipt), coded, checked for duplicates, and paid.</p>
+      <pre class="flow">intake → validate → <span class="s">3-way match</span> → <span class="g">⛔ GR GATE</span> → GL code → tax → dup check → <span class="g">⛔ PAYMENT GATE</span> → post &amp; close</pre>
+      <table class="stages">
+        <tr><td class="n">1</td><td class="st">Intake</td><td>Load the invoice, its PO and goods receipt.</td></tr>
+        <tr><td class="n">2</td><td class="st">Validation</td><td>Check the invoice has all mandatory fields.</td></tr>
+        <tr><td class="n">3</td><td class="st">Three-way match</td><td>Do the <b>invoice</b>, <b>PO</b> and <b>goods received</b> all agree?</td></tr>
+        <tr class="gate"><td class="n">4</td><td class="st">GR check <span class="gatetag">GATE</span></td><td><b>Human gate — 9 cases.</b> No goods receipt posted → a <b>Controller</b> confirms receipt before we pay.</td></tr>
+        <tr><td class="n">5</td><td class="st">GL coding</td><td>Assign the accounting codes (ledger account, cost centre).</td></tr>
+        <tr><td class="n">6</td><td class="st">Tax check</td><td>Validate the tax code.</td></tr>
+        <tr><td class="n">7</td><td class="st">Duplicate check</td><td>Already paid this invoice? (3 duplicates.)</td></tr>
+        <tr class="gate"><td class="n">8</td><td class="st">Payment proposal <span class="gatetag">GATE</span></td><td><b>Human gate — 13 cases.</b> Amount above <b>$100k</b> → a <b>Payment Controller</b> approves before money goes out.</td></tr>
+        <tr><td class="n">9</td><td class="st">Post &amp; close</td><td>Post the invoice and close the case.</td></tr>
+      </table>
+      <div class="grid2">
+        <div class="box"><h4>Data · fin_p2p_demo.db · 36 cases</h4><div class="row"><span>vendors / invoices</span><b>10 / 36</b></div><div class="row"><span>purchase_orders / GRs</span><b>36 / 27</b></div><div class="row"><span>threshold</span><b>$100k</b></div></div>
+        <div class="box"><h4>Skills · 9-stage workflow</h4><div class="skills"><span class="orch">fin_invoice_workstream</span> → <code>fin_intake_invoice</code> <code>fin_validate_intake</code> <code>fin_three_way_match</code> <code>fin_gr_check</code> <code>fin_gl_coding</code> <code>fin_tax_check</code> <code>fin_duplicate_check</code> <code>fin_payment_proposal</code> <code>fin_post_and_close</code></div></div>
+      </div>
+    </div>
+
+    <div class="tower">
+      <div class="eyebrow">Order-to-Cash (O2C) · Accounts Receivable</div>
+      <h2>Credit &amp; Collections</h2>
+      <p class="what"><b>Collecting the money customers owe us — and managing credit risk.</b></p>
+      <pre class="flow">intake → aging → <span class="s">credit risk</span> → <span class="g">⛔ CREDIT-HOLD GATE</span> → dunning → dispute → cash apply → <span class="g">⛔ WRITE-OFF GATE</span> → close</pre>
+      <table class="stages">
+        <tr class="gate"><td class="n">4</td><td class="st">Credit hold <span class="gatetag">GATE</span></td><td><b>8 cases.</b> Exposure over the credit limit → a <b>Credit Controller</b> releases the hold.</td></tr>
+        <tr class="gate"><td class="n">8</td><td class="st">Write-off <span class="gatetag">GATE</span></td><td><b>6 cases.</b> Write-off over <b>$10k</b> → an <b>AR Manager</b> approves.</td></tr>
+      </table>
+      <div class="grid2">
+        <div class="box"><h4>Data · o2c_demo.db · 24 cases</h4><div class="row"><span>customers / ar_invoices</span><b>8 / 48</b></div><div class="row"><span>disputes</span><b>3</b></div><div class="row"><span>threshold</span><b>$10k write-off</b></div></div>
+        <div class="box"><h4>Skills</h4><div class="skills"><span class="orch">o2c_collections_workstream</span> → <code>o2c_intake_ar</code> <code>o2c_aging_analysis</code> <code>o2c_credit_risk</code> <code>o2c_credit_hold</code> <code>o2c_dunning</code> <code>o2c_dispute_check</code> <code>o2c_cash_application</code> <code>o2c_writeoff_proposal</code> <code>o2c_close_case</code></div></div>
+      </div>
+    </div>
+
+    <div class="tower">
+      <div class="eyebrow">Record-to-Report (R2R) · General Ledger</div>
+      <h2>Period-End Close</h2>
+      <p class="what"><b>Closing the books accurately each month</b> — reconcile, explain movements, adjust, sign off.</p>
+      <pre class="flow">intake → <span class="s">reconcile</span> → <span class="s">flux</span> → <span class="g">⛔ VARIANCE GATE</span> → journal → controls → <span class="g">⛔ JOURNAL GATE</span> → post → close</pre>
+      <table class="stages">
+        <tr class="gate"><td class="n">4</td><td class="st">Variance sign-off <span class="gatetag">GATE</span></td><td><b>11 cases.</b> Movement bigger than <b>materiality</b> → a <b>Controller</b> signs off the explanation.</td></tr>
+        <tr class="gate"><td class="n">7</td><td class="st">JE review <span class="gatetag">GATE</span></td><td><b>2 cases.</b> Adjusting journal over <b>$50k</b> → a <b>Financial Controller</b> approves.</td></tr>
+      </table>
+      <div class="grid2">
+        <div class="box"><h4>Data · r2r_demo.db · 24 cases</h4><div class="row"><span>entities / accounts</span><b>6 / 8 types</b></div><div class="row"><span>reconciliations</span><b>11</b></div><div class="row"><span>threshold</span><b>$50k journal</b></div></div>
+        <div class="box"><h4>Skills</h4><div class="skills"><span class="orch">r2r_close_workstream</span> → <code>r2r_intake_close</code> <code>r2r_reconciliation</code> <code>r2r_flux_analysis</code> <code>r2r_variance_signoff</code> <code>r2r_journal_proposal</code> <code>r2r_controls_check</code> <code>r2r_je_review</code> <code>r2r_post_je</code> <code>r2r_close_period</code></div></div>
+      </div>
+    </div>
+
+    <div class="tower">
+      <div class="eyebrow">Treasury · Cash &amp; Banking</div>
+      <h2>Bank Reconciliation &amp; Settlement</h2>
+      <p class="what"><b>Making the bank match the books, and paying out safely.</b></p>
+      <pre class="flow">intake → <span class="s">match</span> → triage → <span class="g">⛔ SUSPENSE GATE</span> → adjust → settlement → <span class="g">⛔ SETTLEMENT GATE</span> → post → close</pre>
+      <table class="stages">
+        <tr class="gate"><td class="n">4</td><td class="st">Suspense review <span class="gatetag">GATE</span></td><td><b>11 cases.</b> Suspense write-off over <b>$5k</b> → a <b>Treasury Controller</b> approves.</td></tr>
+        <tr class="gate"><td class="n">7</td><td class="st">Settlement review <span class="gatetag">GATE</span></td><td><b>2 cases.</b> Settlement over <b>$250k</b> → a <b>Treasury Head</b> approves.</td></tr>
+      </table>
+      <div class="grid2">
+        <div class="box"><h4>Data · treasury_demo.db · 24 cases</h4><div class="row"><span>bank_accounts / txns</span><b>6 / 34</b></div><div class="row"><span>settlements</span><b>2</b></div><div class="row"><span>threshold</span><b>$250k settlement</b></div></div>
+        <div class="box"><h4>Skills</h4><div class="skills"><span class="orch">treasury_recon_workstream</span> → <code>treasury_intake_recon</code> <code>treasury_match_transactions</code> <code>treasury_exception_triage</code> <code>treasury_suspense_review</code> <code>treasury_adjustment</code> <code>treasury_settlement_proposal</code> <code>treasury_settlement_review</code> <code>treasury_post_recon</code> <code>treasury_close_recon</code></div></div>
+      </div>
+    </div>
+
+    <div class="tower graph">
+      <div class="eyebrow">Record-to-Report (R2R) · GRAPH mode</div>
+      <h2>Entity Close — parallel &amp; self-checking</h2>
+      <p class="what"><b>The "trustworthy agent" showcase.</b> For one entity, it reconciles <b>all 8 accounts at once</b> (parallel), an <b>independent verifier</b> checks they all balance, any that fail get <b>retried with feedback</b>, and an unresolved break is <b>escalated to a human</b>. This is what a straight-line workflow can't do.</p>
+      <pre class="flow"> entity → <span class="s">[8 accounts reconciled in parallel]</span> → JOIN
+      → <span class="v">VERIFIER: all balance &amp; within materiality? PASS / FAIL</span>
+      → retry the failing ones ×2 → still stuck? <span class="g">⛔ escalate to Controller</span>
+      → journal → post &amp; close</pre>
+      <div class="grid2">
+        <div class="box"><h4>Demo data · Borealis Energy GmbH</h4><div class="row"><span>Accounts (parallel)</span><b>8</b></div><div class="row"><span>Clean</span><b>7</b></div><div class="row"><span>Broken (Intercompany)</span><b>out 65,340 + material</b></div></div>
+        <div class="box"><h4>Skills · process graph</h4><div class="skills"><span class="orch">r2r_close_graph</span> (graph) → <code>r2r_recon_account</code> ×8 (parallel) → <code>r2r_close_verifier</code> (independent gate) → close</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== RUN THE DEMO ===================== -->
+  <div class="panel" id="run">
+    <div class="lead">
+      <h2>1 · Reset to a clean start (before each demo)</h2>
+      <p>One command puts <b>every</b> workstream back to the identical starting state (same cases, same gate spread) in ~10 seconds. Deterministic — the demo is the same every time.</p>
+      <div class="cmd">
+        <code id="resetCmd">python3 "$DATA_ROOT/tenants/company/shared/scripts/demo_reset_all.py"</code>
+        <button class="btn copy" data-copy-target="resetCmd">⧉ Copy</button>
+      </div>
+      <p class="note-sm">Then hard-refresh the pages. (A cache evict is only needed if you changed skills/config, not for a data reset.)</p>
+    </div>
+
+    <div class="lead">
+      <h2>2 · Open the pages</h2>
+      <div class="launch">
+        <a class="btn primary" href="/static/workstreams.html" target="_blank">↗ Workstreams</a>
+        <a class="btn ghost" href="/static/finance_role_console_v2.html" target="_blank">↗ Finance Console</a>
+        <a class="btn ghost" href="/observers" target="_blank">↗ Observers</a>
+        <a class="btn ghost" href="/dashboard/v2" target="_blank">↗ HITL Approvals</a>
+      </div>
+    </div>
+
+    <div class="lead">
+      <h2>3 · Run a workstream &amp; show the human gate</h2>
+      <ol class="steps">
+        <li>On <b>Workstreams</b>, open a workstream and click <b>Run Now</b> (tip: it runs the top-priority pending case — you don't need to run the whole backlog).</li>
+        <li>Watch the agent chain the stages and <b>pause at a gate</b> (status → <code>awaiting_human</code>).</li>
+        <li>Flip to <b>Finance Console</b> to see the same numbers in the leadership view, or <b>HITL Approvals</b> to <b>Approve / Reject</b>.</li>
+        <li>Approve → the workstream <b>continues</b> to the next gate or posts. Reject → it stops. Then <b>reset</b> and go again.</li>
+      </ol>
+    </div>
+
+    <div class="lead">
+      <h2>Hero cases to run (the punchy moments)</h2>
+      <table class="at">
+        <tr><th>Workstream</th><th>Run this case</th><th>What lands</th></tr>
+        <tr><td>AP Invoice-to-Pay</td><td><code>INV-2026-501440</code> — Outback, AUD 450,120</td><td>a <b>duplicate</b> AND over the $100k gate → pauses for payment approval</td></tr>
+        <tr><td>Credit &amp; Collections</td><td><code>AR-2026-701642</code></td><td>both gates — credit-hold (mid) then write-off (end)</td></tr>
+        <tr><td>Period-End Close</td><td><code>CLS-2026-800717</code></td><td>both gates — variance sign-off then large journal</td></tr>
+        <tr><td>Bank Reconciliation</td><td><code>BR-2026-900611</code></td><td>both gates — suspense then settlement</td></tr>
+        <tr><td>Entity Close (GRAPH)</td><td><code>CLOSE-E-BOR01</code> — Borealis</td><td>8 accounts in parallel → verifier catches Intercompany → escalates</td></tr>
+      </table>
+    </div>
+
+    <div class="lead">
+      <h2>The reset scripts (reference)</h2>
+      <div class="skills">
+        <code>demo_reset_all.py</code> — resets everything (runs the five below).<br>
+        <code>fin_demo_reset.py</code> — P2P + ingestion + regenerates PDFs.<br>
+        <code>build_o2c_tower.py</code> · <code>build_r2r_tower.py</code> · <code>build_treasury_tower.py</code> — reset each tower.<br>
+        <code>build_r2r_graph.py</code> — resets the graph entity-close (run after build_r2r_tower).<br>
+        <span class="muted-text">All under <code>enterprise_root/tenants/company/shared/scripts/</code>. Each re-seeds fixed data → deterministic.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== GLOSSARY ===================== -->
+  <div class="panel glossary" id="glossary">
+    <div class="lead">
+      <h2>Finance terms — quick glossary</h2>
+      <div class="gl">
+        <div><b>PO (Purchase Order)</b> — what we agreed to buy and for how much.</div>
+        <div><b>Goods Receipt (GR)</b> — proof the goods/services were received.</div>
+        <div><b>Three-way match</b> — invoice = PO = goods receipt before paying.</div>
+        <div><b>GR/IR</b> — "Goods-Received / Invoice-Received" — flags mismatches between the two.</div>
+        <div><b>AP / AR</b> — money we owe suppliers / money customers owe us.</div>
+        <div><b>Exposure</b> — how much a customer currently owes us.</div>
+        <div><b>Credit limit / hold</b> — the max we let a customer owe; a hold pauses activity when breached.</div>
+        <div><b>Dunning</b> — the sequence of reminders used to chase overdue payment.</div>
+        <div><b>Write-off</b> — accepting a debt won't be paid and removing it from the books.</div>
+        <div><b>Period-end close</b> — finalising the monthly accounts so results can be reported.</div>
+        <div><b>Flux / variance</b> — the change in a balance vs last month; large ones must be explained.</div>
+        <div><b>Materiality</b> — the "big enough to matter" threshold; below it, don't chase.</div>
+        <div><b>Journal entry (JE)</b> — a manual accounting adjustment posted to the ledger.</div>
+        <div><b>Reconciliation</b> — proving two records agree (bank vs ledger).</div>
+        <div><b>Suspense</b> — a holding account for items that can't yet be explained.</div>
+        <div><b>Settlement</b> — an outgoing payment (incl. FX) the treasury makes.</div>
+        <div><b>Accruals</b> — money owed for things used but not yet billed (e.g. this month's electricity).</div>
+        <div><b>Inventory</b> — the value of stock the company holds to sell or use.</div>
+        <div><b>Intercompany</b> — money owed between two parts of the same group (error-prone).</div>
+        <div><b>Human gate / HITL</b> — a control point where the agent pauses for a person to decide.</div>
+        <div><b>Verifier</b> — an independent check that says PASS/FAIL and forces a retry if the work is wrong.</div>
+        <div><b>Straight-through</b> — a case that flows end-to-end with no human touch.</div>
+      </div>
+    </div>
+  </div>
+
+  <footer>Topaz AgentOS — Finance demo · 5 workstreams (P2P · O2C · R2R · Treasury + R2R graph) + document ingestion · figures from the live demo databases.</footer>
+</div>
+
+<script>
+  document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById(t.dataset.tab).classList.add('active');
+    window.scrollTo({top:0,behavior:'smooth'});
+  });
+  function copyCmd(id,btn){
+    const txt=document.getElementById(id).textContent;
+    navigator.clipboard.writeText(txt).then(()=>{const o=btn.textContent;btn.textContent='✓ Copied';setTimeout(()=>btn.textContent=o,1400);});
+  }
+  document.querySelectorAll('[data-copy-target]').forEach(btn=>{
+    btn.addEventListener('click',()=>copyCmd(btn.dataset.copyTarget,btn));
+  });
+</script>
+</body>
+</html>

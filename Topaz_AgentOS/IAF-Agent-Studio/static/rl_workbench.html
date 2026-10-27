@@ -1,0 +1,1219 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  RL WORKBENCH — stage-based learning pipeline (WIRED)
+  Served at /rl-capture/workbench. Reads ?traj=<id> to preselect.
+  The surface is organized around the lifecycle a run travels through:
+    Capture → Evaluate → Curate (golden) → Test (suites/gates) → Export
+  Left rail: trajectory list. Center: active stage. Right rail: pipeline
+  status + reward stream + next step. Wired to /api/rl-capture/* and /api/evals/*.
+  Works in dark, hybrid, and light themes.
+-->
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Training Workbench · Part of Topaz Fabric</title>
+<!-- Unified Light/Dark theme — FOUC guard must run before first paint -->
+<script>(function(){try{var m={hybrid:'light',light:'light',dark:'dark'},ls=window.localStorage;var v=m[ls.getItem('iaf_theme')]||m[ls.getItem('rl_theme')]||m[ls.getItem('iaf_dashboard_theme')]||m[ls.getItem('iaf-theme')];if(!v)v=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';var r=document.documentElement;r.setAttribute('data-theme',v);r.classList.add(v==='light'?'light-mode':'dark-mode');r.style.colorScheme=v;}catch(e){}})();</script>
+<link rel="stylesheet" href="/static/theme.css">
+<script src="/static/theme.js"></script>
+<script>/* legacy bootstrap removed — unified controller (/static/theme.js) owns the theme */</script>
+<script defer src="/static/vendor/alpine.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  [x-cloak]{display:none!important}
+  :root{
+    --bg:#0d1117; --panel:#0f151f; --panel-2:#131a26; --inset:#0a0e16;
+    --line:#1f2836; --line-2:#2a3446;
+    --txt:#d6deea; --muted:#8b97ab; --dim:#5a6478;
+    --acc:#4dd0e1; --acc2:#b388ff; --green:#5ddc9a; --amber:#ffce6a; --red:#ff7b8a;
+    --acc-soft:rgba(77,208,225,.13); --green-soft:rgba(93,220,154,.14); --amber-soft:rgba(255,206,106,.14); --red-soft:rgba(255,123,138,.14);
+    --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+    --sans:'Inter',system-ui,sans-serif;
+  }
+  html[data-theme="light"]{
+    --bg:#f6f8fc; --panel:#ffffff; --panel-2:#f3f6fb; --inset:#eef2f8;
+    --line:#e4e9f2; --line-2:#d5dded;
+    --txt:#0f172a; --muted:#5b6678; --dim:#94a3b8;
+    --acc:#0e8aa0; --acc2:#7c3aed; --green:#0a7d55; --amber:#b45309; --red:#c02626;
+    --acc-soft:#e0f3f7; --green-soft:#e6f6ee; --amber-soft:#fbf1e4; --red-soft:#fdecec;
+  }
+  html[data-theme="light"] pre.code{color:#334155;background:var(--inset)}
+  html[data-theme="light"] .btn.pri{color:#ffffff}
+  html[data-theme="light"] .btn.pri:hover{color:#ffffff}
+  /* ---- hybrid theme: navy chrome, softly tinted work surfaces ---- */
+  html[data-theme="hybrid"]{
+    --bg:#dfe7ef; --panel:#f7fafc; --panel-2:#edf3f7; --inset:#e2eaf1;
+    --line:#bdcbd8; --line-2:#9fb2c3;
+    --txt:#14263a; --muted:#52677a; --dim:#5b7082;
+    --acc:#147b8e; --acc2:#6550a2; --green:#177b59; --amber:#a96109; --red:#bb3d49;
+    --acc-soft:#d6ebee; --green-soft:#dcefe7; --amber-soft:#f4e8d5; --red-soft:#f5dfe1;
+  }
+  html[data-theme="hybrid"] body{background:linear-gradient(135deg,#dfe7ef,#e9eff4)}
+  html[data-theme="hybrid"] .topbar{background:#17364f;border-color:#294d68;color:#eef6fb}
+  html[data-theme="hybrid"] .topbar .title small{color:#adc4d5}
+  html[data-theme="hybrid"] .topbar .chip{background:#234861;border-color:#3b6079;color:#dbe9f2}
+  html[data-theme="hybrid"] .topbar .chip.g{color:#8de0bb}
+  html[data-theme="hybrid"] .topbar .btn{background:#f2f7fa;border-color:#9fb5c5;color:#17364f}
+  html[data-theme="hybrid"] .topbar .btn:hover{background:#fff;border-color:#69b8c5;color:#0c6878}
+  html[data-theme="hybrid"] .pipeline{background:#eaf0f5}
+  html[data-theme="hybrid"] .pstage{background:#f7fafc}
+  html[data-theme="hybrid"] .pstage:nth-of-type(1){background:#e7f1f6}
+  html[data-theme="hybrid"] .pstage:nth-of-type(3){background:#e5f1ed}
+  html[data-theme="hybrid"] .pstage:nth-of-type(5){background:#efeaf6}
+  html[data-theme="hybrid"] .pstage:nth-of-type(7){background:#f5eddf}
+  html[data-theme="hybrid"] .pstage:nth-of-type(9){background:#e8eef7}
+  html[data-theme="hybrid"] .pstage:hover{border-color:var(--acc);box-shadow:0 5px 14px rgba(23,54,79,.10)}
+  html[data-theme="hybrid"] .pane.left,
+  html[data-theme="hybrid"] .pane.right{background:#f3f7fa}
+  html[data-theme="hybrid"] .trow:hover{background:#e2edf3}
+  html[data-theme="hybrid"] .trow.sel{background:#d8e9ef}
+  html[data-theme="hybrid"] .card{background:#f3f7fa;box-shadow:0 4px 14px rgba(23,54,79,.07)}
+  html[data-theme="hybrid"] .card:hover{border-color:#91aabd}
+  html[data-theme="hybrid"] .kv .box:nth-child(4n+1){background:#e4f0f5}
+  html[data-theme="hybrid"] .kv .box:nth-child(4n+2){background:#e4f1ec}
+  html[data-theme="hybrid"] .kv .box:nth-child(4n+3){background:#eee9f5}
+  html[data-theme="hybrid"] .kv .box:nth-child(4n+4){background:#f4eadc}
+  html[data-theme="hybrid"] .btn:hover{background:#f8fbfd}
+  html[data-theme="hybrid"] .btn.pri:hover{color:#08121a}
+  html[data-theme="hybrid"] .status{background:#17364f;border-color:#294d68;color:#c5d7e3}
+  html[data-theme="hybrid"] .status .cell{border-color:#31546c}
+  html[data-theme="hybrid"] .status .cell b{color:#75d0df}
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;font-family:var(--sans);color:var(--txt);background:var(--bg);display:flex;flex-direction:column;height:100vh;overflow:hidden}
+  .mono{font-family:var(--mono)} a{color:inherit;text-decoration:none}
+
+  /* ---- top bar ---- */
+  .topbar{display:flex;align-items:center;gap:12px;padding:9px 16px;background:var(--panel);border-bottom:1px solid var(--line);flex:none}
+  .topbar .mark{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,var(--acc),var(--acc2));color:#08121a;display:grid;place-items:center;font-weight:800;font-size:12px}
+  .topbar .title{font-weight:800;font-size:14px;letter-spacing:-.01em}
+  .topbar .title small{display:block;font-family:var(--mono);color:var(--dim);font-weight:500;font-size:9.5px;margin-top:2px}
+  .topbar .sp{margin-left:auto}
+  .chip{font-family:var(--mono);font-size:11px;padding:4px 9px;border:1px solid var(--line-2);border-radius:7px;color:var(--muted);background:var(--inset)}
+  .chip.g{color:var(--green);border-color:color-mix(in srgb,var(--green) 35%,transparent)}
+  .btn{font-family:var(--mono);font-size:11px;padding:5px 11px;border:1px solid var(--line-2);border-radius:7px;background:var(--inset);color:var(--txt);cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+  .btn:hover{border-color:var(--acc);color:var(--acc)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn.pri{background:linear-gradient(135deg,var(--acc),var(--acc2));color:#08121a;border-color:transparent;font-weight:700}
+  .btn.pri:hover{color:#08121a;opacity:.94}
+  .btn.sm{font-size:10px;padding:4px 8px}
+  .theme-select{font:600 11px var(--mono);padding:5px 25px 5px 9px;border:1px solid var(--line-2);border-radius:7px;background:var(--inset);color:var(--txt);cursor:pointer}
+  .theme-select:hover,.theme-select:focus{border-color:var(--acc);outline:none}
+  html[data-theme="hybrid"] .topbar .theme-select{background:#f2f7fa;border-color:#9fb5c5;color:#17364f}
+
+  /* ---- pipeline strip ---- */
+  .pipeline{flex:none;display:flex;align-items:stretch;gap:0;padding:12px 16px;background:var(--panel);border-bottom:1px solid var(--line);overflow-x:auto}
+  .pstage{display:flex;align-items:center;gap:11px;padding:9px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel-2);cursor:pointer;min-width:170px;transition:border-color .12s,background .12s;position:relative}
+  .pstage:hover{border-color:var(--line-2)}
+  .pstage.active{border-color:var(--acc);background:var(--acc-soft)}
+  .pstage .pico{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:15px;background:var(--inset);color:var(--muted);flex:none}
+  .pstage.active .pico{background:var(--acc);color:#08121a}
+  .pstage.done .pico{background:var(--green-soft);color:var(--green)}
+  .pstage .pt{display:flex;flex-direction:column;gap:1px;min-width:0}
+  .pstage .pt .n{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+  .pstage .pt .l{font-size:13px;font-weight:700;letter-spacing:-.01em}
+  .pstage .pt .c{font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px}
+  .pconn{display:flex;align-items:center;justify-content:center;width:30px;color:var(--line-2);flex:none}
+  .pconn svg{width:18px;height:18px}
+
+  .cols{flex:1;display:grid;grid-template-columns:300px 1fr 300px;min-height:0}
+  .pane{min-height:0;display:flex;flex-direction:column;overflow:hidden}
+  .pane.left{border-right:1px solid var(--line);background:var(--panel)}
+  .pane.right{border-left:1px solid var(--line);background:var(--panel)}
+  .pane-h{padding:10px 14px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);flex:none;display:flex;align-items:center;gap:8px}
+  .pane-h .n{margin-left:auto;color:var(--muted)}
+  .scroll{overflow:auto;flex:1;min-height:0}
+  .scroll::-webkit-scrollbar{width:9px;height:9px}
+  .scroll::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:9px}
+
+  .filters{padding:10px 12px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:7px;flex:none}
+  .filters input,.filters select{width:100%;font-family:var(--mono);font-size:11px;padding:6px 9px;background:var(--inset);border:1px solid var(--line-2);border-radius:7px;color:var(--txt)}
+  .filters .rowf{display:flex;gap:7px}
+
+  .trow{padding:11px 14px;border-bottom:1px solid var(--line);cursor:pointer;border-left:2px solid transparent}
+  .trow:hover{background:var(--panel-2)}
+  .trow.sel{background:var(--panel-2);border-left-color:var(--acc)}
+  .trow .id{font-family:var(--mono);font-size:11px;color:var(--acc);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .trow .tk{font-size:12.5px;margin-top:3px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .trow .meta{margin-top:6px;display:flex;gap:7px;align-items:center;font-family:var(--mono);font-size:10px;color:var(--dim);flex-wrap:wrap}
+  .dot{width:7px;height:7px;border-radius:50%;flex:none}
+  .dot.ok{background:var(--green)} .dot.part{background:var(--amber)} .dot.fail{background:var(--red)} .dot.unk{background:var(--dim)}
+
+  /* ---- center stage ---- */
+  .stage-h{padding:14px 20px;border-bottom:1px solid var(--line);flex:none}
+  .stage-h .n{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--acc)}
+  .stage-h h2{margin:5px 0 4px;font-size:18px;font-weight:800;letter-spacing:-.02em}
+  .stage-h p{margin:0;font-size:12.5px;color:var(--muted);max-width:640px;line-height:1.5}
+  .subnav{display:flex;gap:6px;flex-wrap:wrap;padding:10px 20px 0}
+  .subnav .btn.active{border-color:var(--acc);color:var(--acc);background:var(--acc-soft)}
+  .stage-body{flex:1;overflow:auto;min-height:0;padding:16px 20px}
+
+  .selprompt{color:var(--muted);font-size:13px;padding:40px 0;text-align:center}
+
+  .step{border:1px solid var(--line);border-radius:11px;margin-bottom:11px;overflow:hidden;background:var(--panel-2)}
+  .step .sh{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:10px 13px;background:var(--inset)}
+  .step .sh .nm{font-family:var(--mono);font-size:12px;color:var(--acc);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+  details{padding:8px 13px}
+  summary{cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--muted)}
+  pre.code{font-family:var(--mono);font-size:11.5px;line-height:1.6;color:var(--txt);background:var(--inset);padding:12px 14px;white-space:pre-wrap;border-radius:0 0 11px 11px;margin:8px 0 0;overflow:auto}
+  .t2{font-family:var(--mono);font-size:10px;padding:3px 7px;border:1px solid var(--line-2);border-radius:6px;color:var(--muted)}
+  .kv{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+  .kv.k4{grid-template-columns:repeat(4,1fr)}
+  .kv .box{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--panel-2)}
+  .kv .box .l{font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+  .kv .box .v{font-family:var(--mono);font-size:12px;margin-top:4px;word-break:break-all}
+  .kv .box .v.big{font-size:20px;font-weight:800;font-family:var(--sans)}
+  .msg{border:1px solid var(--line);border-radius:11px;padding:12px 14px;margin-bottom:10px;background:var(--panel-2)}
+  .msg .role{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-bottom:6px}
+  .msg .role.assistant{color:var(--acc)} .msg .role.tool{color:var(--amber)}
+  .msg .bodytxt{font-size:13px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
+  .msg .bodytxt.scrollbox{max-height:300px;overflow:auto;background:var(--inset);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+  .msg .bodytxt.scrollbox::-webkit-scrollbar{width:8px}
+  .msg .bodytxt.scrollbox::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:8px}
+  .empty{color:var(--muted);font-size:12px;padding:10px 2px}
+
+  .qa{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  .qa .btn{width:100%;justify-content:center}
+  textarea{width:100%;min-height:104px;font-family:var(--mono);font-size:11.5px;background:var(--inset);border:1px solid var(--line-2);border-radius:9px;color:var(--txt);padding:10px;resize:vertical;line-height:1.5}
+  .orig{font-size:11px;color:var(--muted);background:var(--inset);border:1px solid var(--line);border-radius:9px;padding:9px 11px;margin-bottom:9px;max-height:80px;overflow:auto;white-space:pre-wrap;line-height:1.45}
+  .formgrid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:10px}
+  .field label{display:block;font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);margin-bottom:4px}
+  .field input,.field select{width:100%;font-family:var(--mono);font-size:11px;padding:6px 9px;background:var(--inset);border:1px solid var(--line-2);border-radius:7px;color:var(--txt)}
+  .field.full{grid-column:1 / -1}
+  .jsonarea{min-height:200px}
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--panel-2);padding:14px;margin-bottom:12px}
+  .card h4{margin:0 0 10px;font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+  .hint{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:7px;line-height:1.5}
+
+  /* next-step bar */
+  .nextbar{display:flex;align-items:center;gap:12px;margin-top:6px;padding:13px 15px;border:1px dashed var(--line-2);border-radius:11px;background:var(--acc-soft)}
+  .nextbar .lbl{font-size:12.5px;color:var(--txt)}
+  .nextbar .lbl b{color:var(--acc)}
+  .nextbar .sp{margin-left:auto}
+
+  /* ---- right rail ---- */
+  .rblock{padding:14px;border-bottom:1px solid var(--line)}
+  .rblock h4{margin:0 0 10px;font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+  .track{display:flex;flex-direction:column;gap:0}
+  .tstep{display:flex;align-items:center;gap:10px;padding:8px 0;cursor:pointer}
+  .tstep .tk{width:22px;height:22px;border-radius:50%;background:var(--inset);color:var(--dim);display:grid;place-items:center;font-family:var(--mono);font-size:10px;flex:none;border:1px solid var(--line-2)}
+  .tstep.done .tk{background:var(--green-soft);color:var(--green);border-color:transparent}
+  .tstep.active .tk{background:var(--acc);color:#08121a;border-color:transparent}
+  .tstep .tl{font-size:12.5px;font-weight:600}
+  .tstep .ts{font-family:var(--mono);font-size:10px;color:var(--dim);margin-left:auto}
+  .rw{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:11.5px}
+  .rw:last-child{border-bottom:0}
+  .rk{font-family:var(--mono);font-size:9.5px;font-weight:700;padding:3px 6px;border-radius:5px;flex:none}
+  .rk.pos{background:var(--green-soft);color:var(--green)} .rk.neg{background:var(--red-soft);color:var(--red)} .rk.neu{background:var(--acc-soft);color:var(--acc)}
+  .rw .tx{flex:1;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rw .tm{font-family:var(--mono);font-size:9.5px;color:var(--dim)}
+
+  .status{flex:none;display:flex;align-items:center;background:var(--panel);border-top:1px solid var(--line);font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+  .status .cell{padding:6px 13px;border-right:1px solid var(--line)}
+  .status .cell b{color:var(--acc)}
+  .status .cell:last-child{border-right:0;margin-left:auto}
+  .toast{position:fixed;bottom:44px;right:22px;z-index:60;background:var(--panel-2);border:1px solid var(--line-2);color:var(--txt);border-radius:10px;padding:10px 14px;font-family:var(--mono);font-size:12px}
+</style>
+</head>
+<body x-data="workbench()" x-init="init()" x-cloak>
+  <div class="topbar">
+    <div class="mark">TZ</div>
+    <div class="title">Agent Training Workbench <small>Part of Topaz Fabric</small></div>
+    <div class="sp"></div>
+    <span class="chip g" x-text="'● richness ' + score()"></span>
+    <span class="chip" x-text="'tenant · ' + tenantId"></span>
+    <button type="button" data-theme-toggle class="iaf-theme-toggle" aria-label="Toggle light/dark theme">
+      <svg class="iaf-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+      <svg class="iaf-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>
+    </button>
+    <button class="btn" @click="refreshAll()">↻ refresh</button>
+    <a class="btn pri" href="/rl-capture">⤴ Studio</a>
+  </div>
+
+  <!-- PIPELINE STRIP -->
+  <div class="pipeline">
+    <template x-for="(s,i) in stages()" :key="s.id">
+      <div style="display:flex;align-items:stretch">
+        <div class="pstage" :class="{active:stage===s.id, done:s.done}" @click="stage=s.id">
+          <div class="pico" x-text="s.icon"></div>
+          <div class="pt">
+            <span class="n" x-text="'stage '+(i+1)"></span>
+            <span class="l" x-text="s.label"></span>
+            <span class="c" x-text="s.context"></span>
+          </div>
+        </div>
+        <div class="pconn" x-show="i < stages().length-1">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <div class="cols">
+    <!-- LEFT: trajectory list -->
+    <div class="pane left">
+      <div class="pane-h">trajectories <span class="n" x-text="trajectories.length + ' shown'"></span></div>
+      <div class="filters">
+        <input x-model.debounce.400ms="filters.q" @input="loadTrajectories()" placeholder="search task or skill…">
+        <div class="rowf">
+          <select x-model="filters.terminal_status" @change="loadTrajectories()">
+            <option value="">any status</option><option value="success">success</option><option value="partial">partial</option><option value="failed">failed</option><option value="cancelled">cancelled</option>
+          </select>
+          <select x-model="filters.skill" @change="loadTrajectories()" title="Filter by the routed skill">
+            <option value="">any skill</option>
+            <template x-for="s in skillNames" :key="s.name"><option :value="s.name" x-text="s.name"></option></template>
+          </select>
+        </div>
+        <div class="rowf">
+          <select x-model="filters.trace_assessment_status" @change="loadTrajectories()">
+            <option value="">any value status</option><option value="assessed">assessed</option><option value="unassessed">not assessed</option><option value="debug_only">debug only</option>
+          </select>
+          <select x-model="filters.trace_destination" @change="loadTrajectories()">
+            <option value="">any destination</option><option value="golden_eval">golden eval</option><option value="skill">skill</option><option value="context">context</option><option value="memory">memory</option><option value="model_training">training pool</option><option value="debug_only">debug only</option>
+          </select>
+        </div>
+        <div class="rowf">
+          <select x-model="filters.trace_route_status" @change="loadTrajectories()">
+            <option value="">any promotion status</option><option value="pending_review">pending review</option><option value="approved">approved</option><option value="promoted">promoted</option><option value="archived">archived</option>
+          </select>
+          <select x-model.number="filters.trace_min_score" @change="loadTrajectories()" :disabled="!filters.trace_destination">
+            <option :value="0">any score</option><option :value="0.5">score ≥ 0.50</option><option :value="0.7">score ≥ 0.70</option><option :value="0.85">score ≥ 0.85</option>
+          </select>
+        </div>
+        <label style="display:flex;gap:6px;align-items:center;font-size:11px;color:var(--muted)"><input type="checkbox" x-model="filters.include_debug" @change="loadTrajectories()"> include debug traces</label>
+      </div>
+      <div class="scroll">
+        <template x-for="row in trajectories" :key="row.id">
+          <div class="trow" :class="selectedId===row.id?'sel':''" @click="selectTraj(row.id)">
+            <div class="id" x-text="row.id"></div>
+            <div class="tk" x-text="row.task || '(no task captured)'"></div>
+            <div class="meta">
+              <span class="dot" :class="statusDot(row.terminal_status)"></span>
+              <span x-text="row.terminal_status||'unknown'"></span><span>·</span>
+              <span x-text="'m'+row.model_calls+' t'+row.tool_calls"></span><span>·</span>
+              <span x-text="row.fidelity||'text_only'"></span><span>·</span>
+              <span x-text="relTime(row.capture_time)"></span>
+            </div>
+            <div class="meta" x-show="row.trace_value?.assessment_status==='assessed'">
+              <span class="rk neu" x-text="traceDestinationLabel(row.trace_value?.top_destination)"></span>
+              <span x-text="Number(row.trace_value?.top_score||0).toFixed(2)"></span>
+              <template x-if="row.trace_value?.route_status"><span class="rk pos" x-text="row.trace_value.route_status"></span></template>
+            </div>
+            <div class="meta" x-show="row.trace_value?.assessment_status==='unassessed'"><span class="rk">not assessed</span></div>
+            <div class="meta" x-show="row.trace_value?.assessment_status==='debug_only'"><span class="rk neg">debug only</span></div>
+          </div>
+        </template>
+        <template x-if="!trajectories.length"><div class="empty" style="padding:14px">No trajectories match.</div></template>
+      </div>
+    </div>
+
+    <!-- CENTER: active stage -->
+    <div class="pane">
+
+      <!-- ============ STAGE 1 · CAPTURE ============ -->
+      <template x-if="stage==='capture'">
+        <div style="display:flex;flex-direction:column;min-height:0;flex:1">
+          <div class="stage-h">
+            <div class="n">Stage 1 · Capture</div>
+            <h2 x-text="detail?.trajectory?.task ? 'The captured run' : 'Select a run to inspect'"></h2>
+            <p>Every agent execution is recorded as a faithful trajectory — prompt, model calls, tool actions, and evidence. This is the raw material everything else is built from.</p>
+          </div>
+          <template x-if="!detail"><div class="stage-body"><div class="selprompt">Pick a trajectory on the left to see what the agent actually did.</div></div></template>
+          <template x-if="detail">
+            <div style="display:flex;flex-direction:column;min-height:0;flex:1">
+              <div class="subnav">
+                <button class="btn sm" :class="capSub==='overview'?'active':''" @click="capSub='overview'">overview</button>
+                <button class="btn sm" :class="capSub==='model'?'active':''" @click="capSub='model'">model · <span x-text="(detail?.trajectory?.model_calls||[]).length"></span></button>
+                <button class="btn sm" :class="capSub==='tools'?'active':''" @click="capSub='tools'">tools · <span x-text="(detail?.trajectory?.tool_calls||[]).length"></span></button>
+                <button class="btn sm" :class="capSub==='obs'?'active':''" @click="capSub='obs'">observations · <span x-text="(detail?.trajectory?.observations||[]).length"></span></button>
+                <button class="btn sm" :class="capSub==='raw'?'active':''" @click="capSub='raw'">raw json</button>
+              </div>
+              <div class="stage-body">
+                <template x-if="capSub==='overview'">
+                  <div>
+                    <div class="kv k4">
+                      <div class="box"><div class="l">status</div><div class="v" :style="statusStyle(detail?.trajectory?.terminal_status)" x-text="detail?.trajectory?.terminal_status||'—'"></div></div>
+                      <div class="box"><div class="l">skill</div><div class="v" x-text="(detail?.trajectory?.metadata||{}).skill||'—'"></div></div>
+                      <div class="box"><div class="l">fidelity</div><div class="v" x-text="detail?.trajectory?.fidelity||'—'"></div></div>
+                      <div class="box"><div class="l">session</div><div class="v" x-text="detail?.trajectory?.session_id||'—'"></div></div>
+                    </div>
+                    <div class="msg"><div class="role">task / prompt</div><div class="bodytxt scrollbox" x-text="detail?.trajectory?.task||'—'"></div></div>
+                    <div class="msg"><div class="role assistant">final response</div><div class="bodytxt scrollbox" x-text="finalResponseText()||'—'"></div></div>
+                    <div class="nextbar">
+                      <div class="lbl">This run is <b>captured</b>. Next: score whether it was actually good.</div>
+                      <div class="sp"></div>
+                      <button class="btn pri" @click="stage='evaluate'">Evaluate →</button>
+                    </div>
+                  </div>
+                </template>
+                <template x-if="capSub==='model'">
+                  <div>
+                    <template x-for="mc in (detail?.trajectory?.model_calls||[])" :key="mc.id">
+                      <div class="step">
+                        <div class="sh"><span class="nm" x-text="mc.id"></span>
+                          <span class="t2" x-text="(mc.policy||{}).provider||'provider'"></span>
+                          <span class="t2" x-text="(mc.policy||{}).model||'model'"></span>
+                          <span class="t2" x-text="'p:'+(mc.prompt_tokens||0)+' c:'+(mc.completion_tokens||0)"></span>
+                          <span class="t2" x-text="(mc.latency_ms||0)+'ms'"></span>
+                        </div>
+                        <details><summary>input messages · <span x-text="(mc.input_messages||[]).length"></span></summary><pre class="code" x-text="JSON.stringify(mc.input_messages||[],null,2)"></pre></details>
+                        <details><summary>output messages · <span x-text="(mc.output_messages||[]).length"></span></summary><pre class="code" x-text="JSON.stringify(mc.output_messages||[],null,2)"></pre></details>
+                      </div>
+                    </template>
+                    <template x-if="!((detail?.trajectory?.model_calls||[]).length)"><div class="empty">No model calls captured.</div></template>
+                  </div>
+                </template>
+                <template x-if="capSub==='tools'">
+                  <div>
+                    <template x-for="tc in (detail?.trajectory?.tool_calls||[])" :key="tc.id">
+                      <div class="step">
+                        <div class="sh"><span class="nm" x-text="tc.name||tc.id"></span>
+                          <span class="t2" :style="tc.status==='ok'?'color:var(--green)':tc.status==='error'?'color:var(--red)':''" x-text="tc.status||'status'"></span>
+                          <span class="t2" x-text="(tc.duration_ms||0)+'ms'"></span></div>
+                        <details><summary>arguments</summary><pre class="code" x-text="JSON.stringify(tc.arguments ?? tc.args ?? {},null,2)"></pre></details>
+                        <details><summary>output</summary><pre class="code" x-text="JSON.stringify(tc.output ?? '',null,2)"></pre></details>
+                      </div>
+                    </template>
+                    <template x-if="!((detail?.trajectory?.tool_calls||[]).length)"><div class="empty">No tool calls captured.</div></template>
+                  </div>
+                </template>
+                <template x-if="capSub==='obs'">
+                  <div>
+                    <template x-for="ob in (detail?.trajectory?.observations||[])" :key="ob.id">
+                      <div class="step"><div class="sh"><span class="nm" x-text="ob.source||ob.id"></span></div><pre class="code" x-text="JSON.stringify(ob,null,2)"></pre></div>
+                    </template>
+                    <template x-if="!((detail?.trajectory?.observations||[]).length)"><div class="empty">No observations captured.</div></template>
+                  </div>
+                </template>
+                <template x-if="capSub==='raw'"><pre class="code" x-text="JSON.stringify(detail||{},null,2)"></pre></template>
+              </div>
+            </div>
+          </template>
+        </div>
+      </template>
+
+      <!-- ============ STAGE 2 · EVALUATE ============ -->
+      <template x-if="stage==='evaluate'">
+        <div style="display:flex;flex-direction:column;min-height:0;flex:1">
+          <div class="stage-h">
+            <div class="n">Stage 2 · Evaluate</div>
+            <h2>Score the run</h2>
+            <p>Attach a judgement signal — an automatic score, a thumbs rating, or a human correction. Judgement signals become the reward that training learns from; operational events are excluded.</p>
+          </div>
+          <template x-if="!detail"><div class="stage-body"><div class="selprompt">Select a trajectory to evaluate.</div></div></template>
+          <template x-if="detail">
+            <div class="stage-body">
+              <div class="kv k4">
+                <div class="box" title="The latest judgement verdict for this run (pass / partial / fail), from the most recent reward.">
+                  <div class="l">verdict</div><div class="v big" :style="trajVerdict().style" x-text="trajVerdict().label"></div></div>
+                <div class="box" title="Confidence-weighted reward in the range -1…1 that training learns from. Blank until a judgement signal exists.">
+                  <div class="l">shaped reward</div><div class="v big" x-text="trajVerdict().score"></div></div>
+                <div class="box" title="How many human/judge signals (thumbs, rule score, LLM judge, correction) are attached. Operational traces don't count.">
+                  <div class="l">judgement signals</div><div class="v big" x-text="trajJudgementCount()"></div></div>
+                <div class="box" title="Alternative answers captured for this run (original, revised, corrected) — the raw material for DPO preference pairs.">
+                  <div class="l">candidates</div><div class="v big" x-text="(detail?.candidates||[]).length"></div></div>
+              </div>
+
+              <!-- T-1: judge verdict + rationale, persisted (not just a toast) -->
+              <div class="card">
+                <h4>judge verdict &amp; rationale</h4>
+                <template x-if="evaluatorResults().length">
+                  <div>
+                    <template x-for="(er,i) in evaluatorResults()" :key="er.id">
+                      <div class="rw" :style="i>0?'opacity:.72':''" style="align-items:flex-start">
+                        <span class="rk" :class="labelKind(judgeVerdict(er))" x-text="judgeVerdict(er)"></span>
+                        <div class="tx" style="white-space:normal;color:var(--txt)">
+                          <div><b x-text="judgeMode(er)"></b> · score <span x-text="judgeScore(er)"></span> · conf <span x-text="judgeConfidence(er)"></span></div>
+                          <div style="color:var(--muted);margin-top:2px" x-text="judgeRationale(er)"></div>
+                        </div>
+                        <span class="tm" x-text="relTime(er.created_at)"></span>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+                <template x-if="!evaluatorResults().length">
+                  <div class="empty">Not yet evaluated — run a rule score or LLM judge below and the verdict + reasoning will show here.</div>
+                </template>
+              </div>
+
+              <div class="card">
+                <h4>① is this answer good? → score it</h4>
+                <div class="hint" style="margin-top:0;margin-bottom:10px">Pick how to judge this run. Each option writes a judgement signal that becomes the training reward.</div>
+                <div class="qa">
+                  <button class="btn" :disabled="evaluating || !detail" @click="evaluateTraj('rule')" title="Instant deterministic heuristic over status, substance, tool outcomes. No model call."><span x-text="evaluating==='rule'?'scoring…':'⚖ rule score (instant)'"></span></button>
+                  <button class="btn" :disabled="evaluating || !detail" @click="evaluateTraj('llm')" title="Grades correctness/faithfulness with the trajectory_judge skill (one model call)."><span x-text="evaluating==='llm'?'judging…':'🧠 LLM judge'"></span></button>
+                  <button class="btn" :disabled="thumbsBusy || !detail" @click="submitThumbs('up')" title="Human approval — the strongest signal (weight 1.0).">👍 good</button>
+                  <button class="btn" :disabled="thumbsBusy || !detail" @click="submitThumbs('down')" title="Human rejection — the strongest signal (weight 1.0).">👎 bad</button>
+                </div>
+                <!-- judge configuration (model + prompt + skill) -->
+                <div class="formgrid" style="margin-top:10px">
+                  <div class="field"><label>LLM judge skill</label><input x-model.trim="evalJudge.skill" placeholder="trajectory_judge"></div>
+                  <div class="field"><label>judge model</label><input value="light model role (light_mode)" readonly title="The LLM judge runs the judge skill on the agent's light model role."></div>
+                </div>
+                <div class="hint">The judge skill's grading prompt is editable as a skill. <a :href="'/skills?skill='+encodeURIComponent(evalJudge.skill||'trajectory_judge')" style="color:var(--acc)">edit the judge prompt →</a> · the model follows the agent's light role.</div>
+              </div>
+
+              <div class="card">
+                <h4>② disagree with the answer? → record a correction</h4>
+                <div class="hint" style="margin-top:0;margin-bottom:8px">Edit the response into what it should have been. This stores a chosen/rejected pair → DPO-ready.</div>
+                <div class="orig" x-text="correction.original || '(no original response captured)'"></div>
+                <textarea id="corr-box" x-model="correction.corrected" placeholder="Edit the response as it should have been…"></textarea>
+                <button class="btn pri" style="width:100%;margin-top:8px;justify-content:center" :disabled="correctionBusy || !canSubmitCorrection()" @click="submitCorrection()"><span x-text="correctionBusy?'submitting…':'record correction'"></span></button>
+              </div>
+
+              <div style="display:flex;align-items:center;gap:8px;margin:4px 0 10px">
+                <button class="btn sm" @click="showAdvanced=!showAdvanced"><span x-text="showAdvanced?'▾ hide advanced':'▸ advanced · route this trace'"></span></button>
+                <span class="hint" style="margin:0">Trace Value Router — recommend where this run should go (skill / memory / golden / training). Optional.</span>
+              </div>
+              <div class="card" x-show="showAdvanced" x-cloak>
+                <h4>value assessment → route this trace</h4>
+                <template x-if="traceValue()">
+                  <div>
+                    <div class="kv k4" style="margin-bottom:10px">
+                      <div class="box"><div class="l">quality</div><div class="v big" x-text="((traceValue().quality||{}).verdict||'—')"></div></div>
+                      <div class="box"><div class="l">confidence</div><div class="v big" x-text="(((traceValue().quality||{}).confidence||0)*100).toFixed(0)+'%'"></div></div>
+                      <div class="box"><div class="l">top route</div><div class="v big" x-text="topTraceDestinations()[0]?.label||'—'"></div></div>
+                      <div class="box"><div class="l">decisions</div><div class="v big" x-text="(detail?.route_decisions||[]).length"></div></div>
+                    </div>
+                    <div class="hint" style="margin-bottom:10px" x-text="traceValue().learning || 'No reusable learning extracted.'"></div>
+                    <template x-for="d in topTraceDestinations()" :key="d.key">
+                      <div class="rw">
+                        <span class="rk neu" x-text="d.label"></span>
+                        <span class="tx" x-text="d.score + ' · ' + ((traceValue().rationale||{})[d.key]||'recommended destination')"></span>
+                        <span class="rk pos" x-show="traceDecision(d.key)" x-text="traceDecision(d.key)?.status"></span>
+                        <button class="btn sm" style="margin-left:auto" :disabled="traceValueBusy || !!traceDecision(d.key)" @click="promoteTraceDestination(d.key)" x-text="tracePromotionLabel(d.key)"></button>
+                      </div>
+                    </template>
+                    <template x-if="(traceValue().risks||[]).length"><div class="hint" x-text="'risks · '+(traceValue().risks||[]).join(' · ')"></div></template>
+                    <div class="formgrid" style="margin-top:10px">
+                      <div class="field"><label>knowledge target (optional)</label><input x-model.trim="tracePromotion.targetSkill" placeholder="skill/context id"></div>
+                      <div class="field"><label>training pool</label><input x-model.trim="tracePromotion.trainingPool" placeholder="default"></div>
+                    </div>
+                  </div>
+                </template>
+                <template x-if="!traceValue()">
+                  <div class="empty">No value assessment yet. Run the router to recommend skill/context, memory, golden, training, or debug-only destinations.</div>
+                </template>
+                <div class="qa" style="margin-top:10px">
+                  <button class="btn pri" :disabled="traceValueBusy || !detail" @click="evaluateTraceValue()"><span x-text="traceValueBusy?'routing…':'route value'"></span></button>
+                  <button class="btn" :disabled="!detail" @click="promoteTraceDestination('debug_only')">archive debug-only</button>
+                </div>
+                <div class="hint">Recommendations are advisory. Promotion writes an auditable route decision and uses the existing golden/knowledge/export paths.</div>
+                <template x-if="tracePromotion.nextAction">
+                  <div class="nextbar">
+                    <div class="lbl" x-text="tracePromotion.nextAction.message"></div><div class="sp"></div>
+                    <a class="btn pri" :href="tracePromotion.nextAction.href" x-text="tracePromotion.nextAction.label"></a>
+                  </div>
+                </template>
+              </div>
+
+              <div class="card">
+                <h4>all signals on this run</h4>
+                <div class="hint" style="margin-top:0;margin-bottom:8px">Judgement signals (human, judge, business) drive the reward. Operational traces are greyed and excluded.</div>
+                <template x-for="r in (detail?.rewards||[])" :key="r.id">
+                  <div class="rw" :style="r.is_judgement===false?'opacity:.5':''" :title="r.is_judgement===false?'operational trace — excluded from reward shaping':'judgement signal — counts toward the reward'">
+                    <span class="rk" :class="labelKind(r.raw_label)" x-text="r.raw_label||'label'"></span>
+                    <span class="tx" x-text="channelLabel(r)"></span>
+                    <span class="tm" x-text="relTime(r.created_at)"></span>
+                  </div>
+                </template>
+                <template x-if="!((detail?.rewards||[]).length)"><div class="empty">No signals yet — score it above.</div></template>
+              </div>
+
+              <div class="nextbar">
+                <div class="lbl">Happy with this run? Turn it into a reusable <b>golden</b> test case.</div>
+                <div class="sp"></div>
+                <button class="btn" @click="replayInChat()">↗ replay in chat</button>
+                <button class="btn pri" @click="stage='curate'">Curate →</button>
+              </div>
+            </div>
+          </template>
+        </div>
+      </template>
+
+      <!-- ============ STAGE 3 · CURATE (golden) ============ -->
+      <template x-if="stage==='curate'">
+        <div style="display:flex;flex-direction:column;min-height:0;flex:1">
+          <div class="stage-h">
+            <div class="n">Stage 3 · Curate</div>
+            <h2>Define what "good" means → golden datasets</h2>
+            <p>Golden cases are your private benchmark: a task plus the assertions a correct answer must satisfy. Author them by hand, or promote a trusted real run in one click.</p>
+          </div>
+          <div class="stage-body">
+            <div class="card">
+              <h4>golden set</h4>
+              <div class="formgrid">
+                <div class="field"><label>eval suite</label>
+                  <select x-model="evalBuilder.selectedSuiteId" @change="selectEvalSuite(suiteById($event.target.value))">
+                    <template x-for="s in (evalBuilder.suites||[])" :key="s.id"><option :value="s.id" x-text="s.name||s.id"></option></template>
+                  </select>
+                </div>
+                <div class="field"><label>golden set id</label><input :value="selectedEvalSuite()?.golden_set||'—'" readonly></div>
+              </div>
+              <div class="qa">
+                <button class="btn" @click="loadGoldenForSelected()">reload cases</button>
+                <button class="btn" :disabled="!detail || !selectedEvalSuite()" @click="promoteSelectedTrajectory()">★ promote current trajectory</button>
+              </div>
+              <div class="hint" x-show="detail">Promotes <span class="mono" x-text="detail?.trajectory?.id||''"></span> into <span class="mono" x-text="selectedEvalSuite()?.golden_set||'—'"></span>.</div>
+            </div>
+            <div class="card">
+              <h4>golden cases · <span class="mono" x-text="selectedEvalSuite()?.golden_set||'select suite'"></span></h4>
+              <textarea class="jsonarea" x-model="evalBuilder.golden.json" placeholder='[{"id":"case_1","task":"...","expected":"...","assertions":[]}]'></textarea>
+              <button class="btn pri" style="width:100%;margin-top:8px;justify-content:center" :disabled="evalBuilder.busy || !selectedEvalSuite()" @click="saveGoldenJson()">save golden cases</button>
+              <div class="hint">Each case supports <span class="mono">assertions</span> (contains / not_contains / regex) and a <span class="mono">critical</span> flag for safety rules that can never fail.</div>
+            </div>
+            <div class="nextbar">
+              <div class="lbl">Cases ready? <b>Test</b> an agent against the whole suite.</div>
+              <div class="sp"></div>
+              <button class="btn pri" @click="stage='test'">Test →</button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- ============ STAGE 4 · TEST (suites, evaluators, runs, gates) ============ -->
+      <template x-if="stage==='test'">
+        <div style="display:flex;flex-direction:column;min-height:0;flex:1">
+          <div class="stage-h">
+            <div class="n">Stage 4 · Test</div>
+            <h2>Run suites &amp; guard promotion</h2>
+            <p>An eval suite runs the golden cases against a target and scores each. Promotion gates block a change from shipping unless the suite passes — your regression guard.</p>
+          </div>
+          <div class="subnav">
+            <button class="btn sm" :class="testSub==='suites'?'active':''" @click="testSub='suites'">suites</button>
+            <button class="btn sm" :class="testSub==='evaluators'?'active':''" @click="testSub='evaluators'">evaluators</button>
+            <button class="btn sm" :class="testSub==='runs'?'active':''" @click="testSub='runs';loadRunsForSelected()">runs</button>
+            <button class="btn sm" :class="testSub==='gates'?'active':''" @click="testSub='gates';loadGatesForSelected()">promotion gates</button>
+          </div>
+          <div class="stage-body">
+            <div class="kv k4" style="margin-bottom:14px">
+              <div class="box"><div class="l">suites</div><div class="v big" x-text="evalDashboard.total_suites||(evalBuilder.suites||[]).length||0"></div></div>
+              <div class="box"><div class="l">runs</div><div class="v big" x-text="evalDashboard.total_runs||0"></div></div>
+              <div class="box"><div class="l">avg latest score</div><div class="v big" x-text="evalDashboard.average_latest_score||0"></div></div>
+              <div class="box"><div class="l">regressions</div><div class="v big" :style="(evalDashboard.regressions||0)>0?'color:var(--red)':''" x-text="evalDashboard.regressions||0"></div></div>
+            </div>
+
+            <template x-if="testSub==='suites'">
+              <div>
+                <template x-for="s in (evalBuilder.suites||[])" :key="s.id">
+                  <div class="step">
+                    <div class="sh"><span class="nm" x-text="s.name||s.id"></span>
+                      <span class="t2" x-text="(s.target||{}).type||'target'"></span>
+                      <span class="t2" x-text="'eval '+((s.evaluator||{}).type||'rule')"></span>
+                      <span class="t2" x-text="'judge '+((s.judge||{}).mode||'rule')"></span>
+                      <button class="btn sm" @click="selectEvalSuite(s)">edit</button>
+                    </div>
+                    <div style="padding:10px 13px;font-family:var(--mono);font-size:11px;color:var(--muted)">
+                      <div x-text="'golden · ' + (s.golden_set||'—')"></div>
+                      <div x-text="'target · ' + ((s.target||{}).name || (s.target||{}).role || '—')"></div>
+                    </div>
+                  </div>
+                </template>
+                <div class="card">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+                    <h4 style="margin:0" x-text="evalBuilder.isNewSuite ? 'new suite · writes tenant eval YAML' : (evalBuilder.suiteForm.id ? 'editing · '+evalBuilder.suiteForm.id : 'suite editor · writes tenant eval YAML')"></h4>
+                    <button class="btn sm" style="margin-left:auto" @click="newSuiteForm()">+ New suite</button>
+                  </div>
+                  <div class="formgrid">
+                    <div class="field"><label>suite id</label><input id="suite-id" x-model.trim="evalBuilder.suiteForm.id" :readonly="!evalBuilder.isNewSuite && !!evalBuilder.selectedSuiteId" placeholder="unique_id">
+                      <div class="hint" style="color:var(--red)" x-show="suiteIdError()" x-text="suiteIdError()"></div></div>
+                    <div class="field"><label>name</label><input x-model="evalBuilder.suiteForm.name"></div>
+                    <div class="field full"><label>description</label><input x-model="evalBuilder.suiteForm.description" placeholder="what this suite checks"></div>
+                    <div class="field"><label>target type</label><select x-model="evalBuilder.suiteForm.target_type"><option>skill</option><option>automation</option><option>model_role</option></select></div>
+                    <div class="field"><label>target name / role</label><input x-model="evalBuilder.suiteForm.target_name"></div>
+                    <div class="field"><label>golden set</label><input x-model="evalBuilder.suiteForm.golden_set" placeholder="e.g. my_suite_golden"></div>
+                    <div class="field"><label>evaluator</label><select x-model="evalBuilder.suiteForm.evaluator_type"><option>rule</option><option>python</option><option>none</option></select></div>
+                    <div class="field"><label>evaluator id</label><input x-model="evalBuilder.suiteForm.evaluator_id" placeholder="optional for python"></div>
+                    <div class="field"><label>judge mode</label><select x-model="evalBuilder.suiteForm.judge_mode"><option>rule</option><option>hybrid</option><option>llm</option></select></div>
+                    <div class="field"><label>judge budget (max LLM cases)</label><input type="number" min="0" x-model.number="evalBuilder.suiteForm.max_llm_cases" :disabled="evalBuilder.suiteForm.judge_mode==='rule'"></div>
+                    <div class="field"><label>pass score ≥</label><input type="number" step="0.1" x-model.number="evalBuilder.suiteForm.pass_score"></div>
+                    <div class="field"><label>fail score ≤</label><input type="number" step="0.1" x-model.number="evalBuilder.suiteForm.fail_score"></div>
+                    <div class="field full"><label>tags (comma-separated)</label><input x-model="evalBuilder.suiteForm.tags" placeholder="regression, safety"></div>
+                  </div>
+                  <div class="qa">
+                    <button class="btn" :disabled="evalBuilder.busy || !!suiteIdError()" @click="validateSuiteForm()">validate</button>
+                    <button class="btn pri" :disabled="evalBuilder.busy || !!suiteIdError()" @click="saveSuiteForm()"><span x-text="evalBuilder.isNewSuite?'create suite':'save suite'"></span></button>
+                  </div>
+                  <div class="hint">A suite needs a golden set with at least one case to run. New suites offer to jump to <b>Curate</b> to add cases.</div>
+                </div>
+              </div>
+            </template>
+
+            <template x-if="testSub==='evaluators'">
+              <div>
+                <template x-for="e in (evalBuilder.evaluators||[])" :key="e.id">
+                  <div class="step">
+                    <div class="sh"><span class="nm" x-text="e.name||e.id"></span>
+                      <span class="t2" x-text="e.version||'v1'"></span>
+                      <span class="t2" x-text="e.enabled===false?'disabled':'enabled'"></span>
+                      <button class="btn sm" @click="testEvaluator(e.id)">test</button>
+                    </div>
+                    <div style="padding:10px 13px;font-family:var(--mono);font-size:11px;color:var(--muted)" x-text="e.description||e.error||'tenant evaluator manifest'"></div>
+                  </div>
+                </template>
+                <template x-if="!((evalBuilder.evaluators||[]).length)"><div class="empty">No registered Python evaluators yet.</div></template>
+              </div>
+            </template>
+
+            <template x-if="testSub==='runs'">
+              <div>
+                <div class="qa" style="margin-bottom:10px">
+                  <button class="btn pri" :disabled="evalBuilder.busy || !selectedEvalSuite()" @click="runSelectedSuite()"><span x-text="evalBuilder.busy?'running…':'▶ run selected suite'"></span></button>
+                  <button class="btn" @click="loadRunsForSelected()">reload runs</button>
+                </div>
+                <template x-for="r in (evalBuilder.runs||[])" :key="r.run_id">
+                  <div class="step">
+                    <div class="sh"><span class="nm" x-text="r.run_id"></span>
+                      <span class="t2" :style="statusStyle(r.status)" x-text="r.status"></span>
+                      <span class="t2" x-text="'score '+(r.score||0)"></span>
+                      <button class="btn sm" @click="loadRunTrace(r.run_id)">details</button>
+                    </div>
+                    <div style="padding:10px 13px;font-family:var(--mono);font-size:11px;color:var(--muted)" x-text="r.summary||''"></div>
+                  </div>
+                </template>
+                <template x-if="!((evalBuilder.runs||[]).length)"><div class="empty">No runs yet — run the selected suite.</div></template>
+                <template x-if="evalBuilder.lastRun"><pre class="code" x-text="JSON.stringify(evalBuilder.lastRun,null,2)"></pre></template>
+              </div>
+            </template>
+
+            <template x-if="testSub==='gates'">
+              <div>
+                <div class="card">
+                  <h4>manual promotion gate · records decision</h4>
+                  <div class="formgrid">
+                    <div class="field"><label>run id</label><input x-model="evalBuilder.gate.run_id" placeholder="latest run id"></div>
+                    <div class="field"><label>decision</label><select x-model="evalBuilder.gate.decision"><option>approve</option><option>reject</option></select></div>
+                    <div class="field full"><label>reason</label><input x-model="evalBuilder.gate.reason" placeholder="why this run can/cannot promote"></div>
+                  </div>
+                  <button class="btn pri" :disabled="evalBuilder.busy || !selectedEvalSuite()" @click="recordGateDecision()">record gate decision</button>
+                </div>
+                <template x-for="g in (evalBuilder.gates||[])" :key="g.id">
+                  <div class="step">
+                    <div class="sh"><span class="nm" x-text="g.id"></span>
+                      <span class="t2" :style="g.decision==='approve'?'color:var(--green);border-color:color-mix(in srgb,var(--green) 35%,transparent)':'color:var(--red);border-color:color-mix(in srgb,var(--red) 35%,transparent)'" x-text="g.decision"></span>
+                      <span class="t2" x-text="'score '+(g.score||0)"></span>
+                    </div>
+                    <div style="padding:10px 13px;font-family:var(--mono);font-size:11px;color:var(--muted)" x-text="(g.reviewer||'reviewer')+' · '+(g.reason||'no reason')"></div>
+                  </div>
+                </template>
+                <template x-if="!((evalBuilder.gates||[]).length)"><div class="empty">No gate decisions recorded yet.</div></template>
+              </div>
+            </template>
+
+            <div class="nextbar">
+              <div class="lbl">Quality bar met? <b>Export</b> the training dataset.</div>
+              <div class="sp"></div>
+              <button class="btn pri" @click="stage='export'">Export →</button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- ============ STAGE 5 · EXPORT ============ -->
+      <template x-if="stage==='export'">
+        <div style="display:flex;flex-direction:column;min-height:0;flex:1">
+          <div class="stage-h">
+            <div class="n">Stage 5 · Export</div>
+            <h2>Materialize the training dataset</h2>
+            <p>Turn rewarded trajectories into a training-ready JSONL. PII redaction and reward shaping run on every export. A small adapter maps the result into your trainer's contract.</p>
+          </div>
+          <div class="stage-body">
+            <div class="card">
+              <h4>export readiness</h4>
+              <template x-for="row in exportReadiness()" :key="row.key">
+                <div class="rw"><span class="tx" style="color:var(--txt)" x-text="row.label"></span><span class="rk" :class="row.ready?'pos':'neu'" x-text="row.ready?'ready':'needs signal'"></span></div>
+              </template>
+              <div class="hint">RFT/KTO/rejection-SFT need judgement signals; DPO needs at least one preference pair. Add them in <b>Evaluate</b>.</div>
+            </div>
+            <div class="card">
+              <h4>build dataset</h4>
+              <div class="formgrid">
+                <div class="field"><label>kind</label><select x-model="exporter.kind"><option value="sft">sft</option><option value="eval">eval</option><option value="dpo">dpo</option><option value="kto">kto</option><option value="rejection_sft">rejection_sft</option><option value="rft">rft</option></select></div>
+                <div class="field"><label>row limit</label><input type="number" x-model.number="exporter.limit" min="1"></div>
+                <div class="field"><label>sft format</label><select x-model="exporter.format"><option value="chat">chat</option><option value="prompt_completion">prompt_completion</option></select></div>
+                <div class="field"><label>eval verdict filter</label><select x-model="exporter.eval_verdict"><option value="">any</option><option value="pass">pass</option><option value="fail">fail</option><option value="partial">partial</option></select></div>
+              </div>
+              <button class="btn pri" style="width:100%;justify-content:center" :disabled="exporter.busy" @click="runExport()"><span x-text="exporter.busy?'exporting…':'⤓ export dataset'"></span></button>
+              <template x-if="exporter.last">
+                <div style="margin-top:12px">
+                  <div class="kv">
+                    <div class="box"><div class="l">rows</div><div class="v big" x-text="exporter.last.row_count"></div></div>
+                    <div class="box"><div class="l">kind</div><div class="v big" x-text="exporter.last.kind"></div></div>
+                  </div>
+                  <div class="rw"><span class="tx mono" x-text="(exporter.last.file_path||'').split('/').slice(-1)[0]"></span>
+                    <a class="btn sm" :href="exportDownloadUrl(exporter.last.id)">download</a></div>
+                  <div class="hint" x-text="'redaction · '+((exporter.last.redaction||{}).policy_version||'—')+' · fields redacted '+((exporter.last.redaction||{}).fields_redacted ?? 0)"></div>
+                </div>
+              </template>
+            </div>
+            <div class="nextbar">
+              <div class="lbl">This JSONL is an <b>intermediate</b> dataset — an adapter maps it to TRL / OpenAI RFT / GRPO.</div>
+              <div class="sp"></div>
+              <a class="btn" href="/rl-capture">open Studio exports</a>
+            </div>
+          </div>
+        </div>
+      </template>
+
+    </div>
+
+    <!-- RIGHT: pipeline status + reward stream -->
+    <div class="pane right">
+      <div class="pane-h">pipeline status</div>
+      <div class="scroll">
+        <div class="rblock">
+          <h4 x-text="detail? 'this trajectory' : 'no trajectory selected'"></h4>
+          <div class="track">
+            <template x-for="s in stages()" :key="'t'+s.id">
+              <div class="tstep" :class="{done:s.done, active:stage===s.id}" @click="stage=s.id">
+                <div class="tk" x-text="s.done?'✓':s.icon"></div>
+                <div class="tl" x-text="s.label"></div>
+                <div class="ts" x-text="s.badge"></div>
+              </div>
+            </template>
+          </div>
+        </div>
+        <div class="rblock">
+          <h4>reward stream (tenant)</h4>
+          <template x-for="row in (recent.rewards||[]).slice(0,8)" :key="row.id">
+            <div class="rw" :style="row.is_judgement?'':'opacity:.5'" :title="row.is_judgement?(row.category+' judgement'):'operational — excluded from reward'">
+              <span class="rk" :class="labelKind(row.raw_label)" x-text="row.raw_label||'label'"></span>
+              <span class="tx" x-text="row.channel||''"></span>
+              <span class="tm" x-text="row.is_judgement?relTime(row.created_at):'proc'"></span>
+            </div>
+          </template>
+          <template x-if="!(recent.rewards||[]).length"><div class="empty">No reward events yet.</div></template>
+        </div>
+        <div class="rblock">
+          <button class="btn" style="width:100%;justify-content:center" @click="copyJSON()">copy full trajectory JSON</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="status">
+    <div class="cell">db · <b x-text="dbShort()"></b></div>
+    <div class="cell">traj · <b x-text="health.trajectories||0"></b></div>
+    <div class="cell">rewards · <b x-text="health.reward_events||0"></b></div>
+    <div class="cell">prefs · <b x-text="health.preference_signals||0"></b></div>
+    <div class="cell">exports · <b x-text="health.exports||0"></b></div>
+    <div class="cell">Agent Training Workbench · Part of Topaz Fabric</div>
+  </div>
+
+  <template x-if="toast"><div class="toast" x-text="toast"></div></template>
+
+<script>
+function workbench(){
+  return {
+    tenantId:'company', theme:'dark', error:'', toast:'', _toastTimer:null, dbPath:'', loading:false,
+    health:{}, effectiveness:{}, recent:{rewards:[],preferences:[]}, evalDashboard:{suites:[],trend:[]},
+    stage:'capture', capSub:'overview', testSub:'suites',
+    exporter:{kind:'rft',limit:50,format:'chat',eval_verdict:'',busy:false,last:null},
+    evalBuilder:{
+      view:'suites', suites:[], evaluators:[], selectedSuiteId:'', isNewSuite:false,
+      suiteForm:{id:'',name:'',description:'',target_type:'skill',target_name:'',golden_set:'',evaluator_type:'rule',evaluator_id:'',judge_mode:'rule',pass_score:0.3,fail_score:-0.3,max_llm_cases:5,tags:''},
+      golden:{cases:[],json:'[]'}, runs:[], gates:[], lastRun:null, busy:false,
+      gate:{run_id:'',decision:'approve',reason:''}
+    },
+    filters:{q:'',terminal_status:'',skill:'',limit:100,include_debug:false,trace_assessment_status:'',trace_destination:'',trace_route_status:'',trace_min_score:0}, trajectories:[], skillNames:[],
+    selectedId:'', detail:null,
+    correction:{original:'',corrected:''}, correctionBusy:false, thumbsBusy:false, evaluating:false, traceValueBusy:false,
+    tracePromotion:{targetSkill:'',trainingPool:'default',nextAction:null},
+    showAdvanced:false, evalJudge:{skill:'trajectory_judge'},
+
+    setTheme(theme){ if(window.IAFTheme){window.IAFTheme.set(theme);} this.theme=(window.IAFTheme?window.IAFTheme.get():((theme==='light'||theme==='dark')?theme:'dark')); },
+    async init(){
+      this.theme=(window.IAFTheme?window.IAFTheme.get():document.documentElement.getAttribute('data-theme'))||'dark';
+      window.addEventListener('iaf:themechange',(e)=>{ this.theme=e.detail.theme; });
+      const params=new URLSearchParams(location.search);
+      const wanted=params.get('traj')||'';
+      const wantedStage=params.get('stage')||'';
+      if(['capture','evaluate','curate','test','export'].includes(wantedStage)) this.stage=wantedStage;
+      await Promise.all([this.loadSummary(), this.loadEvalDashboard(), this.loadTrajectories(), this.loadSkillNames()]);
+      if(wanted){ this.selectTraj(wanted); }
+      else if(this.trajectories.length){ this.selectTraj(this.trajectories[0].id); }
+    },
+    async refreshAll(){ await Promise.all([this.loadSummary(), this.loadEvalDashboard(), this.loadTrajectories()]); if(this.selectedId) this.selectTraj(this.selectedId); },
+
+    _token() { return ''; /* SEC-6: httponly cookie used */ },
+    _headers(){ return {'Authorization':`Bearer ${this._token()}`,'Content-Type':'application/json'}; },
+    async _get(url){ const r=await fetch(url,{headers:this._headers()}); if(!r.ok) throw new Error(`GET ${url} → HTTP ${r.status}`); return r.json(); },
+    async _post(url,body){ const r=await fetch(url,{method:'POST',headers:this._headers(),body:JSON.stringify(body)}); if(!r.ok){const t=await r.text().catch(()=>''); throw new Error(`POST ${url} → HTTP ${r.status} ${t}`);} return r.json(); },
+
+    async loadSummary(){
+      try{
+        const d=await this._get(`/api/rl-capture/summary?tenant_id=${encodeURIComponent(this.tenantId)}`);
+        this.health=d.health||{}; this.effectiveness=d.effectiveness||{}; this.recent=d.recent||this.recent; this.dbPath=d.db_path||this.dbPath;
+      }catch(e){ this.showToast(e.message); }
+    },
+    async loadTrajectories(){
+      try{
+        const p=new URLSearchParams({tenant_id:this.tenantId,limit:String(this.filters.limit||100)});
+        if(this.filters.q)p.set('q',this.filters.q);
+        if(this.filters.terminal_status)p.set('terminal_status',this.filters.terminal_status);
+        if(this.filters.skill)p.set('skill',this.filters.skill);
+        if(this.filters.include_debug)p.set('include_debug','true');
+        if(this.filters.trace_assessment_status)p.set('trace_assessment_status',this.filters.trace_assessment_status);
+        if(this.filters.trace_destination)p.set('trace_destination',this.filters.trace_destination);
+        if(this.filters.trace_route_status)p.set('trace_route_status',this.filters.trace_route_status);
+        if(this.filters.trace_destination && Number(this.filters.trace_min_score)>0)p.set('trace_min_score',String(this.filters.trace_min_score));
+        const d=await this._get(`/api/rl-capture/trajectories?${p.toString()}`); this.trajectories=d.trajectories||[];
+      }catch(e){ this.showToast(e.message); }
+    },
+    async loadSkillNames(){ try{ const d=await this._get(`/api/skills/names?tenant_id=${encodeURIComponent(this.tenantId)}`); this.skillNames=d.names||[]; }catch{} },
+    async loadEvalDashboard(){
+      try{
+        this.evalDashboard=await this._get(`/api/evals/dashboard/summary?tenant_id=${encodeURIComponent(this.tenantId)}`);
+        const suites=await this._get(`/api/evals?tenant_id=${encodeURIComponent(this.tenantId)}`);
+        const evaluators=await this._get(`/api/evals/evaluators?tenant_id=${encodeURIComponent(this.tenantId)}`);
+        this.evalBuilder.suites=suites.evals||[];
+        this.evalBuilder.evaluators=evaluators.evaluators||[];
+        if(!this.evalBuilder.selectedSuiteId && this.evalBuilder.suites.length){
+          this.selectEvalSuite(this.evalBuilder.suites[0], false);
+        }
+      }catch(e){ this.showToast(e.message); }
+    },
+    async selectTraj(id){
+      this.selectedId=id; this.loading=true; this.capSub='overview'; this.tracePromotion.nextAction=null;
+      try{
+        const d=await this._get(`/api/rl-capture/trajectories/${encodeURIComponent(id)}?tenant_id=${encodeURIComponent(this.tenantId)}`);
+        this.detail=d; this.correction.original=this.finalResponseText(); this.correction.corrected=this.correction.original;
+      }catch(e){ this.showToast(e.message); } finally{ this.loading=false; }
+    },
+
+    // ---- pipeline model ----
+    stages(){
+      const t=this.detail?.trajectory||{};
+      const captured=!!this.detail;
+      const jc=this.trajJudgementCount();
+      const evaluated=jc>0;
+      const goldenCases=(this.evalBuilder.golden.cases||[]).length;
+      const runs=(this.evalBuilder.runs||[]).length || (this.evalDashboard.total_runs||0);
+      const exported=!!this.exporter.last || (this.health.exports||0)>0;
+      return [
+        {id:'capture', icon:'◉', label:'Capture', done:captured,
+          context: captured? (((t.metadata||{}).skill||'run')+' · '+(t.terminal_status||'')) : 'select a run',
+          badge: captured? ((t.model_calls||[]).length+'m '+(t.tool_calls||[]).length+'t') : ''},
+        {id:'evaluate', icon:'✓', label:'Evaluate', done:evaluated,
+          context: evaluated? (this.trajVerdict().label+' · '+this.trajVerdict().score) : 'no judgement yet',
+          badge: jc? (jc+' signal'+(jc>1?'s':'')) : ''},
+        {id:'curate', icon:'★', label:'Curate', done:goldenCases>0,
+          context: (this.selectedEvalSuite()?.golden_set||'golden set'),
+          badge: goldenCases? (goldenCases+' case'+(goldenCases>1?'s':'')) : ''},
+        {id:'test', icon:'▦', label:'Test', done:runs>0,
+          context: ((this.evalBuilder.suites||[]).length+' suites'),
+          badge: runs? (runs+' run'+(runs>1?'s':'')) : ''},
+        {id:'export', icon:'⤓', label:'Export', done:exported,
+          context: (this.exporter.last? (this.exporter.last.kind+' · '+this.exporter.last.row_count+' rows') : 'build dataset'),
+          badge: (this.health.exports||0)? (this.health.exports+' total') : ''},
+      ];
+    },
+    trajRewards(){ return (this.detail?.rewards||[]); },
+    trajJudgementCount(){ return this.trajRewards().filter(r=>r.is_judgement!==false && (r.raw_value!==null && r.raw_value!==undefined)).length; },
+    trajVerdict(){
+      const js=this.trajRewards().filter(r=>r.raw_value!==null && r.raw_value!==undefined);
+      if(!js.length) return {label:'unscored', score:'—', style:'color:var(--muted)'};
+      const last=js[0];
+      const v=Number(last.raw_value);
+      const label=(last.raw_label||(v>0?'pass':v<0?'fail':'partial'));
+      const style = v>0.2?'color:var(--green)':v<0?'color:var(--red)':'color:var(--amber)';
+      return {label, score:(isNaN(v)?'—':v.toFixed(2)), style};
+    },
+
+    // ---- judge results (T-1: surface the verdict + rationale, not just a toast) ----
+    evaluatorResults(){ return (this.detail?.evaluator_results||[]); },
+    judgeMode(row){
+      const id=String(row?.judge_id||''); const rubric=String(row?.rubric||'');
+      if(id.includes('trajectory_judge')||rubric.includes('llm')) return 'LLM judge';
+      return 'rule score';
+    },
+    judgeScore(row){ const v=Number((row?.raw_scores||{}).score); return isNaN(v)?'—':v.toFixed(2); },
+    judgeVerdict(row){ return (row?.raw_scores||{}).verdict || (row?.metadata||{}).verdict || '—'; },
+    judgeConfidence(row){ return this.judgeMode(row)==='LLM judge' ? '0.80' : '0.50'; },
+    judgeRationale(row){
+      const reasons=(row?.raw_scores||{}).reasons;
+      if(Array.isArray(reasons)&&reasons.length) return reasons.join(' · ');
+      return '(no rationale returned)';
+    },
+    verdictStyle(verdict){ const v=String(verdict||'').toLowerCase(); if(v==='pass')return'color:var(--green)'; if(v==='fail')return'color:var(--red)'; if(v==='partial')return'color:var(--amber)'; return'color:var(--muted)'; },
+
+
+    finalResponseText(){ const t=this.detail?.trajectory; if(!t)return''; const calls=t.model_calls||[]; const last=calls[calls.length-1]||{}; return (last.output_messages||[]).map(m=>m.content||'').join('\n').trim(); },
+    candidateText(c){ return (c?.messages||[]).map(m=>(m&&m.content)?m.content:'').join('\n'); },
+    focusCorrection(){ this.stage='evaluate'; this.$nextTick(()=>{ const el=document.getElementById('corr-box'); if(el){ el.focus(); el.scrollIntoView({behavior:'smooth',block:'center'}); } }); },
+    canSubmitCorrection(){ return !!this.detail && this.correction.corrected.trim().length>0 && this.correction.corrected.trim()!==this.correction.original.trim(); },
+    async submitCorrection(){
+      if(!this.canSubmitCorrection())return; this.correctionBusy=true;
+      try{
+        await this._post('/api/rl-capture/correction',{tenant_id:this.tenantId,trajectory_id:this.detail.trajectory.id,original_response:this.correction.original||'no original',corrected_response:this.correction.corrected,source:'rl_workbench_correction'});
+        this.showToast('correction recorded'); await this.selectTraj(this.detail.trajectory.id); await this.loadSummary();
+      }catch(e){ this.showToast(e.message); } finally{ this.correctionBusy=false; }
+    },
+    async submitThumbs(dir){
+      if(!this.detail)return; const t=this.detail.trajectory||{}; this.thumbsBusy=true;
+      try{
+        await this._post('/api/thumbs',{message_index:0,direction:dir,query:t.task||'',response_snippet:this.finalResponseText().slice(0,200),skill:(t.metadata||{}).skill,rl_trajectory_id:t.id,rl_model_call_id:`${t.id}:model:final`,request_trace_id:t.id,tenant_id:this.tenantId});
+        this.showToast(`thumbs ${dir} recorded`); await this.selectTraj(t.id); await this.loadSummary();
+      }catch(e){ this.showToast(e.message); } finally{ this.thumbsBusy=false; }
+    },
+    async evaluateTraj(mode){
+      if(!this.detail)return; const tid=this.detail.trajectory.id; this.evaluating=mode;
+      try{
+        if(mode==='llm') this.showToast('LLM judge running…');
+        const body={tenant_id:this.tenantId,mode:mode,trajectory_id:tid};
+        if(mode==='llm' && (this.evalJudge.skill||'').trim()) body.judge_skill=this.evalJudge.skill.trim();
+        const d=await this._post('/api/rl-capture/evaluate',body);
+        const r=(d.results||[])[0]||{};
+        if(r.error){ this.showToast(`judge error: ${r.error}`); }
+        else{ this.showToast(`${mode==='llm'?'LLM judge':'rule'} · ${r.verdict||'scored'} (${r.score})`); }
+        await this.selectTraj(tid); await this.loadSummary();
+      }catch(e){ this.showToast(e.message); } finally{ this.evaluating=false; }
+    },
+    traceValue(){ return this.detail?.trace_value || null; },
+    traceDestinationLabel(key){
+      return ({skill:'Skill',context:'Context',memory:'Memory',golden_eval:'Golden',model_training:'Training',debug_only:'Debug'})[key]||key||'Unassessed';
+    },
+    traceDecision(destination){
+      return (this.detail?.route_decisions||[]).find(row=>row.destination===destination && row.status!=='rejected')||null;
+    },
+    tracePromotionLabel(destination){
+      const existing=this.traceDecision(destination);
+      if(existing) return existing.status;
+      return ({
+        golden_eval:'Add to golden set',
+        skill:'Send skill learning for review',
+        context:'Send context learning for review',
+        memory:'Send memory for review',
+        model_training:'Approve for training export',
+        debug_only:'Archive debug-only'
+      })[destination]||'Promote';
+    },
+    topTraceDestinations(){
+      const dest=(this.traceValue()?.destinations)||{};
+      const labels={skill:'Skill',context:'Context',memory:'Memory',golden_eval:'Golden eval',model_training:'Training pool',debug_only:'Debug only'};
+      return Object.entries(dest)
+        .map(([key,value])=>({key,label:labels[key]||key,score:Number(value||0).toFixed(2),raw:Number(value||0)}))
+        .filter(row=>row.raw>0.15)
+        .sort((a,b)=>b.raw-a.raw)
+        .slice(0,4);
+    },
+    async evaluateTraceValue(){
+      if(!this.detail)return; const tid=this.detail.trajectory.id; this.traceValueBusy=true;
+      try{
+        const d=await this._post('/api/trace-value/evaluate',{tenant_id:this.tenantId,trajectory_id:tid,force:true,limit:1});
+        const row=(d.results||[])[0]||{};
+        if(row.status==='error') this.showToast(row.error||'trace value failed'); else this.showToast('trace value routed');
+        await this.selectTraj(tid); await this.loadTrajectories();
+      }catch(e){ this.showToast(e.message); } finally{ this.traceValueBusy=false; }
+    },
+    async promoteTraceDestination(destination){
+      if(!this.detail || this.traceDecision(destination))return;
+      const tid=this.detail.trajectory.id; const tv=this.traceValue()||{};
+      const item={
+        trajectory_id:tid,destination,reason:((tv.rationale||{})[destination]||''),summary:tv.learning||'',
+        skill:this.tracePromotion.targetSkill||'',training_pool:this.tracePromotion.trainingPool||'default'
+      };
+      if(destination==='golden_eval'){
+        const s=this.selectedEvalSuite(); if(!s || !s.golden_set){ this.showToast('select an eval suite/golden set first'); return; }
+        item.golden_set=s.golden_set;
+      }
+      const action=this.tracePromotionLabel(destination);
+      if(!window.confirm(`Confirm: ${action} for this trajectory?`)) return;
+      this.traceValueBusy=true;
+      try{
+        const d=await this._post('/api/trace-value/promote',{tenant_id:this.tenantId,agent_id:'enterprise_agent',items:[item]});
+        const r=(d.results||[])[0]||{};
+        this.showToast(r.status==='error'?(r.error||'promotion failed'):`${destination} · ${r.status}`);
+        if(r.status!=='error'){
+          if(destination==='golden_eval'){
+            this.tracePromotion.nextAction={message:'Added to the selected golden set.',label:'Open Curate',href:'/rl-capture?stage=curate'};
+            await this.loadGoldenForSelected();
+          }else if(destination==='model_training'){
+            this.tracePromotion.nextAction={message:'Approved for training-pool export.',label:'Open Export',href:'/rl-capture?stage=export'};
+          }else if(['skill','context','memory'].includes(destination)){
+            this.tracePromotion.nextAction={message:'Sent to Knowledge Manager for human review.',label:'Open Knowledge Review',href:'/dashboard/v2#knowledge'};
+          }
+        }
+        await this.selectTraj(tid); await this.loadTrajectories();
+      }catch(e){ this.showToast(e.message); } finally{ this.traceValueBusy=false; }
+    },
+    suiteById(id){ return (this.evalBuilder.suites||[]).find(s=>s.id===id) || null; },
+    selectedEvalSuite(){ return (this.evalBuilder.suites||[]).find(s=>s.id===this.evalBuilder.selectedSuiteId) || null; },
+    newSuiteForm(){
+      this.evalBuilder.isNewSuite=true;
+      this.evalBuilder.selectedSuiteId='';
+      this.evalBuilder.suiteForm={id:'',name:'',description:'',target_type:'skill',target_name:'',golden_set:'',evaluator_type:'rule',evaluator_id:'',judge_mode:'rule',pass_score:0.3,fail_score:-0.3,max_llm_cases:5,tags:''};
+      this.evalBuilder.golden={cases:[],json:'[]'}; this.evalBuilder.runs=[]; this.evalBuilder.gates=[];
+      this.$nextTick(()=>{ const el=document.getElementById('suite-id'); if(el) el.focus(); });
+      this.showToast('new suite draft — fill the fields and save');
+    },
+    selectEvalSuite(s, loadRelated=true){
+      if(!s)return;
+      this.evalBuilder.isNewSuite=false;
+      this.evalBuilder.selectedSuiteId=s.id;
+      const target=s.target||{}, evaluator=s.evaluator||{}, judge=s.judge||{}, thresholds=s.thresholds||{};
+      this.evalBuilder.suiteForm={
+        id:s.id||'', name:s.name||'', description:s.description||'', target_type:target.type||'skill',
+        target_name:target.name||target.role||target.skill||'', golden_set:s.golden_set||'',
+        evaluator_type:evaluator.type||'rule', evaluator_id:evaluator.id||'', judge_mode:judge.mode||'rule',
+        pass_score:(thresholds.pass_score ?? 0.3), fail_score:(thresholds.fail_score ?? -0.3),
+        max_llm_cases:(judge.max_llm_cases ?? 5), tags:(Array.isArray(s.tags)?s.tags.join(', '):(s.tags||''))
+      };
+      if(loadRelated){ this.loadGoldenForSelected(); this.loadRunsForSelected(); this.loadGatesForSelected(); }
+    },
+    suitePayloadFromForm(){
+      const f=this.evalBuilder.suiteForm;
+      const target={type:f.target_type};
+      if(f.target_type==='model_role') target.role=f.target_name||'primary'; else target.name=f.target_name;
+      const tags=String(f.tags||'').split(',').map(t=>t.trim()).filter(Boolean);
+      return {
+        id:f.id, name:f.name||f.id, description:f.description||'', target, golden_set:f.golden_set, tags,
+        assertions:[], thresholds:{pass_score:Number(f.pass_score),fail_score:Number(f.fail_score)},
+        evaluator:{type:f.evaluator_type,id:f.evaluator_id,weights:{rule:1,assertions:1,python:1,judge:1}},
+        judge:{mode:f.judge_mode,max_llm_cases:(f.judge_mode==='rule'?0:Number(f.max_llm_cases)||5),borderline_min:-0.2,borderline_max:0.4,confidence_below:0.65}
+      };
+    },
+    suiteIdError(){
+      const f=this.evalBuilder.suiteForm; const id=String(f.id||'').trim();
+      if(!id) return 'suite id is required';
+      if(!/^[A-Za-z0-9_.\-]+$/.test(id)) return 'use letters, numbers, _ . - only';
+      if(this.evalBuilder.isNewSuite && (this.evalBuilder.suites||[]).some(s=>s.id===id)) return 'a suite with this id already exists';
+      return '';
+    },
+    async validateSuiteForm(){
+      const err=this.suiteIdError(); if(err){ this.showToast(err); return; }
+      this.evalBuilder.busy=true;
+      try{ const d=await this._post(`/api/evals/validate?tenant_id=${encodeURIComponent(this.tenantId)}`,this.suitePayloadFromForm()); this.showToast(`suite valid${(d.warnings||[]).length?' · '+d.warnings[0]:''}`); }
+      catch(e){ this.showToast(e.message); } finally{ this.evalBuilder.busy=false; }
+    },
+    async saveSuiteForm(){
+      const err=this.suiteIdError(); if(err){ this.showToast(err); return; }
+      const f=this.evalBuilder.suiteForm; const id=String(f.id||'').trim();
+      const overwriting=!this.evalBuilder.isNewSuite && (this.evalBuilder.suites||[]).some(s=>s.id===id);
+      if(overwriting && !window.confirm(`Overwrite the existing suite "${id}"?`)) return;
+      const wasNew=this.evalBuilder.isNewSuite;
+      this.evalBuilder.busy=true;
+      try{
+        const d=await this._post(`/api/evals?tenant_id=${encodeURIComponent(this.tenantId)}`,this.suitePayloadFromForm());
+        this.showToast(d.message||'suite saved');
+        await this.loadEvalDashboard();
+        this.selectEvalSuite(d.eval);
+        // T-4: guide a brand-new suite straight into authoring its golden cases.
+        if(wasNew){
+          const gset=(d.eval||{}).golden_set||'';
+          if(gset){
+            // Seed an empty golden set so Curate has a file to edit (no 404).
+            try{ await this._post(`/api/evals/golden/${encodeURIComponent(gset)}?tenant_id=${encodeURIComponent(this.tenantId)}`,{cases:(this.evalBuilder.golden.cases||[])}); }catch(e){ /* best-effort seed */ }
+            if(!(this.evalBuilder.golden.cases||[]).length &&
+               window.confirm('Suite saved. Add golden cases now? (opens Curate)')){
+              this.stage='curate';
+            }
+          }
+        }
+      }
+      catch(e){ this.showToast(e.message); } finally{ this.evalBuilder.busy=false; }
+    },
+    async loadGoldenForSelected(){
+      const s=this.selectedEvalSuite(); if(!s || !s.golden_set)return;
+      try{ const d=await this._get(`/api/evals/golden/${encodeURIComponent(s.golden_set)}?tenant_id=${encodeURIComponent(this.tenantId)}`); this.evalBuilder.golden.cases=d.cases||[]; this.evalBuilder.golden.json=JSON.stringify(d.cases||[],null,2); }
+      catch(e){ this.showToast(e.message); }
+    },
+    async saveGoldenJson(){
+      const s=this.selectedEvalSuite(); if(!s || !s.golden_set)return; this.evalBuilder.busy=true;
+      try{ const cases=JSON.parse(this.evalBuilder.golden.json||'[]'); const d=await this._post(`/api/evals/golden/${encodeURIComponent(s.golden_set)}?tenant_id=${encodeURIComponent(this.tenantId)}`,{cases}); this.evalBuilder.golden.cases=d.cases||cases; this.showToast(`saved ${d.total||cases.length} golden cases`); }
+      catch(e){ this.showToast(e.message); } finally{ this.evalBuilder.busy=false; }
+    },
+    async promoteSelectedTrajectory(){
+      const s=this.selectedEvalSuite(); if(!s || !this.detail)return; this.evalBuilder.busy=true;
+      try{
+        await this._post(`/api/evals/golden/${encodeURIComponent(s.golden_set)}/promote`,{tenant_id:this.tenantId,trajectory_id:this.detail.trajectory.id,tags:['workbench_promoted'],metadata:{source:'rl_workbench'}});
+        this.showToast('trajectory promoted to golden'); await this.loadGoldenForSelected();
+      }catch(e){ this.showToast(e.message); } finally{ this.evalBuilder.busy=false; }
+    },
+    async testEvaluator(id){
+      try{ const d=await this._post(`/api/evals/evaluators/${encodeURIComponent(id)}/test`,{tenant_id:this.tenantId}); this.showToast(`evaluator ${d.verdict||'tested'} (${d.score})`); }
+      catch(e){ this.showToast(e.message); }
+    },
+    async loadRunsForSelected(){
+      const s=this.selectedEvalSuite(); if(!s)return;
+      try{ const d=await this._get(`/api/evals/${encodeURIComponent(s.id)}/runs?tenant_id=${encodeURIComponent(this.tenantId)}`); this.evalBuilder.runs=d.runs||[]; if(this.evalBuilder.runs[0]&&!this.evalBuilder.gate.run_id)this.evalBuilder.gate.run_id=this.evalBuilder.runs[0].run_id; }
+      catch(e){ this.showToast(e.message); }
+    },
+    async runSelectedSuite(){
+      const s=this.selectedEvalSuite(); if(!s)return; this.evalBuilder.busy=true;
+      try{
+        const d=await this._post(`/api/evals/${encodeURIComponent(s.id)}/run`,{tenant_id:this.tenantId,agent_id:'enterprise_agent',user_id:'eval_runner',trigger:'manual',metadata:{source:'rl_workbench'}});
+        this.showToast(`run ${d.status} · ${d.score}`); this.evalBuilder.gate.run_id=d.run_id; await this.loadRunsForSelected(); await this.loadRunTrace(d.run_id); await this.loadEvalDashboard();
+      }catch(e){ this.showToast(e.message); } finally{ this.evalBuilder.busy=false; }
+    },
+    async loadRunTrace(runId){
+      try{ this.evalBuilder.lastRun=await this._get(`/api/evals/runs/${encodeURIComponent(runId)}?tenant_id=${encodeURIComponent(this.tenantId)}`); }
+      catch(e){ this.showToast(e.message); }
+    },
+    async loadGatesForSelected(){
+      const s=this.selectedEvalSuite(); if(!s)return;
+      try{ const d=await this._get(`/api/evals/${encodeURIComponent(s.id)}/gates?tenant_id=${encodeURIComponent(this.tenantId)}`); this.evalBuilder.gates=d.gates||[]; }
+      catch(e){ this.showToast(e.message); }
+    },
+    async recordGateDecision(){
+      const s=this.selectedEvalSuite(); if(!s || !this.evalBuilder.gate.run_id)return; this.evalBuilder.busy=true;
+      try{
+        await this._post(`/api/evals/${encodeURIComponent(s.id)}/gates`,{tenant_id:this.tenantId,run_id:this.evalBuilder.gate.run_id,decision:this.evalBuilder.gate.decision,reason:this.evalBuilder.gate.reason,metadata:{source:'rl_workbench'}});
+        this.showToast('gate decision recorded'); await this.loadGatesForSelected();
+      }catch(e){ this.showToast(e.message); } finally{ this.evalBuilder.busy=false; }
+    },
+    // ---- export ----
+    async runExport(){
+      this.exporter.busy=true;
+      try{
+        const body={tenant_id:this.tenantId, kind:this.exporter.kind, limit:Number(this.exporter.limit)||50};
+        if(this.exporter.kind==='sft') body.format=this.exporter.format;
+        if(this.exporter.eval_verdict) body.eval_verdict=this.exporter.eval_verdict;
+        const d=await this._post('/api/rl-capture/exports',body);
+        this.exporter.last=d.export||d;
+        this.showToast(`exported ${this.exporter.last.row_count} ${this.exporter.kind} row(s)`);
+        await this.loadSummary();
+      }catch(e){ this.showToast(e.message); } finally{ this.exporter.busy=false; }
+    },
+    exportDownloadUrl(id){ return `/api/rl-capture/exports/${encodeURIComponent(id||'')}/download?tenant_id=${encodeURIComponent(this.tenantId)}`; },
+
+    replayInChat(){
+      const task=(this.detail?.trajectory?.task||'').trim(); if(!task){ this.showToast('no task text on this trajectory'); return; }
+      try{ localStorage.setItem('rl_replay_task',task); localStorage.setItem('rl_replay_at',String(Date.now())); }catch{}
+      try{ navigator.clipboard.writeText(task); }catch{}
+      window.open('/','_blank'); this.showToast('task sent to chat · new tab');
+    },
+    copyJSON(){ try{ navigator.clipboard.writeText(JSON.stringify(this.detail,null,2)); this.showToast('JSON copied'); }catch{ this.showToast('clipboard blocked'); } },
+
+    // helpers
+    score(){ return Number(this.effectiveness.signal_richness_score||0); },
+    dbShort(){ const p=this.dbPath||''; return p? p.split('/').slice(-1)[0] : '…'; },
+    exportReadiness(){
+      const r=this.effectiveness.export_readiness||{};
+      return [
+        {key:'sft',label:'SFT',ready:!!r.sft},{key:'eval',label:'Eval',ready:!!r.eval},
+        {key:'dpo',label:'DPO',ready:!!r.dpo},{key:'kto',label:'KTO',ready:!!r.kto},
+        {key:'rejection_sft',label:'Rejection-SFT',ready:!!r.rejection_sft},{key:'rft',label:'RFT / RL',ready:!!r.rft},
+      ];
+    },
+    statusDot(s){ s=(s||'').toLowerCase(); if(['success','done'].includes(s))return'ok'; if(['partial','awaiting_human','pending'].includes(s))return'part'; if(['failed','cancelled'].includes(s))return'fail'; return'unk'; },
+    statusStyle(s){ s=(s||'').toLowerCase(); if(['success','done'].includes(s))return'color:var(--green)'; if(['partial','awaiting_human','pending'].includes(s))return'color:var(--amber)'; if(['failed','cancelled'].includes(s))return'color:var(--red)'; return''; },
+    labelKind(l){ l=(l||'').toLowerCase(); if(['up','approve','ok','pass','allow','success'].includes(l))return'pos'; if(['down','reject','fail','block','deny'].includes(l))return'neg'; return'neu'; },
+    channelLabel(r){
+      const c=String(r?.channel||'').toLowerCase();
+      const names={thumbs:'human thumbs',human_approval:'human approval',human_edit:'human correction',evaluator:'auto-judge',critique:'self-critique',model_call_policy:'policy audit',hook:'hook',queue:'queue',workstream:'workstream'};
+      const friendly=names[c]||c||'signal';
+      return r?.is_judgement===false ? (friendly+' (operational)') : friendly;
+    },
+    relTime(iso){ if(!iso)return''; const d=new Date(iso); if(isNaN(d))return''; const s=(Date.now()-d.getTime())/1000; if(s<60)return`${Math.round(s)}s ago`; if(s<3600)return`${Math.round(s/60)}m ago`; if(s<86400)return`${Math.round(s/3600)}h ago`; return`${Math.round(s/86400)}d ago`; },
+    showToast(m){ this.toast=m; if(this._toastTimer)clearTimeout(this._toastTimer); this._toastTimer=setTimeout(()=>this.toast='',2600); },
+  };
+}
+</script>
+<!-- SEC-7: shared idle-session timeout + user menu. -->
+<script src="/static/session-controls.js"></script>
+</body>
+</html>

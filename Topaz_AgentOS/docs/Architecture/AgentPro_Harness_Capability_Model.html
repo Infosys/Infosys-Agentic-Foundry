@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgentPro — Harness Capability Model</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: #E0E4ED;
+    color: #2B3A4E;
+    padding: 40px 24px 80px;
+    line-height: 1.45;
+  }
+  .page {
+    max-width: 1280px;
+    margin: 0 auto;
+    background: #F4F6FA;
+    padding: 30px 36px;
+    border: 1px solid #A4B5CC;
+  }
+  header {
+    border-bottom: 4px solid #007CC3;
+    padding-bottom: 14px;
+    margin-bottom: 22px;
+  }
+  header h1 {
+    font-size: 30px;
+    color: #002B50;
+    font-weight: 800;
+  }
+  header p {
+    font-size: 14px;
+    color: #56697F;
+    margin-top: 6px;
+    max-width: 920px;
+  }
+  header .meta {
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+  }
+  header .meta span {
+    background: #002B50;
+    color: #fff;
+    padding: 4px 10px;
+    border-radius: 14px;
+  }
+  header .meta span.orange { background: #C15A1F; }
+  header .meta span.green { background: #2E8B57; }
+  header .meta span.purple { background: #5B2D8E; }
+
+  section { margin-bottom: 28px; }
+  h2 {
+    font-size: 18px;
+    color: #002B50;
+    margin-bottom: 12px;
+    font-weight: 700;
+  }
+  h3 {
+    font-size: 14px;
+    color: #002B50;
+    margin-bottom: 8px;
+    font-weight: 700;
+  }
+  .note {
+    font-size: 12px;
+    color: #56697F;
+    margin-top: 8px;
+  }
+
+  .callout {
+    border: 1px solid #A4B5CC;
+    background: #fff;
+    padding: 14px 16px;
+    margin-bottom: 24px;
+    border-left: 4px solid #007CC3;
+  }
+  .callout.warning { border-left-color: #C15A1F; background: #FFF8F3; }
+  .callout strong {
+    display: block;
+    color: #002B50;
+    margin-bottom: 6px;
+    font-size: 13px;
+  }
+  .callout p {
+    font-size: 13px;
+    color: #2B3A4E;
+  }
+
+  .grid { display: grid; gap: 12px; }
+  .g-3 { grid-template-columns: repeat(3, 1fr); }
+  .g-2 { grid-template-columns: 1fr 1fr; }
+  .g-profile { grid-template-columns: 1.15fr 1fr; }
+
+  .card {
+    border: 1px solid #A4B5CC;
+    background: #fff;
+    overflow: hidden;
+  }
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid #D8E0EA;
+    background: #F8FAFD;
+  }
+  .card-header .title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #002B50;
+  }
+  .card-body {
+    padding: 14px 16px;
+    font-size: 13px;
+    color: #2B3A4E;
+  }
+  .card.info { border-top: 3px solid #007CC3; }
+  .card.warn { border-top: 3px solid #C15A1F; }
+  .card.ok { border-top: 3px solid #2E8B57; }
+
+  .pill {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 10px;
+    letter-spacing: 0.4px;
+    white-space: nowrap;
+  }
+  .pill.info { background: #D1E7F5; color: #007CC3; }
+  .pill.warn { background: #FCE8D8; color: #C15A1F; }
+  .pill.ok { background: #D4EDDA; color: #2E8B57; }
+  .pill.neutral { background: #E8EDF3; color: #56697F; }
+
+  .tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .tab {
+    border: 1px solid #A4B5CC;
+    background: #fff;
+    color: #2B3A4E;
+    padding: 8px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: 16px;
+  }
+  .tab.active {
+    background: #002B50;
+    color: #fff;
+    border-color: #002B50;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    border: 1px solid #A4B5CC;
+    font-size: 12.5px;
+  }
+  th, td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #E3E9F0;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: #002B50;
+    color: #fff;
+    font-size: 11px;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+  }
+  tr:nth-child(even) td { background: #F8FAFD; }
+
+  ul.cap-list {
+    list-style: none;
+    margin-top: 8px;
+  }
+  ul.cap-list li {
+    position: relative;
+    padding: 4px 0 4px 14px;
+    font-size: 13px;
+    color: #56697F;
+  }
+  ul.cap-list li::before {
+    content: '—';
+    position: absolute;
+    left: 0;
+    color: #8897A9;
+  }
+
+  .goal {
+    font-size: 14px;
+    font-weight: 700;
+    color: #002B50;
+    margin-bottom: 8px;
+  }
+
+  .stack { display: grid; gap: 12px; }
+
+  @media (max-width: 960px) {
+    .g-3, .g-2, .g-profile { grid-template-columns: 1fr; }
+    body { padding: 20px 12px 60px; }
+    .page { padding: 20px 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>AgentPro harness capability model</h1>
+    <p>One governed enterprise harness, assembled into flow-specific capability profiles. Domain skills and context remain outside the core.</p>
+    <div class="meta">
+      <span>ENTERPRISE HARNESS</span>
+      <span class="orange">FLOW PROFILES</span>
+      <span class="green">DOMAIN PACKS</span>
+      <span class="purple">AGENTPRO / AGENTOS</span>
+    </div>
+  </header>
+
+  <div class="callout">
+    <strong>Architecture decision</strong>
+    <p>Do not build a separate forked harness for every enterprise domain. Build one stable control plane and runtime contract, then compose different harness profiles for research, coding, business workflows, IT operations and analytics. Create a new core only when the trust boundary or execution substrate is fundamentally different.</p>
+  </div>
+
+  <section>
+    <h2>Three-layer product boundary</h2>
+    <div class="grid g-3">
+      <div class="card info">
+        <div class="card-header">
+          <span class="title">AgentPro / AgentOS platform</span>
+          <span class="pill info">Stable core</span>
+        </div>
+        <div class="card-body">
+          Identity, tenant isolation, policy, model/provider access, orchestration contracts, tool governance, audit, traces, approvals, durable execution and evaluation.
+        </div>
+      </div>
+      <div class="card warn">
+        <div class="card-header">
+          <span class="title">Flow-specific harness assemblies</span>
+          <span class="pill warn">Capability profiles</span>
+        </div>
+        <div class="card-body">
+          A selected bundle of tools, runtimes, control policies, evaluators, state machines and UI patterns optimized for a class of work.
+        </div>
+      </div>
+      <div class="card ok">
+        <div class="card-header">
+          <span class="title">Tenant and industry layer</span>
+          <span class="pill ok">Domain packs</span>
+        </div>
+        <div class="card-body">
+          Enterprise-specific skills, context, ontologies, workstreams, policies, connector configuration and solution-module UI.
+        </div>
+      </div>
+    </div>
+    <p class="note">The core owns invariants. Profiles own execution affordances. Domain packs own business meaning.</p>
+  </section>
+
+  <section>
+    <h2>Where harnesses actually differ</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Profile</th>
+          <th>Primary tools</th>
+          <th>Orchestration</th>
+          <th>Evaluation</th>
+          <th>Action risk</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Research</td>
+          <td>Search + browser + evidence</td>
+          <td>Parallel inquiry</td>
+          <td>Citation / claim score</td>
+          <td>Low</td>
+        </tr>
+        <tr>
+          <td>Coding</td>
+          <td>Repo + shell + test + git</td>
+          <td>Plan / edit / verify loop</td>
+          <td>Tests + static analysis</td>
+          <td>Medium</td>
+        </tr>
+        <tr>
+          <td>Business workflow</td>
+          <td>Systems of record + queues</td>
+          <td>Deterministic workflow</td>
+          <td>Business rule + approval</td>
+          <td>High</td>
+        </tr>
+        <tr>
+          <td>IT operations</td>
+          <td>Telemetry + runbooks + commands</td>
+          <td>Observe / diagnose / act / verify</td>
+          <td>Health + rollback checks</td>
+          <td>Very high</td>
+        </tr>
+        <tr>
+          <td>Data &amp; analytics</td>
+          <td>Catalog + SQL + compute</td>
+          <td>Query / compute / validate</td>
+          <td>Data quality + reproducibility</td>
+          <td>Medium–high</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Inspect a capability profile</h2>
+    <div class="tabs" id="profile-tabs">
+      <button class="tab active" data-id="research">Research</button>
+      <button class="tab" data-id="coding">Coding</button>
+      <button class="tab" data-id="business">Business workflow</button>
+      <button class="tab" data-id="itops">IT operations</button>
+      <button class="tab" data-id="analytics">Data &amp; analytics</button>
+    </div>
+    <div class="grid g-profile" id="profile-panel"></div>
+  </section>
+
+  <section>
+    <h2>Fit with the current AgentPro architecture</h2>
+    <div class="grid g-2">
+      <div class="card">
+        <div class="card-header"><span class="title">Already reusable</span></div>
+        <div class="card-body">
+          SafeKernel, RBAC and audit; provider contracts; model registry; skill routing; React / workflow / parallel / supervisor modes; memory; traces; approvals; queues, scheduler and RL/evaluation sidecars.
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="title">Next abstraction to formalize</span></div>
+        <div class="card-body">
+          A declarative <strong>CapabilityProfile</strong> or <strong>HarnessProfile</strong> that selects tool providers, execution runtime, state store, approval policy, evaluator suite, limits and supported artifact contracts without changing SkillAgent.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="callout warning">
+    <strong>Test for creating a separate harness</strong>
+    <p>Split the runtime only if the workload needs a materially different sandbox, trust boundary, latency/durability model, or deployment topology. Different domain vocabulary, prompts, data sources or approval rules are not enough—they belong in skills, context, policies, connectors and profile configuration.</p>
+  </div>
+</div>
+
+<script>
+const harnessTypes = [
+  {
+    id: "research",
+    label: "Research",
+    goal: "Build a defensible answer from changing, heterogeneous sources.",
+    capabilities: [
+      "Web, enterprise search, browser and document ingestion",
+      "Source ranking, evidence graph, citation and contradiction checks",
+      "Long-context synthesis, parallel investigators and freshness controls"
+    ],
+    control: "Evidence provenance, source allowlists, PII controls, claim verification",
+    artifact: "Cited brief, evidence packet, comparative analysis"
+  },
+  {
+    id: "coding",
+    label: "Coding",
+    goal: "Change executable systems safely and verify the result.",
+    capabilities: [
+      "Repository map, semantic code search, patch and structured editing",
+      "Sandboxed shell, dependency tools, tests, linters and build execution",
+      "Git/worktree isolation, diff review, CI and deployment integration"
+    ],
+    control: "Filesystem boundary, command policy, secret isolation, review gates",
+    artifact: "Patch, tested branch, pull request, build evidence"
+  },
+  {
+    id: "business",
+    label: "Business workflow",
+    goal: "Complete governed, stateful enterprise transactions.",
+    capabilities: [
+      "ERP/CRM/HR connectors, forms, queues and deterministic workflows",
+      "Identity delegation, durable state, retries, idempotency and compensation",
+      "HITL approvals, SLA timers, case management and document generation"
+    ],
+    control: "Entitlements, segregation of duties, approval matrices, transaction audit",
+    artifact: "Approved transaction, updated case, business document"
+  },
+  {
+    id: "itops",
+    label: "IT operations",
+    goal: "Diagnose and remediate live systems without increasing blast radius.",
+    capabilities: [
+      "Metrics, logs, traces, CMDB, ticketing and runbook retrieval",
+      "Topology reasoning, incident timelines, command execution and health checks",
+      "Change windows, canary actions, rollback and post-action verification"
+    ],
+    control: "Read-before-write, scoped credentials, blast-radius limits, change approval",
+    artifact: "Diagnosis, incident update, controlled remediation, rollback record"
+  },
+  {
+    id: "analytics",
+    label: "Data & analytics",
+    goal: "Turn governed data into reproducible quantitative findings.",
+    capabilities: [
+      "Catalog discovery, SQL, notebooks, dataframes and visualization",
+      "Query planning, semantic metrics, lineage and reproducible computation",
+      "Data quality checks, privacy filters and result validation"
+    ],
+    control: "Row/column access, query budgets, egress controls, lineage capture",
+    artifact: "Dataset, query, notebook, metric explanation, dashboard"
+  }
+];
+
+const tabs = document.getElementById("profile-tabs");
+const panel = document.getElementById("profile-panel");
+let selectedId = "research";
+
+function renderProfile() {
+  const selected = harnessTypes.find(item => item.id === selectedId) || harnessTypes[0];
+  panel.innerHTML = `
+    <div class="card info">
+      <div class="card-header">
+        <span class="title">${selected.label}</span>
+        <span class="pill info">Flow profile</span>
+      </div>
+      <div class="card-body">
+        <div class="goal">${selected.goal}</div>
+        <ul class="cap-list">
+          ${selected.capabilities.map(item => `<li>${item}</li>`).join("")}
+        </ul>
+      </div>
+    </div>
+    <div class="stack">
+      <div class="card">
+        <div class="card-header"><span class="title">Governance emphasis</span></div>
+        <div class="card-body">${selected.control}</div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="title">Primary output contract</span></div>
+        <div class="card-body">${selected.artifact}</div>
+      </div>
+    </div>
+  `;
+}
+
+tabs.addEventListener("click", (event) => {
+  const button = event.target.closest(".tab");
+  if (!button) return;
+  selectedId = button.dataset.id;
+  tabs.querySelectorAll(".tab").forEach(tab => tab.classList.toggle("active", tab === button));
+  renderProfile();
+});
+
+renderProfile();
+</script>
+</body>
+</html>

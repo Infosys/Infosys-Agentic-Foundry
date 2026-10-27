@@ -1,0 +1,26 @@
+{
+  "version": "finance-router-no-match-v1",
+  "examples": [
+    "Reset my AgentPro password and unlock my account.",
+    "What is the weather forecast for Bengaluru tomorrow?",
+    "Book a conference room for the engineering team.",
+    "Draft a marketing campaign for our new product.",
+    "Restart the production Kubernetes deployment.",
+    "Summarize this employment contract for the legal team.",
+    "Create a customer support ticket for a broken laptop.",
+    "Translate this email from German to English.",
+    "Review the source code for a SQL injection vulnerability.",
+    "Schedule interviews for the open software engineer position.",
+    "Find the member's healthcare claim status.",
+    "Explain my health-plan deductible and copayment.",
+    "Generate a sales presentation for the product launch.",
+    "Check whether the warehouse fire alarm is operational.",
+    "Provision a new cloud virtual machine for the analytics team.",
+    "Write release notes for version 4.2 of the mobile application.",
+    "Find nearby hotels for next week's client visit.",
+    "Create a meal plan with high-protein vegetarian recipes.",
+    "Diagnose why the web page is returning HTTP 502.",
+    "Prepare an employee onboarding checklist for Human Resources."
+  ]
+}
+

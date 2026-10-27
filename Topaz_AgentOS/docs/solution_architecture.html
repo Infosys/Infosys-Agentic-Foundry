@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>IAF AgentOS — Solution Architecture</title>
+<style>
+  :root{
+    --bg:#0f1420; --panel:#161d2c; --ink:#e8edf6; --muted:#9aa7bd; --line:#2a3447;
+    --ctx:#10b981; --cap:#f59e0b; --accent:#6aa8ff;
+    --l1:#6366f1; --l2:#3b82f6; --l3:#06b6d4; --l4:#14b8a6;
+    --l5:#ef4444; --l6:#64748b; --l7:#a855f7; --l8:#475569;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:linear-gradient(180deg,#0c1019,#0f1420);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  header{padding:22px 28px 8px;}
+  h1{margin:0;font-size:21px;letter-spacing:.2px}
+  .sub{color:var(--muted);font-size:13px;margin-top:4px}
+  .tabs{display:flex;gap:8px;padding:14px 28px 0;border-bottom:1px solid var(--line)}
+  .tab{background:transparent;border:1px solid var(--line);border-bottom:none;color:var(--muted);
+    padding:9px 18px;border-radius:9px 9px 0 0;cursor:pointer;font-size:13px;font-weight:600}
+  .tab.active{background:var(--panel);color:var(--ink);border-color:var(--line)}
+  .view{display:none;padding:24px 28px 40px}
+  .view.active{display:block}
+
+  /* legend chips */
+  .toprow{display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin-bottom:18px;color:var(--muted);font-size:12px}
+  .pill{display:inline-flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--line);
+    padding:5px 11px;border-radius:20px}
+  .dot{width:10px;height:10px;border-radius:50%}
+
+  /* triad grid */
+  .triad{display:grid;grid-template-columns:240px 38px 1fr 38px 250px;gap:0;align-items:stretch}
+  @media(max-width:1100px){.triad{grid-template-columns:1fr;gap:14px}.arrowcol{display:none!important}}
+  .col-title{font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);
+    margin:0 0 10px;text-align:center}
+
+  .rail{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
+  .rail.ctx{border-color:rgba(16,185,129,.45);box-shadow:0 0 0 1px rgba(16,185,129,.12) inset}
+  .rail.cap{border-color:rgba(245,158,11,.45);box-shadow:0 0 0 1px rgba(245,158,11,.12) inset}
+  .rail h3{margin:2px 0 2px;font-size:13px;display:flex;align-items:center;gap:8px}
+  .rail .note{color:var(--muted);font-size:11px;margin:2px 0 12px}
+  .ctxitem{font-size:12px;padding:7px 9px;border-left:3px solid var(--ctx);background:rgba(16,185,129,.07);
+    border-radius:0 7px 7px 0;margin-bottom:7px;line-height:1.3}
+  .ctxitem b{font-weight:600}
+  .capgroup{margin-bottom:12px}
+  .capgroup .gh{font-size:12px;font-weight:700;color:#ffd591;display:flex;gap:7px;align-items:center;margin-bottom:5px}
+  .capgroup ul{margin:0;padding-left:0;list-style:none}
+  .capgroup li{font-size:11.5px;color:var(--ink);padding:3px 0 3px 16px;position:relative;line-height:1.3}
+  .capgroup li:before{content:"·";position:absolute;left:4px;color:var(--cap);font-weight:900}
+
+  /* arrow columns */
+  .arrowcol{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px}
+  .arrowcol .lbl{writing-mode:vertical-rl;transform:rotate(180deg);font-size:10px;letter-spacing:1px;
+    text-transform:uppercase;color:var(--muted)}
+  .arrowcol .ar{font-size:22px;color:var(--accent)}
+
+  /* platform stack */
+  .stack{display:flex;flex-direction:column;gap:7px}
+  .layer{border-radius:11px;padding:11px 13px;border:1px solid rgba(255,255,255,.06);position:relative;
+    background:var(--panel)}
+  .layer .lh{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .lnum{width:24px;height:24px;border-radius:7px;display:flex;align-items:center;justify-content:center;
+    font-weight:800;font-size:12px;color:#0c1019;flex:0 0 auto}
+  .lname{font-size:13px;font-weight:700;letter-spacing:.2px}
+  .lsub{font-size:10.5px;color:var(--muted);font-weight:500;margin-left:6px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{font-size:10.5px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);
+    color:var(--ink);padding:3px 8px;border-radius:6px}
+  .layer.edge{border-left-width:4px}
+
+  /* flow + planes */
+  .flow{margin-top:22px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .flow .fh{font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+  .flow .chain{display:flex;flex-wrap:wrap;align-items:center;gap:7px;font-size:12px}
+  .step{background:rgba(106,168,255,.1);border:1px solid rgba(106,168,255,.3);padding:4px 9px;border-radius:7px}
+  .step.gov{background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.4)}
+  .arrtxt{color:var(--accent)}
+  .planes{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+  @media(max-width:760px){.planes{grid-template-columns:1fr}}
+  .plane{border:1px solid var(--line);border-radius:11px;padding:12px 14px;background:var(--panel)}
+  .plane h4{margin:0 0 4px;font-size:12.5px}
+  .plane.p1 h4{color:var(--ctx)} .plane.p2 h4{color:#cbd5e1}
+  .plane p{margin:0;font-size:11.5px;color:var(--muted);line-height:1.4}
+  .xcut{margin-top:14px;font-size:11.5px;color:var(--muted);text-align:center}
+  .xcut b{color:var(--ink)}
+
+  /* ascii */
+  pre.ascii{background:#0a0e16;border:1px solid var(--line);border-radius:12px;padding:18px;
+    overflow:auto;font:12px/1.35 "SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;color:#cfe3ff}
+  .foot{color:var(--muted);font-size:11px;margin-top:20px;border-top:1px solid var(--line);padding-top:12px}
+  .ext{display:flex;gap:10px;flex-wrap:wrap;justify-content:space-between;margin-bottom:14px}
+  .extbox{flex:1;min-width:240px;background:var(--panel);border:1px dashed var(--line);border-radius:11px;padding:10px 13px}
+  .extbox .t{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
+  .extbox .v{font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>IAF AgentOS — Solution Architecture</h1>
+  <div class="sub">Layered view · Enterprise Context grounds the platform, which delivers cross-cutting capabilities.</div>
+</header>
+
+<div class="tabs">
+  <button class="tab active" onclick="show(event,'visual')">Architecture (visual)</button>
+  <button class="tab" onclick="show(event,'ascii')">ASCII view</button>
+</div>
+
+<!-- ════════════════ VISUAL TAB ════════════════ -->
+<section id="visual" class="view active">
+
+  <div class="ext">
+    <div class="extbox"><div class="t">Actors</div><div class="v">Business &amp; ops users · analysts · approvers · ops engineers</div></div>
+    <div class="extbox"><div class="t">External systems (via adapters)</div><div class="v">LLMs (Azure OpenAI / Vertex) · ERP &amp; Finance · ITSM · Identity Provider (OIDC) · APIs</div></div>
+  </div>
+
+  <div class="toprow">
+    <span class="pill"><span class="dot" style="background:var(--ctx)"></span> Enterprise Context (domain knowledge)</span>
+    <span class="pill"><span class="dot" style="background:var(--accent)"></span> Platform (execution engine)</span>
+    <span class="pill"><span class="dot" style="background:var(--cap)"></span> Capabilities (value, cross-cutting)</span>
+  </div>
+
+  <div class="triad">
+
+    <!-- LEFT: Enterprise Context -->
+    <div>
+      <div class="col-title">Enterprise Context</div>
+      <div class="rail ctx">
+        <h3>🗂️ Domain Knowledge <span style="color:var(--muted);font-weight:500;font-size:11px">· per tenant</span></h3>
+        <div class="note">Curated, authored — grounds reasoning every turn &amp; makes answers explainable.</div>
+        <div class="ctxitem"><b>Enterprise_Context.md</b> — master business context</div>
+        <div class="ctxitem">Context packages <i>(fa_environment, ccdops, ITIL map, exceptions)</i></div>
+        <div class="ctxitem">Entities + Entity Guide</div>
+        <div class="ctxitem">Taxonomy / context registry <i>(routing)</i></div>
+        <div class="ctxitem">DOA / judgment matrices <i>(fa_judgment, k8s escalation)</i></div>
+        <div class="ctxitem">Knowledge base <i>(RAG corpus)</i></div>
+        <div class="ctxitem">Policies</div>
+        <div class="ctxitem">Business data <i>(ap_regular, ar_receivables…)</i></div>
+        <div class="ctxitem">Tenant config + hooks</div>
+      </div>
+    </div>
+
+    <!-- arrow: grounds -->
+    <div class="arrowcol"><span class="ar">▶</span><span class="lbl">grounds every turn</span></div>
+
+    <!-- CENTER: Platform stack -->
+    <div>
+      <div class="col-title">Platform — Execution Engine</div>
+      <div class="stack">
+
+        <div class="layer edge" style="border-left-color:var(--l1)">
+          <div class="lh"><span class="lnum" style="background:var(--l1)">1</span>
+            <span class="lname">Experience</span><span class="lsub">no-build web UI</span></div>
+          <div class="chips"><span class="chip">Chat</span><span class="chip">Command Centre</span>
+            <span class="chip">Mission / Workstream</span><span class="chip">Skill Studio</span><span class="chip">Security Console</span></div>
+        </div>
+
+        <div class="layer edge" style="border-left-color:var(--l2)">
+          <div class="lh"><span class="lnum" style="background:var(--l2)">2</span>
+            <span class="lname">API &amp; Control Plane</span><span class="lsub">IAF Agent Studio</span></div>
+          <div class="chips"><span class="chip">REST + WebSocket</span><span class="chip">Auth &amp; Identity (JWT / OIDC)</span>
+            <span class="chip">Multi-tenant isolation</span></div>
+        </div>
+
+        <div class="layer edge" style="border-left-color:var(--l3)">
+          <div class="lh"><span class="lnum" style="background:var(--l3)">3</span>
+            <span class="lname">Orchestration</span></div>
+          <div class="chips"><span class="chip">Skill Router</span><span class="chip">Exec modes (React / Planned / Orchestrator)</span>
+            <span class="chip">Cron</span><span class="chip">Queue</span><span class="chip">Mission engine</span></div>
+        </div>
+
+        <div class="layer edge" style="border-left-color:var(--l4)">
+          <div class="lh"><span class="lnum" style="background:var(--l4)">4</span>
+            <span class="lname">Agent Engine</span><span class="lsub">IAF Agent Skills</span></div>
+          <div class="chips"><span class="chip">SkillAgent runtime</span><span class="chip">Skills (domain packs)</span>
+            <span class="chip">Planner</span><span class="chip">Memory &amp; Knowledge</span></div>
+        </div>
+
+        <div class="layer edge" style="border-left-color:var(--l5)">
+          <div class="lh"><span class="lnum" style="background:var(--l5)">5</span>
+            <span class="lname">Governance Firewall</span></div>
+          <div class="chips"><span class="chip">Tool-call hooks (Pre / Post)</span><span class="chip">Human-in-the-loop approvals</span>
+            <span class="chip">Entitlements / Policy</span></div>
+        </div>
+
+        <div class="layer edge" style="border-left-color:var(--l6)">
+          <div class="lh"><span class="lnum" style="background:var(--l6)">6</span>
+            <span class="lname">Secure Kernel</span><span class="lsub">agent_os</span></div>
+          <div class="chips"><span class="chip">Sandboxed file / shell / SQL / write</span><span class="chip">Execution audit boundary</span></div>
+        </div>
+
+        <div class="layer edge" style="border-left-color:var(--l7)">
+          <div class="lh"><span class="lnum" style="background:var(--l7)">7</span>
+            <span class="lname">Provider Adapters</span><span class="lsub">ports &amp; adapters · swappable</span></div>
+          <div class="chips"><span class="chip">LLM</span><span class="chip">Tools / MCP</span><span class="chip">Enterprise APIs</span>
+            <span class="chip">Telemetry</span><span class="chip">Policy</span><span class="chip">Document sources</span></div>
+        </div>
+
+        <div class="layer edge" style="border-left-color:var(--l8)">
+          <div class="lh"><span class="lnum" style="background:var(--l8)">8</span>
+            <span class="lname">State &amp; Data</span><span class="lsub">runtime stores</span></div>
+          <div class="chips"><span class="chip">Redis — sessions / approvals / cron / queue</span>
+            <span class="chip">SQLite — queue / knowledge / traces / twin / evidence</span></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- arrow: powers -->
+    <div class="arrowcol"><span class="ar">◀</span><span class="lbl">delivers / powers</span></div>
+
+    <!-- RIGHT: Capabilities -->
+    <div>
+      <div class="col-title">Platform Capabilities</div>
+      <div class="rail cap">
+        <h3>⭐ Capabilities</h3>
+        <div class="note">Span every layer — the “why this platform”.</div>
+
+        <div class="capgroup"><div class="gh">▸ Reasoning &amp; Autonomy</div>
+          <ul><li>Multi-mode execution (React / Planned / Orchestrator)</li><li>Multi-skill planning</li>
+            <li>Autonomous queue + cron</li><li>Mission / Workstream backlogs</li></ul></div>
+
+        <div class="capgroup"><div class="gh">▸ Trust &amp; Control</div>
+          <ul><li>Human-in-the-loop + approval rules (DOA)</li><li>Tool-call governance</li>
+            <li>Entitlements / RBAC</li><li>Audit trail</li></ul></div>
+
+        <div class="capgroup"><div class="gh">▸ Learning &amp; Memory</div>
+          <ul><li>Continuous learning</li><li>Feedback &amp; self-critique</li>
+            <li>Episodic + knowledge memory</li><li>RAG + taxonomy routing</li></ul></div>
+
+        <div class="capgroup"><div class="gh">▸ Explainability</div>
+          <ul><li>Evidence &amp; sources</li><li>Reasoning traces</li>
+            <li>Operational digital twin</li><li>OTLP observability</li></ul></div>
+
+        <div class="capgroup"><div class="gh">▸ Extensibility</div>
+          <ul><li>Skill authoring / Studio</li><li>Swappable providers</li>
+            <li>Multi-tenant</li><li>Enterprise integration</li></ul></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="xcut">Cross-cutting across all layers: <b>Security &amp; Entitlements</b> · <b>Audit &amp; Evidence</b> · <b>Observability (execution traces, operational twin)</b></div>
+
+  <div class="flow">
+    <div class="fh">Typical request flow</div>
+    <div class="chain">
+      <span class="step">User</span><span class="arrtxt">▶</span>
+      <span class="step">Experience</span><span class="arrtxt">▶</span>
+      <span class="step">API / Auth</span><span class="arrtxt">▶</span>
+      <span class="step">Orchestration (route + mode)</span><span class="arrtxt">▶</span>
+      <span class="step">Agent Engine</span><span class="arrtxt">▶</span>
+      <span class="step gov">Governance + HITL approval</span><span class="arrtxt">▶</span>
+      <span class="step">Secure Kernel (execute)</span><span class="arrtxt">▶</span>
+      <span class="step">Provider Adapters</span><span class="arrtxt">▶</span>
+      <span class="step">result ▶ User</span>
+    </div>
+  </div>
+
+  <div class="planes">
+    <div class="plane p1"><h4>Enterprise Context (curated)</h4>
+      <p>Authored domain knowledge that <b>grounds reasoning</b> every turn and makes answers explainable &amp; policy-aware — Enterprise_Context.md, contexts, entities, taxonomy, DOA/judgment matrices, knowledge base, business DBs. Swap it → same engine, new domain.</p></div>
+    <div class="plane p2"><h4>State &amp; Data (runtime)</h4>
+      <p>Operational stores the platform generates at runtime — sessions, approvals, queue, execution traces, operational twin, evidence bundles.</p></div>
+  </div>
+
+  <div class="foot">Two data planes are deliberately separated: <b>Enterprise Context</b> (domain knowledge, read to ground reasoning) vs <b>State &amp; Data</b> (runtime operational stores). The platform/engine is domain-agnostic; Enterprise Context makes it yours.</div>
+</section>
+
+<!-- ════════════════ ASCII TAB ════════════════ -->
+<section id="ascii" class="view">
+<pre class="ascii">
+   ENTERPRISE CONTEXT                    PLATFORM  (execution engine)                PLATFORM CAPABILITIES
+   (curated domain knowledge,                                                         (span every layer)
+    per tenant)
+ ┌───────────────────────────┐        ┌──────────────────────────────────────┐     ┌──────────────────────────┐
+ │ • Enterprise_Context.md    │        │ 1 EXPERIENCE   Chat · Command Centre  │     │ ▸ Reasoning & Autonomy   │
+ │ • Context packages         │        │   · Mission · Skill Studio · Sec Con. │     │   exec modes · planning ·│
+ │   (fa_environment, ccdops, │        ├──────────────────────────────────────┤     │   queue · cron · missions│
+ │    ITIL map, exceptions)   │        │ 2 API & CONTROL  REST/WS · Auth ·     │     ├──────────────────────────┤
+ │ • Entities + Entity Guide  │        │   multi-tenant isolation             │     │ ▸ Trust & Control        │
+ │ • Taxonomy / context       │        ├──────────────────────────────────────┤     │   HITL + DOA · tool       │
+ │   registry                 │        │ 3 ORCHESTRATION  Router · exec modes ·│     │   governance · RBAC ·     │
+ │ • DOA / judgment matrices  │═══════▶│   Cron · Queue · Mission engine      │◀════│   audit                   │
+ │   (fa_judgment,            │ grounds├──────────────────────────────────────┤powers├──────────────────────────┤
+ │    k8s escalation)         │  every │ 4 AGENT ENGINE  SkillAgent · Skills · │     │ ▸ Learning & Memory      │
+ │ • Knowledge base (RAG)     │  turn  │   Planner · Memory & Knowledge       │     │   continuous learning ·  │
+ │ • Policies                 │        ├──────────────────────────────────────┤     │   feedback & critique ·  │
+ │ • Business data            │        │ 5 GOVERNANCE FIREWALL  hooks · HITL · │     │   memory · RAG/taxonomy  │
+ │   (ap_regular, ar_recv, …) │        │   policy                             │     ├──────────────────────────┤
+ │ • Tenant config + hooks    │        ├──────────────────────────────────────┤     │ ▸ Explainability         │
+ └───────────────────────────┘        │ 6 SECURE KERNEL  sandbox fs/shell/sql/│     │   evidence & sources ·   │
+                                       │   write + execution audit            │     │   reasoning traces ·     │
+  "Makes the generic engine            ├──────────────────────────────────────┤     │   digital twin · OTLP    │
+   domain-specific, grounded,          │ 7 PROVIDER ADAPTERS  LLM · Tools/MCP ·│     ├──────────────────────────┤
+   and explainable."                   │   Enterprise APIs · telemetry [swap] │     │ ▸ Extensibility          │
+                                       ├──────────────────────────────────────┤     │   Skill Studio · swappable│
+                                       │ 8 STATE & DATA (runtime)  Redis ·     │     │   providers · multi-tenant│
+                                       │   SQLite: sessions/approvals/queue/   │     │   · enterprise integration│
+                                       │   traces/twin/evidence               │     └──────────────────────────┘
+                                       └──────────────────────────────────────┘
+
+  Cross-cutting (spans every layer):  Security & Entitlements · Audit & Evidence · Observability (traces, twin)
+
+  Request flow:  User ▶ Experience ▶ API/Auth ▶ Orchestration (route+mode) ▶ Agent Engine
+                 ▶ [Governance + HITL approval] ▶ Secure Kernel (execute) ▶ Provider Adapters ▶ result ▶ User
+</pre>
+</section>
+
+<script>
+  function show(ev, id){
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    ev.currentTarget.classList.add('active');
+    document.getElementById(id).classList.add('active');
+  }
+</script>
+</body>
+</html>

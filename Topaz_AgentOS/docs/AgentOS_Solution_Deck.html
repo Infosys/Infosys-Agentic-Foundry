@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>IAF AgentOS — Enterprise Stack Adapter · Solution</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Inter',system-ui,-apple-system,sans-serif;height:100vh;overflow:hidden;
+    background:#0f172a;color:#1e293b}
+
+  /* top nav */
+  .tab-nav{position:fixed;top:0;left:0;right:0;height:60px;
+    background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 50%,#0f172a 100%);
+    padding:12px 30px;display:flex;align-items:center;justify-content:space-between;z-index:1000;
+    box-shadow:0 4px 20px rgba(15,23,42,.4)}
+  .tab-brand{display:flex;align-items:center;gap:14px}
+  .tab-logo{font-size:30px;font-weight:800;letter-spacing:2px;
+    background:linear-gradient(135deg,#3b82f6 0%,#8b5cf6 50%,#06b6d4 100%);
+    -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .tab-title{font-size:15px;font-weight:600;color:#f8fafc}
+  .tab-badge{background:linear-gradient(135deg,#f59e0b,#d97706);color:#1e293b;font-size:10px;
+    font-weight:700;padding:5px 12px;border-radius:14px;margin-left:6px}
+  .tab-buttons{display:flex;gap:8px;flex-wrap:wrap}
+  .tab-btn{padding:9px 18px;background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.4);
+    color:#cbd5e1;border-radius:9px;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit}
+  .tab-btn:hover{background:rgba(59,130,246,.3)}
+  .tab-btn.active{background:linear-gradient(135deg,#3b82f6,#8b5cf6);color:#fff;border-color:transparent}
+
+  /* content */
+  .tab-content{display:none;height:calc(100vh - 60px);margin-top:60px;overflow-y:auto;
+    background:linear-gradient(180deg,#f8fafc 0%,#e2e8f0 100%)}
+  .tab-content.active{display:block}
+  .page{max-width:1180px;margin:0 auto;padding:36px 32px 70px}
+  .hero h1{font-size:30px;font-weight:800;color:#0f172a;letter-spacing:-.5px}
+  .hero p{color:#475569;font-size:15px;margin-top:8px;max-width:820px;line-height:1.5}
+  .section-title{font-size:20px;font-weight:700;color:#0f172a;margin:42px 0 18px}
+
+  /* stat bar */
+  .stats-bar{display:flex;justify-content:space-around;flex-wrap:wrap;gap:18px;
+    background:linear-gradient(135deg,#0f172a,#1e3a5f);border-radius:16px;padding:26px;margin:28px 0}
+  .stat-item{text-align:center}
+  .stat-number{font-size:32px;font-weight:800;
+    background:linear-gradient(135deg,#60a5fa,#a78bfa);-webkit-background-clip:text;
+    -webkit-text-fill-color:transparent;background-clip:text}
+  .stat-label{color:#94a3b8;font-size:12px;margin-top:4px}
+
+  /* design/runtime dual cards */
+  .dual-cards{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+  @media(max-width:820px){.dual-cards{grid-template-columns:1fr}}
+  .phase-card{background:#fff;border-radius:16px;padding:30px;border:2px solid transparent;
+    box-shadow:0 10px 40px rgba(0,0,0,.07);transition:.3s}
+  .phase-card:hover{transform:translateY(-4px);box-shadow:0 18px 46px rgba(59,130,246,.14)}
+  .phase-card.design{border-color:#3b82f6}
+  .phase-card.runtime{border-color:#10b981}
+  .phase-head{display:flex;align-items:center;gap:14px;margin-bottom:8px}
+  .phase-icon{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;
+    justify-content:center;font-size:22px}
+  .phase-icon.d{background:linear-gradient(135deg,#3b82f6,#8b5cf6)}
+  .phase-icon.r{background:linear-gradient(135deg,#10b981,#059669)}
+  .phase-title{font-size:22px;font-weight:700;color:#1e293b}
+  .phase-tag{color:#64748b;font-size:13px;margin-bottom:14px}
+  .cap-list{list-style:none}
+  .cap-list li{padding:11px 0;border-bottom:1px solid #f1f5f9;display:flex;gap:11px;
+    font-size:13.5px;color:#334155;line-height:1.4}
+  .cap-list li:last-child{border-bottom:none}
+  .ck{width:19px;height:19px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-size:10px;font-weight:bold;color:#fff;flex-shrink:0}
+  .ck.b{background:#3b82f6} .ck.g{background:#10b981}
+
+  /* capability cards */
+  .caps-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+  @media(max-width:900px){.caps-grid{grid-template-columns:1fr 1fr}}
+  @media(max-width:600px){.caps-grid{grid-template-columns:1fr}}
+  .cap-card{background:#fff;border-radius:13px;padding:22px;box-shadow:0 4px 15px rgba(0,0,0,.05);
+    transition:.3s;border-top:3px solid #cbd5e1}
+  .cap-card:hover{transform:translateY(-3px);box-shadow:0 12px 30px rgba(59,130,246,.12)}
+  .cap-card .ci{font-size:30px;margin-bottom:10px}
+  .cap-card h4{font-size:15px;font-weight:700;color:#1e293b;margin-bottom:6px}
+  .cap-card ul{list-style:none;margin-top:8px}
+  .cap-card li{font-size:12.5px;color:#475569;padding:3px 0 3px 14px;position:relative;line-height:1.35}
+  .cap-card li:before{content:"·";position:absolute;left:3px;color:#3b82f6;font-weight:900}
+  .cc-t1{border-top-color:#3b82f6}.cc-t2{border-top-color:#ef4444}.cc-t3{border-top-color:#10b981}
+  .cc-t4{border-top-color:#a855f7}.cc-t5{border-top-color:#06b6d4}
+
+  /* loop / philosophy banner */
+  .banner{text-align:center;padding:26px;background:linear-gradient(135deg,#eff6ff,#f5f3ff);
+    border-radius:16px;margin:30px 0}
+  .banner b{color:#3b82f6}
+
+  /* ===== Architecture (interactive) ===== */
+  .arch-wrap{display:grid;grid-template-columns:1.05fr 320px;gap:24px}
+  @media(max-width:980px){.arch-wrap{grid-template-columns:1fr}}
+  .triad{display:grid;grid-template-columns:200px 26px 1fr 26px 210px;gap:0;align-items:stretch}
+  @media(max-width:980px){.triad{grid-template-columns:1fr}.arrowcol{display:none}}
+  .col-h{font-size:11px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;color:#64748b;
+    text-align:center;margin-bottom:10px}
+  .rail{background:#fff;border-radius:14px;padding:14px;box-shadow:0 6px 20px rgba(0,0,0,.06)}
+  .rail.ctx{border:2px solid #10b981}
+  .rail.cap{border:2px solid #f59e0b}
+  .rail h3{font-size:13px;margin-bottom:8px;color:#0f172a}
+  .ctxitem{font-size:11.5px;padding:6px 9px;border-left:3px solid #10b981;background:#ecfdf5;
+    border-radius:0 7px 7px 0;margin-bottom:6px;line-height:1.3;color:#334155;cursor:pointer}
+  .capg{margin-bottom:11px} .capg .gh{font-size:12px;font-weight:700;color:#b45309;margin-bottom:4px}
+  .capg ul{list-style:none} .capg li{font-size:11px;color:#475569;padding:2px 0 2px 13px;position:relative}
+  .capg li:before{content:"·";position:absolute;left:3px;color:#f59e0b;font-weight:900}
+  .stack{display:flex;flex-direction:column;gap:6px}
+  .layer{border-radius:11px;padding:10px 12px;background:#fff;border-left:5px solid #94a3b8;
+    box-shadow:0 3px 10px rgba(0,0,0,.05);cursor:pointer;transition:.18s}
+  .layer:hover{transform:translateX(3px);box-shadow:0 6px 18px rgba(59,130,246,.16)}
+  .layer.sel{outline:2px solid #3b82f6;outline-offset:1px}
+  .layer .lh{display:flex;align-items:center;gap:9px}
+  .lnum{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;
+    font-weight:800;font-size:11px;color:#fff;flex:0 0 auto}
+  .lname{font-size:13px;font-weight:700;color:#1e293b}
+  .lsub{font-size:10px;color:#94a3b8;font-weight:500}
+  .lchips{margin-top:5px;display:flex;flex-wrap:wrap;gap:5px}
+  .lchip{font-size:10px;background:#f1f5f9;color:#475569;padding:2px 7px;border-radius:5px}
+  .arrowcol{display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .arrowcol .ar{font-size:20px;color:#3b82f6}
+  .arrowcol .lbl{writing-mode:vertical-rl;transform:rotate(180deg);font-size:9px;letter-spacing:1px;
+    text-transform:uppercase;color:#94a3b8;margin-top:6px}
+  .detail{background:#0f172a;border-radius:14px;padding:20px;color:#e2e8f0;position:sticky;top:12px;height:fit-content}
+  .detail h4{font-size:15px;margin-bottom:6px;color:#fff}
+  .detail .dtag{font-size:11px;color:#7dd3fc;text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px}
+  .detail p{font-size:13px;line-height:1.55;color:#cbd5e1}
+  .detail .hint{margin-top:14px;font-size:11px;color:#64748b}
+  .xcut{margin-top:16px;text-align:center;font-size:12px;color:#64748b}
+  .xcut b{color:#0f172a}
+
+  pre.ascii{background:#0f172a;border-radius:12px;padding:18px;overflow:auto;color:#cfe3ff;
+    font:12px/1.35 "SFMono-Regular",Consolas,Menlo,monospace}
+  .note{color:#64748b;font-size:12px;margin-top:14px}
+
+  /* ===== Enterprise Fit (layer × customization) ===== */
+  .legend{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin:6px 0 18px;font-size:11px;color:#64748b}
+  .ctx-spine{background:linear-gradient(135deg,#ecfdf5,#eff6ff);border:1px dashed #10b981;border-radius:13px;
+    padding:16px 18px;margin:0 0 22px}
+  .ctx-spine h4{color:#047857;font-size:14px;margin-bottom:5px}
+  .ctx-spine p{font-size:12.5px;color:#334155;line-height:1.5}
+  .fit-row{display:grid;grid-template-columns:290px 1fr;background:#fff;border-radius:13px;overflow:hidden;
+    box-shadow:0 4px 15px rgba(0,0,0,.05);margin-bottom:13px;border-left:5px solid #94a3b8}
+  @media(max-width:780px){.fit-row{grid-template-columns:1fr}}
+  .fit-left{padding:16px 18px;background:#fbfcfe;border-right:1px solid #eef2f7}
+  .fit-left .lh{display:flex;align-items:center;gap:9px;margin-bottom:6px}
+  .fit-left .lname{font-size:14px;font-weight:700;color:#1e293b}
+  .fit-left .lsub{font-size:10.5px;color:#94a3b8}
+  .fit-left .lwhat{font-size:11.5px;color:#64748b;line-height:1.4;margin-bottom:8px}
+  .fit-right{padding:14px 18px}
+  .fit-right .ch{font-size:10px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:#94a3b8;margin-bottom:6px}
+  .fit-item{display:flex;gap:9px;align-items:flex-start;padding:5px 0;font-size:12.5px;color:#334155;line-height:1.4}
+  .fit-item .bb{color:#10b981;flex:0 0 auto;font-weight:bold;margin-top:1px}
+  .fit-item .tx{flex:1}
+  .tag{font-size:9px;font-weight:700;padding:2px 7px;border-radius:5px;white-space:nowrap;flex:0 0 auto;margin-top:1px}
+  .tag.config{background:#dbeafe;color:#1d4ed8}
+  .tag.integrate{background:#ede9fe;color:#6d28d9}
+  .tag.author{background:#ccfbf1;color:#0f766e}
+  .tag.policy{background:#fee2e2;color:#b91c1c}
+  .owner{font-size:9.5px;color:#475569;background:#eef2f7;padding:3px 8px;border-radius:6px;display:inline-block}
+</style>
+</head>
+<body>
+
+<nav class="tab-nav">
+  <div class="tab-brand">
+    <span class="tab-logo">IAF</span>
+    <span class="tab-title">AgentOS — Enterprise Stack Adapter</span>
+    <span class="tab-badge">SOLUTION</span>
+  </div>
+  <div class="tab-buttons">
+    <button class="tab-btn active" onclick="showTab(event,'home')">🏠 Home</button>
+    <button class="tab-btn" onclick="showTab(event,'arch')">🏛 Architecture</button>
+    <button class="tab-btn" onclick="showTab(event,'fit')">🏢 Enterprise Fit</button>
+    <button class="tab-btn" onclick="showTab(event,'caps')">⭐ Capabilities</button>
+    <button class="tab-btn" onclick="showTab(event,'ref')">📖 Reference</button>
+  </div>
+</nav>
+
+<!-- ══════════════ HOME ══════════════ -->
+<div id="home" class="tab-content active">
+  <div class="page">
+    <div class="hero">
+      <h1>A skill-based agentic platform — grounded, governed, explainable.</h1>
+      <p>One domain-agnostic engine. Swap the <b>Enterprise Context</b> (your skills, knowledge, policies and data) and the same platform serves any business domain — with human-in-the-loop control and a full audit trail on every action.</p>
+    </div>
+
+    <div class="stats-bar">
+      <div class="stat-item"><div class="stat-number">8</div><div class="stat-label">Architecture Layers</div></div>
+      <div class="stat-item"><div class="stat-number">8</div><div class="stat-label">Execution Modes</div></div>
+      <div class="stat-item"><div class="stat-number">2</div><div class="stat-label">Data Planes (Context · Runtime)</div></div>
+      <div class="stat-item"><div class="stat-number">100%</div><div class="stat-label">Governed &amp; Audited</div></div>
+      <div class="stat-item"><div class="stat-number">∞</div><div class="stat-label">Pluggable Providers</div></div>
+    </div>
+
+    <h2 class="section-title">Design Time vs Runtime</h2>
+    <div class="dual-cards">
+      <div class="phase-card design">
+        <div class="phase-head"><div class="phase-icon d">🛠️</div><div><div class="phase-title">Design Time</div></div></div>
+        <div class="phase-tag">Author the domain — what the platform knows and is allowed to do.</div>
+        <ul class="cap-list">
+          <li><span class="ck b">✓</span> Author <b>Skills</b> (domain packs) — form builder, <b>Skill Designer</b> (natural language / Dev Mode), or the visual <b>Graph Studio</b></li>
+          <li><span class="ck b">✓</span> Curate <b>Enterprise Context</b> — context packages, entities &amp; taxonomy, knowledge base</li>
+          <li><span class="ck b">✓</span> Define <b>approval policy</b> — DOA / judgment matrices &amp; approval rules</li>
+          <li><span class="ck b">✓</span> Configure <b>governance hooks</b> (platform + tenant) and entitlements / RBAC</li>
+          <li><span class="ck b">✓</span> Register <b>providers</b> — LLMs, MCP tools, enterprise APIs, telemetry</li>
+          <li><span class="ck b">✓</span> Validate &amp; publish per <b>tenant</b></li>
+        </ul>
+      </div>
+      <div class="phase-card runtime">
+        <div class="phase-head"><div class="phase-icon r">⚡</div><div><div class="phase-title">Runtime</div></div></div>
+        <div class="phase-tag">Execute the work — autonomously, but under control.</div>
+        <ul class="cap-list">
+          <li><span class="ck g">✓</span> <b>Route</b> each request to the right skill (keyword + semantic/taxonomy)</li>
+          <li><span class="ck g">✓</span> Run in 8 <b>execution modes</b> — React · Workflow · Parallel · Supervisor · Orchestrator · Planned · <b>RLM</b> · <b>Graph</b></li>
+          <li><span class="ck g">✓</span> Screen every tool call; <b>pause for human approval</b> (propose-then-apply) when policy says so</li>
+          <li><span class="ck g">✓</span> Work autonomously via <b>Cron · Queue · Mission/Workstreams · Deterministic Automations</b></li>
+          <li><span class="ck g">✓</span> <b>Ground &amp; cite</b> answers from knowledge + context (evidence &amp; sources)</li>
+          <li><span class="ck g">✓</span> <b>Learn &amp; compound</b> — feedback, self-critique, and an opt-in RL/eval capture loop</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2 class="section-title">Key Capabilities</h2>
+    <div class="caps-grid">
+      <div class="cap-card cc-t1"><div class="ci">🧭</div><h4>Reasoning &amp; Autonomy</h4>
+        <ul><li>8 execution modes: React · Workflow · Parallel · Supervisor · Orchestrator · Planned · RLM · Graph</li><li>RLM reasoning-as-code + stored process graphs (verifier + convergence)</li><li>Autonomous queue + cron + deterministic automations</li><li>Mission / Workstream backlogs</li></ul></div>
+      <div class="cap-card cc-t2"><div class="ci">🛡️</div><h4>Trust &amp; Control</h4>
+        <ul><li>Human-in-the-loop + approval rules (DOA)</li><li>Tool-call governance firewall</li><li>Entitlements / RBAC</li><li>Full audit trail</li></ul></div>
+      <div class="cap-card cc-t3"><div class="ci">🧠</div><h4>Learning &amp; Memory</h4>
+        <ul><li>Episodic + knowledge memory · RAG + taxonomy routing</li><li>Feedback &amp; self-critique · self-evolution</li><li>Opt-in RL/eval capture (trajectories → SFT/DPO/RFT)</li><li>Trace-value routing + eval gates (human-gated)</li></ul></div>
+      <div class="cap-card cc-t4"><div class="ci">🔍</div><h4>Explainability</h4>
+        <ul><li>Evidence &amp; sources</li><li>Reasoning &amp; execution traces</li><li>Operational digital twin</li><li>OTLP observability</li></ul></div>
+      <div class="cap-card cc-t5"><div class="ci">🧩</div><h4>Extensibility</h4>
+        <ul><li>Authoring: Skill Builder · Skill Designer (NL) · Graph Studio</li><li>Skill Packs (import/export across tenants)</li><li>Swappable provider adapters · multi-tenant</li><li>Enterprise integration (MCP, APIs)</li></ul></div>
+      <div class="cap-card cc-t3"><div class="ci">🗂️</div><h4>Enterprise Context</h4>
+        <ul><li>Per-tenant domain knowledge</li><li>Grounds every response</li><li>DOA / judgment policy</li><li>Swap it → new domain</li></ul></div>
+    </div>
+
+    <div class="banner">Continuous improvement loop: <b>Act → Observe (traces/evidence) → Feedback &amp; critique → Learn → Improve.</b></div>
+  </div>
+</div>
+
+<!-- ══════════════ ARCHITECTURE ══════════════ -->
+<div id="arch" class="tab-content">
+  <div class="page">
+    <div class="hero"><h1>Layered architecture</h1>
+      <p>Enterprise Context (your domain knowledge) <b>grounds</b> the platform engine, which <b>delivers</b> cross-cutting capabilities. Click any layer for detail.</p></div>
+
+    <div class="arch-wrap">
+      <div class="triad">
+        <!-- left -->
+        <div>
+          <div class="col-h">Enterprise Context</div>
+          <div class="rail ctx">
+            <h3>🗂️ Domain Knowledge · per tenant</h3>
+            <div class="ctxitem" onclick="pick('ctx')">Enterprise_Context.md (master context)</div>
+            <div class="ctxitem" onclick="pick('ctx')">Context packages (fa_environment, ccdops, ITIL…)</div>
+            <div class="ctxitem" onclick="pick('ctx')">Entities + Entity Guide</div>
+            <div class="ctxitem" onclick="pick('ctx')">Taxonomy / context registry</div>
+            <div class="ctxitem" onclick="pick('ctx')">DOA / judgment matrices</div>
+            <div class="ctxitem" onclick="pick('ctx')">Knowledge base (RAG) · Policies</div>
+            <div class="ctxitem" onclick="pick('ctx')">Business data &amp; tenant config</div>
+          </div>
+        </div>
+        <div class="arrowcol"><span class="ar">▶</span><span class="lbl">grounds every turn</span></div>
+        <!-- center -->
+        <div>
+          <div class="col-h">Platform — Execution Engine</div>
+          <div class="stack" id="stack"></div>
+        </div>
+        <div class="arrowcol"><span class="ar">◀</span><span class="lbl">delivers / powers</span></div>
+        <!-- right -->
+        <div>
+          <div class="col-h">Capabilities</div>
+          <div class="rail cap">
+            <div class="capg"><div class="gh">▸ Reasoning &amp; Autonomy</div><ul><li>8 modes · RLM · graphs</li><li>queue · cron · missions · automations</li></ul></div>
+            <div class="capg"><div class="gh">▸ Trust &amp; Control</div><ul><li>HITL + DOA · propose-then-apply</li><li>governance · RBAC · audit</li></ul></div>
+            <div class="capg"><div class="gh">▸ Learning &amp; Memory</div><ul><li>memory · RAG / taxonomy</li><li>self-evolution · RL/eval capture</li></ul></div>
+            <div class="capg"><div class="gh">▸ Explainability</div><ul><li>thinking box · traces · evidence</li><li>digital twin · FinOps · OTLP</li></ul></div>
+            <div class="capg"><div class="gh">▸ Extensibility</div><ul><li>Skill Designer · Graph Studio</li><li>Skill Packs · adapters · multi-tenant</li></ul></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="detail" id="detail">
+        <div class="dtag" id="d-tag">Select a layer</div>
+        <h4 id="d-title">Interactive architecture</h4>
+        <p id="d-body">Click any platform layer (or the Enterprise Context card) to see what it does, in plain language.</p>
+        <div class="hint" id="d-hint">Tip: the typical request flows top → bottom through the layers.</div>
+      </div>
+    </div>
+
+    <div class="xcut">Cross-cutting across all layers: <b>Security &amp; Entitlements</b> · <b>Audit &amp; Evidence</b> · <b>Observability (traces, operational twin)</b></div>
+  </div>
+</div>
+
+<!-- ══════════════ ENTERPRISE FIT ══════════════ -->
+<div id="fit" class="tab-content">
+  <div class="page">
+    <div class="hero"><h1>Enterprise Fit — customization per layer</h1>
+      <p>The platform ships domain-agnostic. Each layer below shows the <b>customization &amp; integration an enterprise applies on adoption</b> — tagged by type and primary owner.</p></div>
+
+    <div class="legend">
+      <span class="tag config">CONFIG</span> set values, no code ·
+      <span class="tag integrate">INTEGRATE</span> connect an enterprise system ·
+      <span class="tag author">AUTHOR</span> create domain content ·
+      <span class="tag policy">POLICY</span> define rules / approvals
+    </div>
+
+    <div class="ctx-spine">
+      <h4>🗂️ The biggest customization is your Enterprise Context</h4>
+      <p>Curated domain knowledge — <b>Enterprise_Context.md</b>, context packages, entities &amp; taxonomy, <b>DOA / judgment matrices</b>, knowledge base, business data. It feeds Orchestration (routing), Agent Engine (skills), Governance (approvals) and the Kernel (data) — and is what makes the platform <i>yours</i>. Swap it → same engine, new domain.</p>
+    </div>
+
+    <!-- Layer rows -->
+    <div class="fit-row" style="border-left-color:#6366f1">
+      <div class="fit-left"><div class="lh"><span class="lnum" style="background:#6366f1">1</span><span class="lname">Experience</span></div>
+        <div class="lsub">user surfaces &amp; branding</div>
+        <div class="lwhat" style="margin-top:6px">Chat, Command Centre, Mission, Skill Studio, Security Console</div>
+        <span class="owner">Owner: Platform + UX</span></div>
+      <div class="fit-right"><div class="ch">Enterprise customization</div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Brand &amp; theme — logo, colors, naming</span><span class="tag config">CONFIG</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Enable/disable surfaces &amp; role-based views</span><span class="tag config">CONFIG</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Embed in enterprise portal / SSO landing</span><span class="tag integrate">INTEGRATE</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Locale / language</span><span class="tag config">CONFIG</span></div>
+      </div>
+    </div>
+
+    <div class="fit-row" style="border-left-color:#3b82f6">
+      <div class="fit-left"><div class="lh"><span class="lnum" style="background:#3b82f6">2</span><span class="lname">API &amp; Control Plane</span></div>
+        <div class="lsub">front door · identity · tenancy</div>
+        <div class="lwhat" style="margin-top:6px">REST + WebSocket, Auth, multi-tenant isolation</div>
+        <span class="owner">Owner: Enterprise IT / Security</span></div>
+      <div class="fit-right"><div class="ch">Enterprise customization</div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Integrate enterprise <b>Identity Provider</b> — OIDC / SAML / JWKS (SSO)</span><span class="tag integrate">INTEGRATE</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Define tenants &amp; isolation boundaries</span><span class="tag config">CONFIG</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">API gateway / ingress &amp; network (VPC) placement</span><span class="tag integrate">INTEGRATE</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">CORS, rate limits, session policy</span><span class="tag config">CONFIG</span></div>
+      </div>
+    </div>
+
+    <div class="fit-row" style="border-left-color:#06b6d4">
+      <div class="fit-left"><div class="lh"><span class="lnum" style="background:#06b6d4">3</span><span class="lname">Orchestration</span></div>
+        <div class="lsub">routing · scheduling · queues</div>
+        <div class="lwhat" style="margin-top:6px">Skill Router, execution modes, Cron, Queue, Mission engine</div>
+        <span class="owner">Owner: Platform + Domain SME</span></div>
+      <div class="fit-right"><div class="ch">Enterprise customization</div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Tune routing <b>taxonomy</b> to your business domains</span><span class="tag config">CONFIG</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Execution-mode policy per skill (React → RLM → Graph)</span><span class="tag config">CONFIG</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Cron schedules for recurring jobs</span><span class="tag config">CONFIG</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Connect queue-ingest sources — ServiceNow / PagerDuty / webhooks</span><span class="tag integrate">INTEGRATE</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Define Missions / Workstreams (backlogs + escalation)</span><span class="tag author">AUTHOR</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Author no-LLM <b>Deterministic Automations</b> (shell/python pipelines)</span><span class="tag author">AUTHOR</span></div>
+      </div>
+    </div>
+
+    <div class="fit-row" style="border-left-color:#14b8a6">
+      <div class="fit-left"><div class="lh"><span class="lnum" style="background:#14b8a6">4</span><span class="lname">Agent Engine</span></div>
+        <div class="lsub">reasoning engine + skills</div>
+        <div class="lwhat" style="margin-top:6px">SkillAgent runtime, Skills, Planner, Memory &amp; Knowledge</div>
+        <span class="owner">Owner: Domain SME / Skill author</span></div>
+      <div class="fit-right"><div class="ch">Enterprise customization</div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Author domain <b>Skills</b> — Skill Builder, <b>Skill Designer</b> (NL), or <b>Graph Studio</b> (visual)</span><span class="tag author">AUTHOR</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Compose <b>process graphs</b> (verifier + convergence) &amp; <b>RLM</b> reasoning-as-code skills</span><span class="tag author">AUTHOR</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Seed knowledge base / RAG corpus</span><span class="tag author">AUTHOR</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Memory retention, knowledge scope &amp; opt-in <b>RL/eval capture</b></span><span class="tag config">CONFIG</span></div>
+      </div>
+    </div>
+
+    <div class="fit-row" style="border-left-color:#ef4444">
+      <div class="fit-left"><div class="lh"><span class="lnum" style="background:#ef4444">5</span><span class="lname">Governance Firewall</span></div>
+        <div class="lsub">policy + human control</div>
+        <div class="lwhat" style="margin-top:6px">Tool-call hooks, HITL approvals, entitlements</div>
+        <span class="owner">Owner: Risk / Compliance + Security</span></div>
+      <div class="fit-right"><div class="ch">Enterprise customization</div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Define <b>approval rules &amp; DOA / judgment matrices</b> — thresholds, approvers</span><span class="tag policy">POLICY</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">PreToolUse / PostToolUse <b>hook policies</b> — block patterns, audit</span><span class="tag policy">POLICY</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Map <b>entitlements / RBAC</b> to enterprise roles &amp; groups</span><span class="tag integrate">INTEGRATE</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Data-access ACLs</span><span class="tag policy">POLICY</span></div>
+      </div>
+    </div>
+
+    <div class="fit-row" style="border-left-color:#64748b">
+      <div class="fit-left"><div class="lh"><span class="lnum" style="background:#64748b">6</span><span class="lname">Secure Kernel</span></div>
+        <div class="lsub">sandboxed execution boundary</div>
+        <div class="lwhat" style="margin-top:6px">Sandboxed file / shell / SQL / write + audit</div>
+        <span class="owner">Owner: Enterprise IT / Data</span></div>
+      <div class="fit-right"><div class="ch">Enterprise customization</div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Sandbox boundaries — allowed paths, shell allow-list</span><span class="tag policy">POLICY</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Connect <b>SQL data sources</b> — read-only vs write modes</span><span class="tag integrate">INTEGRATE</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Mount enterprise data shares (/local, /shared)</span><span class="tag integrate">INTEGRATE</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Resource limits / quotas</span><span class="tag config">CONFIG</span></div>
+      </div>
+    </div>
+
+    <div class="fit-row" style="border-left-color:#a855f7">
+      <div class="fit-left"><div class="lh"><span class="lnum" style="background:#a855f7">7</span><span class="lname">Provider Adapters</span></div>
+        <div class="lsub">pluggable external connections</div>
+        <div class="lwhat" style="margin-top:6px">LLM · Tools/MCP · APIs · telemetry · policy [swap]</div>
+        <span class="owner">Owner: Enterprise IT / Integration</span></div>
+      <div class="fit-right"><div class="ch">Enterprise customization</div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Select &amp; configure <b>LLM provider</b> — Azure OpenAI / Vertex / on-prem (+ secrets via vault)</span><span class="tag integrate">INTEGRATE</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Connect <b>MCP tools &amp; enterprise APIs</b> — ERP / Finance / ITSM (+ auth)</span><span class="tag integrate">INTEGRATE</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Telemetry / <b>OTLP</b> endpoint to enterprise observability</span><span class="tag integrate">INTEGRATE</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Policy &amp; document-source providers</span><span class="tag integrate">INTEGRATE</span></div>
+      </div>
+    </div>
+
+    <div class="fit-row" style="border-left-color:#475569">
+      <div class="fit-left"><div class="lh"><span class="lnum" style="background:#475569">8</span><span class="lname">State &amp; Data</span></div>
+        <div class="lsub">runtime stores · data governance</div>
+        <div class="lwhat" style="margin-top:6px">Redis + SQLite: sessions / approvals / queue / traces / evidence</div>
+        <span class="owner">Owner: Enterprise IT / Security</span></div>
+      <div class="fit-right"><div class="ch">Enterprise customization</div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Point to managed <b>Redis</b> + enterprise <b>database</b></span><span class="tag integrate">INTEGRATE</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Data residency, retention &amp; encryption-at-rest</span><span class="tag policy">POLICY</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Backup / DR</span><span class="tag config">CONFIG</span></div>
+        <div class="fit-item"><span class="bb">›</span><span class="tx">Forward audit &amp; evidence to <b>SIEM</b></span><span class="tag integrate">INTEGRATE</span></div>
+      </div>
+    </div>
+
+    <p class="note">Most adoption effort is <b>Config + Author</b> (your context, skills, approvals) with targeted <b>Integrate</b> work at the edges (identity, data sources, providers, observability). The engine itself is unchanged — that's the point of the ports-and-adapters design.</p>
+  </div>
+</div>
+
+<!-- ══════════════ CAPABILITIES ══════════════ -->
+<div id="caps" class="tab-content">
+  <div class="page">
+    <div class="hero"><h1>Capabilities in depth</h1><p>Every capability below is built into the platform and spans multiple layers.</p></div>
+    <div class="caps-grid" style="margin-top:24px">
+      <div class="cap-card cc-t1"><div class="ci">🧭</div><h4>Reasoning &amp; Autonomy</h4>
+        <ul><li>8 execution modes: React · Workflow · Parallel · Supervisor · Orchestrator · Planned · RLM · Graph</li><li>RLM reasoning-as-code over governed tools</li><li>Stored process graphs — verifier nodes + convergence loop</li><li>Autonomous queue + cron + Mission/Workstream backlogs</li><li>Multi-signal skill routing (WHO + WHAT + keyword)</li></ul></div>
+      <div class="cap-card cc-t2"><div class="ci">🛡️</div><h4>Trust &amp; Control</h4>
+        <ul><li>Human-in-the-loop approvals (warm continue + durable resume)</li><li>Approval rules &amp; DOA / judgment matrices</li>
+          <li>Tool-call governance firewall (Pre/PostToolUse hooks)</li><li>Entitlements / RBAC + service principals</li><li>Full audit trail on every action</li></ul></div>
+      <div class="cap-card cc-t3"><div class="ci">🧠</div><h4>Learning &amp; Memory</h4>
+        <ul><li>Episodic + knowledge memory · RAG · entity resolution</li><li>Continuous / implicit learning → knowledge promotion</li>
+          <li>Feedback (👍/👎, plan feedback) &amp; self-critique · self-evolution</li><li>Opt-in RL/eval capture → SFT / DPO / RFT datasets</li><li>Trace-value routing + eval suites &amp; promotion gates (human-gated)</li></ul></div>
+      <div class="cap-card cc-t4"><div class="ci">🔍</div><h4>Explainability</h4>
+        <ul><li>Evidence bundles + cited sources</li><li>Reasoning &amp; execution step traces</li>
+          <li>Operational "digital twin" telemetry</li><li>OTLP export to enterprise observability</li></ul></div>
+      <div class="cap-card cc-t5"><div class="ci">🧩</div><h4>Extensibility</h4>
+        <ul><li>Authoring lifecycle: draft → validate → review → publish</li><li>Skill Builder · <b>Skill Designer</b> (NL/Dev Mode) · <b>Graph Studio</b> (visual)</li>
+          <li>Skill Packs — import/export across tenants</li><li>Ports-and-adapters: swap LLM / tools / policy / telemetry · MCP</li><li>Multi-tenant isolation · enterprise integration</li></ul></div>
+      <div class="cap-card cc-t3"><div class="ci">🗂️</div><h4>Enterprise Context</h4>
+        <ul><li>Per-tenant curated domain knowledge</li><li>Grounds reasoning &amp; makes answers explainable</li>
+          <li>Drives routing (taxonomy), RAG, and DOA-based approvals</li><li>Swap enterprise_root → same engine, new domain</li></ul></div>
+      <div class="cap-card cc-t4"><div class="ci">🕸</div><h4>Process Graphs &amp; RLM</h4>
+        <ul><li><b>Graph mode</b> — stored DAG of skill-nodes + verifier + convergence loop</li><li>Escalate-to-human on exhaustion; independent-verifier grounding</li>
+          <li><b>RLM</b> — reasoning-as-code with an AST guard + governed tools</li><li>Propose-then-apply: side effects become HITL approval cards</li><li>Authored visually in <b>Graph Studio</b> or from English</li></ul></div>
+      <div class="cap-card cc-t2"><div class="ci">📈</div><h4>Private Learning Loop</h4>
+        <ul><li>Opt-in RL/eval capture (trajectories, model/tool calls, signals)</li><li>Trace-Value Router — which traces are worth learning from</li>
+          <li>Eval suites, golden sets &amp; promotion gates</li><li>Exporters: SFT · rejection-SFT · DPO · KTO · RFT</li><li>Human-gated &amp; private — never auto-trains</li></ul></div>
+      <div class="cap-card cc-t1"><div class="ci">🔁</div><h4>Autonomous Operations</h4>
+        <ul><li><b>Workstreams / Mission Mode</b> — process item backlogs on a schedule</li><li>Per-item state, retries, HITL &amp; evidence bundles</li>
+          <li>Cron scheduler (Redis-backed) + Command Center queue (DLQ)</li><li><b>Deterministic Automations</b> — no-LLM shell/python pipelines</li></ul></div>
+      <div class="cap-card cc-t4"><div class="ci">👁</div><h4>Live Observability</h4>
+        <ul><li>Per-turn <b>thinking box</b> — live step narration, collapses to "Thought for Ns"</li><li>Execution trace + evidence bundles (what grounded the answer)</li>
+          <li>FinOps — per-call token &amp; cost attribution</li><li>Operational digital twin + OTLP export</li></ul></div>
+    </div>
+    <p class="note">These are grounded in the as-built platform (Redis + SQLite, FastAPI + Alpine.js UI, native React runtime, agent_os kernel). Provider/scale targets (e.g. message bus, multi-cloud) are roadmap and intentionally not shown here.</p>
+  </div>
+</div>
+
+<!-- ══════════════ REFERENCE (ASCII) ══════════════ -->
+<div id="ref" class="tab-content">
+  <div class="page">
+    <div class="hero"><h1>Reference — ASCII architecture</h1><p>The same model in plain text, for docs, tickets, and copy-paste.</p></div>
+    <pre class="ascii">
+ENTERPRISE CONTEXT  (per tenant — grounds every turn)
+  Enterprise_Context.md · context packages · entities + taxonomy ·
+  DOA / judgment matrices · knowledge base (RAG) · policies · business data
+        │  grounds
+        ▼
+PLATFORM — execution engine (8 layers)
+  1  EXPERIENCE           Chat · Command Centre · Mission · Skill Studio · Graph Studio
+  2  API & CONTROL        REST / WebSocket · Auth (JWT/OIDC) · multi-tenant isolation
+  3  ORCHESTRATION        Multi-signal router · 8 execution modes · Cron · Queue ·
+                          Mission engine · Deterministic Automations
+  4  AGENT ENGINE         SkillAgent · Skills · Planner / execute_graph · RLM engine ·
+                          Memory & Knowledge
+  5  GOVERNANCE FIREWALL  Pre/PostToolUse hooks · HITL · policy · propose-then-apply
+  6  SECURE KERNEL        Sandboxed fs / shell / SQL / write + execution audit
+  7  PROVIDER ADAPTERS    LLM · Tools/MCP · Enterprise APIs · telemetry   [swappable]
+  8  STATE & DATA         Redis · SQLite/Postgres: sessions · approvals · queue ·
+                          traces · evidence · rl.db (RL/eval capture)
+
+CAPABILITIES (span every layer)
+  Reasoning & Autonomy   8 modes (react > workflow/parallel > supervisor/orchestrator >
+                         planned > rlm > graph) · queue · cron · missions · automations
+  Trust & Control        HITL + DOA · propose-then-apply · governance · RBAC · full audit
+  Learning & Memory      episodic + knowledge memory · RAG · self-evolution · RL/eval loop
+  Explainability         thinking box · execution traces · evidence · digital twin · FinOps · OTLP
+  Extensibility          Skill Designer (NL) · Graph Studio · Skill Packs · adapters · multi-tenant
+
+Cross-cutting (every layer):  Security & Entitlements · Audit & Evidence · Observability
+
+Request flow:
+  User > Experience > API/Auth > Orchestration (route + mode) > Agent Engine
+       > [Governance + HITL approval] > Secure Kernel (execute) > Provider Adapters > result > User
+</pre>
+  </div>
+</div>
+
+<script>
+  function showTab(ev,id){
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+    ev.currentTarget.classList.add('active');
+    document.getElementById(id).classList.add('active');
+  }
+
+  // Layers (center stack) + detail content
+  const LAYERS = [
+    {n:1,name:'Experience',sub:'no-build web UI',c:'#6366f1',chips:['Chat','Command Centre','Mission/Workstream','Skill Studio','Security Console'],
+     body:'How users interact: conversational chat, the Command Centre dashboard, mission/workstream tracking, building skills, and reviewing access — all live over WebSocket, no build step.'},
+    {n:2,name:'API & Control Plane',sub:'IAF Agent Studio',c:'#3b82f6',chips:['REST + WebSocket','Auth (JWT/OIDC)','Multi-tenant'],
+     body:'The secured front door. Every request is authenticated and bound to an identity, and tenants are isolated from one another.'},
+    {n:3,name:'Orchestration',sub:'',c:'#06b6d4',chips:['Multi-signal router','8 execution modes','Process graphs','Cron · Queue','Mission · Automations'],
+     body:'Decides which skill handles a request and how — across 8 modes from free-form React to governed determinism (workflow/parallel/supervisor/orchestrator, planned DAGs, RLM reasoning-as-code, and stored process graphs with verifier + convergence) — and runs scheduled, queued, backlog, and no-LLM automation work.'},
+    {n:4,name:'Agent Engine',sub:'IAF Agent Skills',c:'#14b8a6',chips:['SkillAgent runtime','Skills (domain packs)','Planner · execute_graph','RLM engine','Memory & Knowledge'],
+     body:'The "brain": runs the agent loop (LangGraph or provider-native), loads domain skill packs, plans multi-step work, executes process graphs (verifier + convergence), runs the governed RLM code-action loop, and recalls memory + knowledge to ground its reasoning.'},
+    {n:5,name:'Governance Firewall',sub:'',c:'#ef4444',chips:['Pre/PostToolUse hooks','Human-in-the-loop','Entitlements / Policy'],
+     body:'Every tool the agent tries is screened by policy hooks. Risky or high-value actions pause for HUMAN APPROVAL (driven by approval rules / DOA matrices) before they can run.'},
+    {n:6,name:'Secure Kernel',sub:'agent_os',c:'#64748b',chips:['Sandboxed file / shell / SQL / write','Execution audit'],
+     body:'The only place actions actually execute — inside a sandbox, with a full audit trail. Nothing touches real systems except through here.'},
+    {n:7,name:'Provider Adapters',sub:'ports & adapters · swappable',c:'#a855f7',chips:['LLM','Tools / MCP','Enterprise APIs','Telemetry','Policy'],
+     body:'Pluggable connections to LLMs (Azure OpenAI / Vertex), tools (MCP), enterprise systems, and telemetry. Swap a provider without touching the engine.'},
+    {n:8,name:'State & Data',sub:'runtime stores',c:'#475569',chips:['Redis — sessions/approvals/cron/queue','SQLite — queue/knowledge/traces/twin/evidence'],
+     body:'Runtime operational stores: sessions, approvals, queues, knowledge index, execution traces, the operational twin, and evidence bundles.'},
+  ];
+  const CTX = {tag:'Domain Knowledge',title:'Enterprise Context',
+     body:'Per-tenant, curated domain knowledge that GROUNDS reasoning every turn and makes answers explainable & policy-aware: Enterprise_Context.md, context packages, entities + taxonomy, DOA/judgment matrices, knowledge base (RAG), policies, and business data. Swap this content and the same engine serves a completely different domain.',
+     hint:'This is the "domain" half of the platform-vs-domain separation.'};
+
+  const stack = document.getElementById('stack');
+  LAYERS.forEach(L=>{
+    const d=document.createElement('div');
+    d.className='layer'; d.style.borderLeftColor=L.c; d.dataset.n=L.n;
+    d.innerHTML=`<div class="lh"><span class="lnum" style="background:${L.c}">${L.n}</span>
+      <span class="lname">${L.name}</span> <span class="lsub">${L.sub}</span></div>
+      <div class="lchips">${L.chips.map(c=>`<span class="lchip">${c}</span>`).join('')}</div>`;
+    d.onclick=()=>{ pick(L.n); };
+    stack.appendChild(d);
+  });
+
+  function pick(which){
+    document.querySelectorAll('.layer').forEach(l=>l.classList.remove('sel'));
+    const t=document.getElementById('d-tag'), ti=document.getElementById('d-title'),
+          b=document.getElementById('d-body'), h=document.getElementById('d-hint');
+    if(which==='ctx'){ t.textContent=CTX.tag; ti.textContent=CTX.title; b.textContent=CTX.body; h.textContent=CTX.hint; return; }
+    const L=LAYERS.find(x=>x.n===which); if(!L) return;
+    const el=document.querySelector(`.layer[data-n="${which}"]`); if(el) el.classList.add('sel');
+    t.textContent='Layer '+L.n; ti.textContent=L.name; b.textContent=L.body;
+    h.textContent='Chips above show the key components of this layer.';
+  }
+  pick(5); // default-highlight the Governance Firewall (the differentiator)
+</script>
+</body>
+</html>

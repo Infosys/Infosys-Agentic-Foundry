@@ -1,0 +1,1072 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>New Workstream · IAF AgentOS</title>
+  <!-- Unified Light/Dark theme — FOUC guard must run before first paint -->
+  <script>(function(){try{var m={hybrid:'light',light:'light',dark:'dark'},ls=window.localStorage;var v=m[ls.getItem('iaf_theme')]||m[ls.getItem('iaf_dashboard_theme')]||m[ls.getItem('iaf_workstreams_theme')]||m[ls.getItem('iaf-theme')];if(!v)v=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';var r=document.documentElement;r.setAttribute('data-theme',v);r.classList.add(v==='light'?'light-mode':'dark-mode');r.style.colorScheme=v;}catch(e){}})();</script>
+  <link rel="stylesheet" href="/static/theme.css">
+  <script src="/static/theme.js"></script>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <script defer src="/static/vendor/alpine.min.js"></script>
+  <!-- Auth: auto-inject Bearer token on all API calls + silent refresh on 401 -->
+  <script>
+  // SEC-6: clean up stale localStorage tokens from before cookie migration
+        localStorage.removeItem('iaf_access_token');
+        localStorage.removeItem('iaf_user');
+        (function() {
+      const _origFetch = window.fetch;
+      window.fetch = async function(input, init = {}) {
+          const url = typeof input === 'string' ? input : input.url;
+          const isApiCall = url && (url.startsWith('/') || url.startsWith(location.origin));
+          const isAuthEndpoint = url && (url.includes('/auth/login') || url.includes('/auth/register') ||
+                                         url.includes('/auth/refresh') || url.includes('/auth/policy') ||
+                                         url.includes('/auth/registration-mode'));
+          // SEC-6: httponly cookie sent automatically — no manual Authorization header needed
+          if (isApiCall) init.credentials = init.credentials || 'include';
+          let response = await _origFetch(input, init);
+          if (response.status === 401 && isApiCall && !isAuthEndpoint) {
+              try {
+                  const refresh = await _origFetch('/auth/refresh', { method: 'POST', credentials: 'include' });
+                  if (refresh.ok) {
+                      const data = await refresh.json();
+                      // SEC-6: server updated httponly cookie; no localStorage write needed
+                      response = await _origFetch(input, init);  // cookie updated by server; retry
+                  } else {
+                      // SEC-6: stale tokens cleaned up at interceptor init
+                      window.location.href = (window.__BASE_PATH__ || '') + '/login';
+                  }
+              } catch {}
+          }
+          return response;
+      };
+  })();
+  </script>
+  <style>
+    :root {
+      --bg: #0d1117; --panel: #161b22; --panel-2: #1c232b;
+      --border: #30363d; --text: #e6edf3; --muted: #8b949e;
+      --accent: #2f81f7; --green: #3fb950; --red: #f85149;
+    }
+    :root[data-theme="light"] {
+      --bg: #f7f9fc; --panel: #ffffff; --panel-2: #f3f6fb;
+      --border: #d5deeb; --text: #111827; --muted: #667085;
+      --accent: #2563eb; --green: #15803d; --red: #dc2626;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      font-size: 14px; line-height: 1.45;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .topbar {
+      background: var(--panel); border-bottom: 1px solid var(--border);
+      padding: 12px 20px; display: flex; align-items: center; gap: 24px;
+    }
+    .topbar h1 { font-size: 16px; font-weight: 600; }
+    .topbar nav { display: flex; gap: 16px; font-size: 13px; }
+    .topbar nav a { color: var(--muted); }
+    .topbar nav a.current { color: var(--text); }
+    .container { max-width: 800px; margin: 0 auto; padding: 24px 20px; }
+    .breadcrumb { display: flex; align-items: center; gap: 8px; font-size: 12px;
+      margin-bottom: 12px; color: var(--muted); }
+    .breadcrumb a { color: var(--muted); }
+    .breadcrumb a:hover { color: var(--text); text-decoration: none; }
+    .breadcrumb .sep { color: var(--muted); opacity: .7; }
+    .breadcrumb .current { color: var(--text); font-weight: 650; }
+    .page-head { margin-bottom: 24px; }
+    .page-head h2 { font-size: 22px; font-weight: 600; }
+    .page-head .sub { color: var(--muted); margin-top: 4px; font-size: 13px; }
+    .card {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 8px; padding: 20px; margin-bottom: 16px;
+    }
+    .card h3 { font-size: 12px; text-transform: uppercase;
+                color: var(--muted); margin-bottom: 12px; font-weight: 600;
+                letter-spacing: 0.4px; }
+    .row { display: flex; gap: 14px; margin-bottom: 14px; }
+    .row > .field { flex: 1; }
+    .field label { display: block; font-size: 12px; color: var(--muted);
+                   margin-bottom: 5px; font-weight: 500; }
+    .field input, .field select, .field textarea {
+      width: 100%; padding: 8px 11px; border-radius: 6px;
+      background: var(--panel-2); border: 1px solid var(--border);
+      color: var(--text); font-size: 13px; font-family: inherit;
+    }
+    .field input:focus, .field select:focus, .field textarea:focus {
+      outline: none; border-color: var(--accent);
+    }
+    .field textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+    .field .help { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    .field .help.char-help { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+    .field .char-count { flex: 0 0 auto; font-variant-numeric: tabular-nums; color: var(--muted); }
+    .source-tabs {
+      display: flex; gap: 0; margin-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    /* Rendered as <button> for keyboard operability; these resets keep the
+       native control looking exactly like the old <span> tabs. */
+    .source-tab {
+      padding: 10px 16px; cursor: pointer; font-size: 13px;
+      color: var(--muted); border-bottom: 2px solid transparent;
+      user-select: none;
+      background: none; border-top: none; border-left: none; border-right: none;
+      font-family: inherit; line-height: inherit;
+    }
+    .source-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+    .source-tab:hover { color: var(--text); }
+    .source-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+    .actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+    .btn {
+      background: var(--accent); color: white; border: none;
+      padding: 9px 18px; border-radius: 6px; font-size: 13px;
+      cursor: pointer; font-weight: 500;
+    }
+    .btn:hover { background: #1f6feb; }
+
+    .btn:disabled,
+    .btn[disabled] {
+      background: var(--panel-2); color: var(--muted);
+      border: 1px solid var(--border);
+      opacity: 1; cursor: not-allowed; box-shadow: none;
+    }
+    .btn:disabled:hover,
+    .btn[disabled]:hover { background: var(--panel-2); }
+    .btn.secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+    .btn.secondary:hover { background: #2a323d; }
+    .preview-item {
+      padding: 8px 12px; background: var(--panel-2); margin-bottom: 6px;
+      border-radius: 4px; font-size: 12px; display: flex; gap: 10px;
+    }
+    .preview-item .id { font-weight: 600; min-width: 100px; }
+    .preview-item .desc { color: var(--muted); flex-grow: 1; }
+    .preview-item .actions { display: flex; gap: 4px; }
+    .preview-item button { background: none; border: none; color: var(--red);
+                           cursor: pointer; font-size: 13px; padding: 0 4px; }
+    .alert { padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 14px; }
+    .alert.err { background: rgba(248,81,73,0.1); color: var(--red); border: 1px solid rgba(248,81,73,0.3); }
+    .alert.ok { background: rgba(63,185,80,0.1); color: var(--green); border: 1px solid rgba(63,185,80,0.3); }
+    /* Template preview panel */
+    .tpl-detail { margin-top: 12px; padding: 14px; border: 1px solid var(--border);
+      border-radius: 8px; background: var(--panel-2); }
+    .tpl-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 18px; }
+    .tpl-detail-grid > div { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+    .tpl-k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    .tpl-v { font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+    .tpl-desc { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border);
+      font-size: 12px; color: var(--muted); }
+
+    .create-hint { color: var(--red); font-size: 12px; }
+    [x-cloak] { display: none !important; }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>🛰️ IAF AgentOS</h1>
+  <nav>
+    <a href="/static/index.html">Chat</a>
+    <a href="/static/dashboard_v2.html">Dashboard</a>
+    <a href="/static/workstreams.html" class="current">Workstreams</a>
+  </nav>
+  <!-- REV-5: session-controls.js renders identity + Sign Out here. -->
+  <div data-session-controls></div>
+</div>
+
+<div class="container" x-data="workstreamWizard()" x-init="init()" x-cloak>
+
+  <!-- Breadcrumb trail: back to the Workstreams list. -->
+  <nav class="breadcrumb" aria-label="Breadcrumb">
+    <a href="/static/workstreams.html">← Workstreams</a>
+    <span class="sep" aria-hidden="true">›</span>
+    <span class="current" aria-current="page">New</span>
+  </nav>
+
+  <div class="page-head">
+    <h2>New Workstream</h2>
+    <div class="sub">A workstream is a backlog of items that Mission Mode grinds through autonomously</div>
+  </div>
+
+  <template x-if="error">
+    <div class="alert err" x-text="error"></div>
+  </template>
+  <template x-if="saved">
+    <div class="alert ok">
+      Saved! <a :href="`/static/workstream_detail.html?name=${form.name}`">Open
+      <strong x-text="form.name"></strong></a>
+    </div>
+  </template>
+
+  <!-- Start-from-template (optional). Review a template's contents, then apply. -->
+  <div class="card" x-show="templates.length > 0">
+    <h3>Start from a saved template <span style="color:var(--muted); font-weight: normal; font-size: 13px;">(optional)</span></h3>
+    <div class="row">
+      <div class="field">
+        <label>Template</label>
+        <select x-model="selectedTemplate" @change="previewTemplate($event.target.value)">
+          <option value="">— Start blank —</option>
+          <template x-for="t in templates" :key="t.name">
+            <option :value="t.name" x-text="`${t.name}  ·  ${t.skill || 'no-skill'}${t.has_items_source ? '  ·  has items_source' : ''}`"></option>
+          </template>
+        </select>
+        <div class="help">Pick a template to preview what it contains, then apply it — you still supply the name + items.</div>
+      </div>
+    </div>
+
+    <div class="help" x-show="templateLoading" x-cloak>Loading template…</div>
+
+    <!-- Defect: let users see what a template contains BEFORE applying it. -->
+    <template x-if="templateDetail && selectedTemplate">
+      <div class="tpl-detail">
+        <div class="tpl-detail-grid">
+          <div><span class="tpl-k">Skill</span><span class="tpl-v" x-text="templateDetail.skill || '—'"></span></div>
+          <div><span class="tpl-k">Owner</span><span class="tpl-v" x-text="templateDetail.owner || '—'"></span></div>
+          <div><span class="tpl-k">Priority</span><span class="tpl-v" x-text="templateDetail.priority_strategy || 'sequential'"></span></div>
+          <div><span class="tpl-k">Max attempts</span><span class="tpl-v" x-text="templateDetail.max_attempts_per_item ?? 3"></span></div>
+          <div><span class="tpl-k">Batch / Parallel</span><span class="tpl-v" x-text="`${templateDetail.batch_size ?? 1} / ${templateDetail.parallelism ?? 1}`"></span></div>
+          <div><span class="tpl-k">Cron</span><span class="tpl-v" x-text="templateDetail.cron_schedule || 'none'"></span></div>
+          <div><span class="tpl-k">Items source</span><span class="tpl-v" x-text="templateSourceSummary(templateDetail.items_source)"></span></div>
+          <div><span class="tpl-k">Escalation rules</span><span class="tpl-v" x-text="(templateDetail.escalation && templateDetail.escalation.length) ? `${templateDetail.escalation.length} rule(s)` : 'none'"></span></div>
+        </div>
+        <div class="tpl-desc" x-show="templateDetail.description" x-text="templateDetail.description"></div>
+        <div style="margin-top: 12px;">
+          <button class="btn" @click="applyTemplateDetail()">Apply this template to the form</button>
+          <span class="help" style="margin-left:8px;">Fills the fields below — you can still edit anything.</span>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <div class="card">
+    <h3>1. Basic info</h3>
+    <div class="row">
+      <div class="field">
+        <label>Name <span style="color:var(--red)">*</span></label>
+        <input type="text" x-model="form.name" placeholder="ap_nightly_cleanup"
+               maxlength="63" :pattern="namePattern"
+               :aria-invalid="form.name && !nameValid() ? 'true' : 'false'">
+        <div class="help char-help">
+          <span>lowercase, digits and underscores; starts with a letter; 2–63 characters</span>
+          <span class="char-count" x-text="`${(form.name || '').length}/63`"></span>
+        </div>
+        <div class="help" x-show="form.name && !nameValid()" x-cloak
+             style="color: var(--red)">Name must be 2–63 characters of lowercase letters, digits and underscores, starting with a letter.</div>
+      </div>
+      <div class="field">
+        <label>Display name</label>
+        <input type="text" x-model="form.display_name" maxlength="120" placeholder="AP Nightly Cleanup">
+        <div class="help char-help"><span></span><span class="char-count" x-text="`${(form.display_name || '').length}/120`"></span></div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Owner email</label>
+        <input type="email" x-model="form.owner" maxlength="120" placeholder="Owner email address"
+               pattern="[^\s@]+@[^\s@]+\.[^\s@]+"
+               :aria-invalid="ownerValid() ? 'false' : 'true'">
+        <div class="help char-help"><span>A contact email address for this workstream</span><span class="char-count" x-text="`${(form.owner || '').length}/120`"></span></div>
+        <!-- Defect: enforce email format so malformed contact values are rejected. -->
+        <div class="help" x-show="!ownerValid()" x-cloak style="color: var(--red)">
+          Enter a valid email address.
+        </div>
+      </div>
+      <div class="field">
+        <label>Skill <span style="color:var(--red)">*</span></label>
+        <select x-model="form.skill" :aria-invalid="(form.name && !form.skill) ? 'true' : 'false'">
+          <option value="" disabled>— Select a worker skill —</option>
+          <template x-for="s in skills" :key="s">
+            <option :value="s" x-text="s"></option>
+          </template>
+        </select>
+        <div class="help">Worker skill called by Mission Mode for each item</div>
+        <div class="help" x-show="form.name && !form.skill" x-cloak
+             style="color: var(--red)">Please select a skill.</div>
+      </div>
+    </div>
+    <div class="field">
+      <label>Description</label>
+      <input type="text" x-model="form.description" maxlength="280"
+             placeholder="Resolve AP on-hold invoices nightly, escalate over €25k">
+      <div class="help char-help"><span></span><span class="char-count" x-text="`${(form.description || '').length}/280`"></span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>2. Behaviour</h3>
+    <div class="row">
+      <div class="field">
+        <label>Priority strategy</label>
+        <select x-model="form.priority_strategy">
+          <option value="sequential">Sequential (in-order)</option>
+          <option value="highest_amount">Highest amount first</option>
+          <option value="highest_aged_first">Oldest first</option>
+          <option value="round_robin">Round-robin (fewest attempts)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Max attempts per item</label>
+        <input type="number" min="1" max="20" x-model.number="form.max_attempts_per_item">
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Batch size <span style="color:var(--muted)">(items per cron tick)</span></label>
+        <input type="number" min="1" max="100" x-model.number="form.batch_size">
+        <div class="help">Default 1 = strict one-item-per-tick. Raise (e.g. 5–10) for high-volume backlogs where items are independent.</div>
+      </div>
+      <div class="field">
+        <label>Parallelism <span style="color:var(--muted)">(concurrent workers)</span></label>
+        <input type="number" min="1" max="10" x-model.number="form.parallelism">
+        <div class="help">Default 1 = sequential. Capped at batch size. Use 2–3 for parallel processing of independent items.</div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Cron schedule (cron syntax)</label>
+        <select x-model="form.cron_schedule">
+          <option value="">No cron — drive manually</option>
+          <option value="* * * * *">Every minute</option>
+          <option value="*/5 * * * *">Every 5 minutes</option>
+          <option value="*/15 * * * *">Every 15 minutes</option>
+          <option value="0 * * * *">Hourly (top of hour)</option>
+          <option value="0 2 * * *">Daily at 2am UTC</option>
+        </select>
+        <div class="help">Mission Mode fires once per tick, processing one item</div>
+      </div>
+      <div class="field">
+        <label>Runs as <span style="color:var(--muted)">(if cron set)</span></label>
+
+        <input type="text" :value="cronUserLabel()" readonly
+               placeholder="(your signed-in account)"
+               style="opacity:.85; cursor:default;">
+        <div class="help">Scheduled runs execute under your account.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>3. Items</h3>
+    <!-- Real buttons, not spans: keyboard users must be able to tab to each
+         mode and activate it with Enter/Space. The full ARIA tabs contract is
+         implemented, not just the roles — roving tabindex plus Left/Right/
+         Home/End move selection, and every tab controls the single panel
+         below (only the selected panel is rendered, so one shared tabpanel
+         whose aria-labelledby follows selection is the honest wiring). -->
+    <div class="source-tabs" role="tablist" aria-label="Items input mode"
+         @keydown.arrow-left.prevent="moveSourceMode(-1)"
+         @keydown.arrow-right.prevent="moveSourceMode(1)"
+         @keydown.home.prevent="selectSourceMode(sourceModes[0])"
+         @keydown.end.prevent="selectSourceMode(sourceModes[sourceModes.length - 1])">
+      <button type="button" class="source-tab" role="tab" id="items-tab-manual"
+              aria-controls="items-panel"
+              :class="{ active: sourceMode === 'manual' }"
+              :aria-selected="sourceMode === 'manual' ? 'true' : 'false'"
+              :tabindex="sourceMode === 'manual' ? 0 : -1"
+              @click="selectSourceMode('manual')">✏️ Manual entry</button>
+      <button type="button" class="source-tab" role="tab" id="items-tab-paste"
+              aria-controls="items-panel"
+              :class="{ active: sourceMode === 'paste' }"
+              :aria-selected="sourceMode === 'paste' ? 'true' : 'false'"
+              :tabindex="sourceMode === 'paste' ? 0 : -1"
+              @click="selectSourceMode('paste')">📋 Paste list</button>
+      <button type="button" class="source-tab" role="tab" id="items-tab-yaml"
+              aria-controls="items-panel"
+              :class="{ active: sourceMode === 'yaml' }"
+              :aria-selected="sourceMode === 'yaml' ? 'true' : 'false'"
+              :tabindex="sourceMode === 'yaml' ? 0 : -1"
+              @click="selectSourceMode('yaml')">📄 Paste full YAML</button>
+      <button type="button" class="source-tab" role="tab" id="items-tab-source"
+              aria-controls="items-panel"
+              :class="{ active: sourceMode === 'source' }"
+              :aria-selected="sourceMode === 'source' ? 'true' : 'false'"
+              :tabindex="sourceMode === 'source' ? 0 : -1"
+              @click="selectSourceMode('source')">🔌 Auto-source from system</button>
+    </div>
+
+    <div id="items-panel" role="tabpanel" tabindex="0" :aria-labelledby="`items-tab-${sourceMode}`">
+
+    <template x-if="sourceMode === 'manual'">
+      <div>
+        <div class="row">
+          <div class="field">
+            <label>Item ID</label>
+            <input type="text" x-model="newItem.id" placeholder="inv-3024">
+          </div>
+          <div class="field" style="flex: 3">
+            <label>Description</label>
+            <input type="text" x-model="newItem.description"
+                   @keydown.enter.prevent="addItem()"
+                   placeholder="Resolve invoice INV-3024 (PO_QTY_MISMATCH)">
+          </div>
+          <div class="field" style="flex: 0 0 auto; align-self: flex-end;">
+            <button class="btn secondary" @click="addItem()"
+                    :disabled="!newItem.id || !newItem.description"
+                    :title="!newItem.id ? 'Enter an item ID to add' : (!newItem.description ? 'Enter a description to add' : 'Add this item')">Add</button>
+          </div>
+        </div>
+        <!-- Defect: disabled <button> doesn't reliably show a hover tooltip, so
+             the requirement is also stated inline. -->
+        <div class="help" x-show="!newItem.id || !newItem.description"
+             x-text="!newItem.id ? 'Enter an item ID to add.' : 'Enter a description to add.'"></div>
+      </div>
+    </template>
+
+    <template x-if="sourceMode === 'paste'">
+      <div>
+        <div class="field">
+          <label>One item per line — format: <code>id | description</code></label>
+          <textarea x-model="pasteText" rows="10"
+                    placeholder="inv-3024 | Resolve INV-3024 PO_QTY_MISMATCH
+inv-3050 | Resolve INV-3050 NO_PO
+inv-3060 | Resolve INV-3060 PRICE_VARIANCE"></textarea>
+        </div>
+        <button class="btn secondary" @click="parsePaste()">Parse and add items</button>
+      </div>
+    </template>
+
+    <template x-if="sourceMode === 'yaml'">
+      <div>
+        <div class="field">
+          <label>Paste a full workstream YAML — items will be merged</label>
+          <textarea x-model="yamlText" rows="12"
+                    placeholder="items:
+  - id: inv-3024
+    description: ...
+    acceptance_criteria:
+      - Invoice resolved or escalated"></textarea>
+        </div>
+        <button class="btn secondary" @click="parseYaml()">Parse YAML</button>
+        <div class="help" style="margin-top: 6px;">Only the items: array is consumed.</div>
+      </div>
+    </template>
+
+    <template x-if="sourceMode === 'source'">
+      <div>
+        <div class="help" style="margin-bottom: 12px;">
+          Items will be pulled from an external system on every cron tick.
+          New items get appended; existing items keep their status &amp; attempts.
+          You can also paste/enter items manually — both coexist.
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>Source type</label>
+            <select x-model="src.type">
+              <option value="sql">SQL — tenant SQLite database</option>
+              <option value="http">HTTP — REST endpoint returning JSON</option>
+              <option value="directory">Directory — scan files matching a pattern</option>
+              <option value="skill">Skill — delegate to a worker skill</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Refresh strategy</label>
+            <select x-model="src.refresh_strategy">
+              <option value="append_new">append_new (safe — only new ids added)</option>
+              <option value="merge">merge (update existing + append new)</option>
+              <option value="replace_all">replace_all (DESTRUCTIVE — clears in-flight)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- SQL source -->
+        <template x-if="src.type === 'sql'">
+          <div>
+            <div class="row">
+              <div class="field">
+                <label>Database name (under tenant's shared/databases/)</label>
+                <input type="text" x-model="src.database" placeholder="ap_regular">
+              </div>
+            </div>
+            <div class="field">
+              <label>SELECT query — must return columns named id (or invoice_id, item_id, …) and description (or task, summary)</label>
+              <textarea x-model="src.query" rows="6"
+placeholder="SELECT invoice_id AS id,
+       'Resolve ' || invoice_id || ' (' || amount_eur || ' EUR, ' || vendor_id || ')' AS description,
+       amount_eur AS priority_metric
+FROM invoices
+WHERE status IN ('pending', 'on_hold', 'disputed')"></textarea>
+              <div class="help">Read-only — only SELECT is permitted.</div>
+            </div>
+          </div>
+        </template>
+
+        <!-- HTTP source -->
+        <template x-if="src.type === 'http'">
+          <div>
+            <div class="row">
+              <div class="field" style="flex: 2;">
+                <label>URL</label>
+                <input type="text" x-model="src.url" placeholder="http://localhost:9092/aging">
+              </div>
+              <div class="field">
+                <label>Method</label>
+                <select x-model="src.method">
+                  <option>GET</option>
+                  <option>POST</option>
+                </select>
+              </div>
+            </div>
+            <div class="row">
+              <div class="field">
+                <label>Credential name (optional)</label>
+                <input type="text" x-model="src.credential" placeholder="finance_api_readonly">
+                <div class="help">Looked up in credentials.yaml; injected as X-API-Key or Bearer.</div>
+              </div>
+              <div class="field">
+                <label>items_path (dotted path into JSON)</label>
+                <input type="text" x-model="src.items_path" placeholder="items">
+                <div class="help">e.g. <code>data.invoices</code>; leave empty if root is already a list.</div>
+              </div>
+            </div>
+            <div class="field">
+              <label>item_template (YAML) — map source fields to item schema</label>
+              <textarea x-model="src.item_template_yaml" rows="5"
+placeholder="id: invoice_id
+description: 'Aging {invoice_id} ({amount_eur} EUR, {exception_code})'
+priority_metric: amount_eur"></textarea>
+              <div class="help">Leave empty if your source already returns <code>id</code> + <code>description</code>.</div>
+            </div>
+          </div>
+        </template>
+
+        <!-- Directory source -->
+        <template x-if="src.type === 'directory'">
+          <div>
+            <div class="row">
+              <div class="field" style="flex: 2;">
+                <label>Path (under enterprise_root/tenants/&lt;tenant&gt;/)</label>
+                <input type="text" x-model="src.path" placeholder="/agents/enterprise_agent/users/&lt;user-id&gt;/">
+              </div>
+              <div class="field">
+                <label>Glob pattern</label>
+                <input type="text" x-model="src.pattern" placeholder="*.pdf">
+              </div>
+            </div>
+            <div class="row">
+              <div class="field">
+                <label>ID template</label>
+                <input type="text" x-model="src.id_template" placeholder="review-{stem}">
+                <div class="help">Placeholders: <code>{filename}</code> <code>{stem}</code> <code>{path}</code> <code>{ext}</code></div>
+              </div>
+              <div class="field">
+                <label>Description template</label>
+                <input type="text" x-model="src.description_template" placeholder="Review {filename}">
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- Skill source -->
+        <template x-if="src.type === 'skill'">
+          <div>
+            <div class="row">
+              <div class="field">
+                <label>Skill to delegate to</label>
+                <select x-model="src.skill">
+                  <template x-for="s in skills" :key="s">
+                    <option :value="s" x-text="s"></option>
+                  </template>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <label>Query to send to the skill</label>
+              <input type="text" x-model="src.query"
+                     placeholder="list pending AP invoices needing nightly attention; return a JSON array of {id, description}">
+              <div class="help">Skill must return a JSON array. Code fences (<code>```json</code>) are tolerated.</div>
+            </div>
+          </div>
+        </template>
+
+        <div class="alert ok" style="margin-top: 12px;" x-show="src.type">
+          On save, this source will be polled on every cron tick. No items
+          will be pre-listed in the YAML; the engine fills them in live.
+        </div>
+
+
+        <div style="margin-top: 12px;">
+          <button class="btn secondary" @click="testSource()" :disabled="sourceTesting">
+            <span x-text="sourceTesting ? 'Testing…' : 'Test source'"></span>
+          </button>
+          <template x-if="sourceTest && sourceTest.ok">
+            <div class="alert ok" style="margin-top: 10px;">
+              <strong x-text="sourceTest.count === null
+                ? 'Configuration looks valid.'
+                : `✓ Source returned ${sourceTest.count} item(s).`"></strong>
+              <span x-show="sourceTest.note" x-text="sourceTest.note"></span>
+              <template x-if="sourceTest.sample && sourceTest.sample.length">
+                <div style="margin-top: 6px;">
+                  <template x-for="s in sourceTest.sample" :key="s.id">
+                    <div class="preview-item">
+                      <span class="id" x-text="s.id"></span>
+                      <span class="desc" x-text="s.description"></span>
+                    </div>
+                  </template>
+                </div>
+              </template>
+            </div>
+          </template>
+          <template x-if="sourceTest && !sourceTest.ok">
+            <div class="alert err" style="margin-top: 10px;">
+              <template x-for="e in (sourceTest.errors || [])" :key="e">
+                <div x-text="e"></div>
+              </template>
+            </div>
+          </template>
+        </div>
+      </div>
+    </template>
+    </div><!-- /#items-panel -->
+
+    <div style="margin-top: 16px;">
+      <strong x-text="form.items.length"></strong>
+      <span style="color: var(--muted)"> item(s) so far:</span>
+      <div style="margin-top: 8px; max-height: 280px; overflow-y: auto;">
+        <template x-for="(it, i) in form.items" :key="it.id">
+          <div class="preview-item">
+            <span class="id" x-text="it.id"></span>
+            <span class="desc" x-text="it.description"></span>
+            <span class="actions">
+              <button @click="form.items.splice(i, 1)" title="remove">✕</button>
+            </span>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  <div class="actions" style="flex-direction: column; align-items: flex-end; gap: 8px;">
+    <div class="create-hint" x-show="createDisabledReason()" x-cloak x-text="createDisabledReason()"></div>
+    <div style="display:flex; gap:10px;">
+      <a class="btn secondary" href="/static/workstreams.html">Cancel</a>
+      <button class="btn" @click="submit()"
+              :disabled="!nameValid() || !form.skill || !ownerValid() ||
+                         (sourceMode === 'source' && !(sourceTest && sourceTest.ok)) ||
+                         submitting">
+        <span x-text="submitting ? 'Saving…' : 'Create + Activate'"></span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+function workstreamWizard() {
+  return {
+    form: {
+      name: '',
+      display_name: '',
+      owner: '',
+      description: '',
+      skill: '',
+      priority_strategy: 'sequential',
+      max_attempts_per_item: 3,
+      batch_size: 1,
+      parallelism: 1,
+      items: [],
+      cron_schedule: '*/5 * * * *',
+      cron_user_id: '',
+    },
+    sourceMode: 'manual',
+    // Tab order for the Items mode switcher — the arrow-key handler walks this
+    // list, so it stays in step with the markup rather than duplicating it.
+    sourceModes: ['manual', 'paste', 'yaml', 'source'],
+    // Single source of truth for the Name rule: the input binds this as its
+    // `pattern` and nameValid() tests the same string, so the visible hint,
+    // the native validity state and the submit gate can never disagree. The
+    // bounds mirror WorkstreamStore._NAME_RE (`^[a-z][a-z0-9_]{1,62}$`), which
+    // is what the API actually enforces — without the length cap a 64+ char
+    // name would pass here and then be rejected on save.
+    namePattern: '[a-z][a-z0-9_]{1,62}',
+    skills: ['general', 'fa_ap', 'fa_ar', 'fa_gl', 'ccdops'],
+    newItem: { id: '', description: '' },
+    pasteText: '',
+    yamlText: '',
+    // items_source config (built when sourceMode === 'source')
+    src: {
+      type: 'sql',
+      refresh_strategy: 'append_new',
+      database: '',
+      query: '',
+      url: '',
+      method: 'GET',
+      credential: '',
+      items_path: '',
+      item_template_yaml: '',
+      path: '',
+      pattern: '*',
+      id_template: '{stem}',
+      description_template: 'Review {filename}',
+      skill: '',
+      query: '',
+    },
+    error: '',
+    saved: false,
+    submitting: false,
+    sourceTesting: false,
+    sourceTest: null,
+
+    // Template picker state
+    templates: [],
+    selectedTemplate: '',
+    templateDetail: null,
+    templateLoading: false,
+    me: {},
+
+    async init() {
+      // Pull current user_id from /auth/me
+      try {
+        const r = await fetch('/auth/me');
+        if (r.ok) {
+          const me = await r.json();
+          this.me = me || {};
+          this.form.cron_user_id = me.user_id || me.email || '';
+        }
+      } catch {}
+      // Pull skill list
+      try {
+        const r = await fetch('/api/skills');
+        if (r.ok) {
+          const data = await r.json();
+          const ss = (data.skills || []).map(s => s.name || s).filter(n => n && n !== 'mission_mode');
+          if (ss.length > 0) this.skills = ss;
+        }
+      } catch {}
+      // Pull saved workstream templates (best-effort; UI hides the card if list is empty)
+      try {
+        const r = await fetch('/api/workstream-templates');
+        if (r.ok) {
+          const data = await r.json();
+          this.templates = data.templates || [];
+        }
+      } catch {}
+      this.$watch('JSON.stringify(src) + "|" + sourceMode', () => { this.sourceTest = null; });
+    },
+
+    // Fetch and DISPLAY a template's full detail without touching the form, so
+    // the user can review what it contains before deciding to apply it.
+    async previewTemplate(templateName) {
+      this.templateDetail = null;
+      if (!templateName) return;
+      this.templateLoading = true;
+      try {
+        const r = await fetch(`/api/workstream-templates/${encodeURIComponent(templateName)}`);
+        if (!r.ok) {
+          this.error = `Failed to load template: HTTP ${r.status}`;
+          return;
+        }
+        this.templateDetail = await r.json();
+        this.error = '';
+      } catch (e) {
+        this.error = `Template load failed: ${e.message}`;
+      } finally {
+        this.templateLoading = false;
+      }
+    },
+
+    templateSourceSummary(src) {
+      if (!src || typeof src !== 'object') return 'manual items';
+      const t = src.type || 'source';
+      const detail = src.database || src.url || src.path || src.skill || '';
+      return detail ? `${t}: ${detail}` : t;
+    },
+
+    applyTemplateDetail() {
+      const tpl = this.templateDetail;
+      if (!tpl) return;
+      if (tpl.display_name)        this.form.display_name        = tpl.display_name;
+      if (tpl.owner)               this.form.owner               = tpl.owner;
+      if (tpl.description)         this.form.description         = tpl.description;
+      if (tpl.skill)               this.form.skill               = tpl.skill;
+      if (tpl.priority_strategy)   this.form.priority_strategy   = tpl.priority_strategy;
+      if (tpl.max_attempts_per_item != null) this.form.max_attempts_per_item = tpl.max_attempts_per_item;
+      if (tpl.batch_size != null)  this.form.batch_size           = tpl.batch_size;
+      if (tpl.parallelism != null) this.form.parallelism          = tpl.parallelism;
+      if (tpl.cron_schedule)       this.form.cron_schedule       = tpl.cron_schedule;
+      if (tpl.escalation)          this.form.escalation          = tpl.escalation;
+      // items_source: copy as-is so the new workstream pulls its items dynamically too
+      if (tpl.items_source) {
+        this.sourceMode = 'source';
+        this.src = Object.assign({}, this.src, tpl.items_source);
+      }
+      this.error = '';
+    },
+
+    cronUserLabel() {
+      return this.me.email || this.me.name || this.me.display_name || this.form.cron_user_id || '';
+    },
+
+    ownerValid() {
+      const v = (this.form.owner || '').trim();
+      if (!v) return true;
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+    },
+
+    createDisabledReason() {
+      if (this.submitting) return '';
+      if (!this.form.name) return 'Enter a workstream name to continue.';
+      if (!this.nameValid()) return 'Fix the workstream name to match the rule above.';
+      if (!this.form.skill) return 'Please select a skill.';
+      if (!this.ownerValid()) return 'Enter a valid owner email address.';
+      if (this.sourceMode === 'source' && !(this.sourceTest && this.sourceTest.ok)) {
+        return 'Test the auto-source successfully before creating.';
+      }
+      return '';
+    },
+
+    /** Select an Items input mode and move focus onto its tab, so the roving
+     * tabindex and the visible focus ring follow the selection. */
+    selectSourceMode(mode) {
+      this.sourceMode = mode;
+      this.$nextTick(() => document.getElementById(`items-tab-${mode}`)?.focus());
+    },
+
+    /** Left/Right arrow navigation across the tablist, wrapping at both ends —
+     * the half of the ARIA tabs contract that plain buttons do not give you. */
+    moveSourceMode(delta) {
+      const modes = this.sourceModes;
+      const next = (modes.indexOf(this.sourceMode) + delta + modes.length) % modes.length;
+      this.selectSourceMode(modes[next]);
+    },
+
+    /** True when Name satisfies the same pattern the input advertises.
+     * Anchored end-to-end: `pattern` is implicitly anchored by the browser,
+     * so a bare RegExp test would wrongly accept "AP Nightly!" (it matches
+     * a substring) and leave the submit button enabled on an invalid form.
+     * Tests the untrimmed value — that is what the native `pattern` check and
+     * the submitted payload both use, so trimming here would let " name "
+     * enable Create and report aria-invalid=false before the server refused it. */
+    nameValid() {
+      const value = this.form.name || '';
+      if (!value) return false;
+      return new RegExp(`^(?:${this.namePattern})$`).test(value);
+    },
+
+    addItem() {
+      if (!this.newItem.id || !this.newItem.description) return;
+      if (this.form.items.some(i => i.id === this.newItem.id)) {
+        this.error = `Duplicate item id: ${this.newItem.id}`;
+        return;
+      }
+      this.form.items.push({
+        id: this.newItem.id.trim(),
+        description: this.newItem.description.trim(),
+        acceptance_criteria: [],
+      });
+      this.newItem = { id: '', description: '' };
+      this.error = '';
+    },
+
+    parsePaste() {
+      const lines = this.pasteText.split('\n').map(l => l.trim()).filter(Boolean);
+      let added = 0;
+      for (const line of lines) {
+        const m = line.match(/^([^|]+?)\s*\|\s*(.+)$/);
+        if (!m) continue;
+        const id = m[1].trim();
+        const desc = m[2].trim();
+        if (!id || !desc) continue;
+        if (this.form.items.some(i => i.id === id)) continue;
+        this.form.items.push({ id, description: desc, acceptance_criteria: [] });
+        added++;
+      }
+      this.pasteText = '';
+      this.error = added === 0 ? 'No items parsed — use "id | description" per line' : '';
+    },
+
+    parseYaml() {
+      // Very small YAML items extractor — assumes well-formed input from a trusted user.
+      // For full YAML, the better path is server-side validation via POST and inspect errors.
+      try {
+        const text = this.yamlText;
+        // crude block parser: look for "items:" then list rows starting with "- id:"
+        const re = /-\s*id:\s*(['"]?)([^\s'"]+)\1\s*\n\s*description:\s*['"]?([^\n'"]+)['"]?/g;
+        let m, added = 0;
+        while ((m = re.exec(text))) {
+          const id = m[2].trim();
+          const desc = m[3].trim();
+          if (this.form.items.some(i => i.id === id)) continue;
+          this.form.items.push({ id, description: desc, acceptance_criteria: [] });
+          added++;
+        }
+        this.yamlText = '';
+        this.error = added === 0 ? 'No items found — make sure items: array has id + description' : '';
+      } catch (e) {
+        this.error = 'YAML parse failed: ' + e.message;
+      }
+    },
+
+    /**
+     * Build the items_source dict if the user selected the auto-source tab.
+     * Returns null when sourceMode != 'source' (so the YAML field stays absent).
+     */
+    buildSourceConfig() {
+      if (this.sourceMode !== 'source') return null;
+      const s = this.src;
+      const out = { type: s.type, refresh_strategy: s.refresh_strategy };
+      if (s.type === 'sql') {
+        if (!s.database || !s.query) {
+          this.error = 'SQL source needs database + query';
+          return null;
+        }
+        out.database = s.database.trim();
+        out.query = s.query.trim();
+      } else if (s.type === 'http') {
+        if (!s.url) { this.error = 'HTTP source needs url'; return null; }
+        out.url = s.url.trim();
+        out.method = s.method || 'GET';
+        if (s.credential) out.credential = s.credential.trim();
+        if (s.items_path) out.items_path = s.items_path.trim();
+        if (s.item_template_yaml && s.item_template_yaml.trim()) {
+          // Inline tiny YAML parser — just handles `key: value` lines
+          const tmpl = {};
+          for (const line of s.item_template_yaml.split('\n')) {
+            const m = line.match(/^\s*([a-z_]+)\s*:\s*(.+?)\s*$/i);
+            if (!m) continue;
+            let val = m[2];
+            // Strip matching surrounding quotes
+            if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+              val = val.slice(1, -1);
+            }
+            tmpl[m[1]] = val;
+          }
+          if (Object.keys(tmpl).length) out.item_template = tmpl;
+        }
+      } else if (s.type === 'directory') {
+        if (!s.path) { this.error = 'Directory source needs path'; return null; }
+        out.path = s.path.trim();
+        out.pattern = s.pattern || '*';
+        if (s.id_template) out.id_template = s.id_template;
+        if (s.description_template) out.description_template = s.description_template;
+      } else if (s.type === 'skill') {
+        if (!s.skill || !s.query) { this.error = 'Skill source needs skill + query'; return null; }
+        out.skill = s.skill;
+        out.query = s.query;
+      }
+      return out;
+    },
+
+
+    async testSource() {
+      this.error = '';
+      const cfg = this.buildSourceConfig();
+      if (!cfg) {
+        this.sourceTest = { ok: false, errors: [this.error || 'Source config is incomplete.'] };
+        return;
+      }
+      this.sourceTesting = true;
+      try {
+        const r = await fetch('/api/workstreams/preview-source', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items_source: cfg }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          this.sourceTest = { ok: false, errors: [`Validation failed (${r.status})`] };
+        } else {
+          this.sourceTest = data;
+        }
+      } catch (e) {
+        this.sourceTest = { ok: false, errors: [String(e)] };
+      } finally {
+        this.sourceTesting = false;
+      }
+    },
+
+    async submit() {
+      this.error = '';
+      if (!this.ownerValid()) {
+        this.error = 'Enter a valid owner email address.';
+        return;
+      }
+      if (this.sourceMode === 'source') {
+        if (!this.sourceTest) {
+          await this.testSource();
+        }
+        if (!this.sourceTest || !this.sourceTest.ok) {
+          this.error = 'Test the auto-source successfully before creating the workstream.';
+          return;
+        }
+      }
+      this.submitting = true;
+      try {
+        const payload = {
+          name: this.form.name,
+          display_name: this.form.display_name || this.form.name,
+          owner: this.form.owner || '',
+          description: this.form.description || '',
+          skill: this.form.skill,
+          priority_strategy: this.form.priority_strategy,
+          max_attempts_per_item: parseInt(this.form.max_attempts_per_item) || 3,
+          batch_size: parseInt(this.form.batch_size) || 1,
+          parallelism: parseInt(this.form.parallelism) || 1,
+          items: this.form.items.map(i => ({
+            id: i.id,
+            description: i.description,
+            acceptance_criteria: i.acceptance_criteria || [],
+          })),
+          items_source: this.buildSourceConfig(),
+          cron_schedule: this.form.cron_schedule || null,
+          cron_user_id: this.form.cron_user_id || null,
+        };
+        const r = await fetch('/api/workstreams', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!r.ok) {
+          const detail = await r.json().catch(() => ({}));
+          this.error = `Save failed (${r.status}): ${JSON.stringify(detail.detail || detail)}`;
+        } else {
+          this.saved = true;
+          setTimeout(() => { location.href = (window.__BASE_PATH__ || '') + `/static/workstream_detail.html?name=${this.form.name}`; }, 1200);
+        }
+      } catch (e) {
+        this.error = String(e);
+      } finally {
+        this.submitting = false;
+      }
+    },
+  };
+}
+</script>
+<script>
+window.AgentProPageContext = function() {
+  const root = document.querySelector('[x-data="workstreamWizard()"]');
+  const app = window.Alpine && root ? Alpine.$data(root) : {};
+  return {
+    source_page: 'workstream_new',
+    page: 'workstream_new',
+    sourceMode: app.sourceMode,
+    draftWorkstream: {
+      name: app.form?.name,
+      display_name: app.form?.display_name,
+      owner: app.form?.owner,
+      skill: app.form?.skill,
+      description: app.form?.description,
+      priority_strategy: app.form?.priority_strategy,
+      batch_size: app.form?.batch_size,
+      parallelism: app.form?.parallelism,
+      cron_schedule: app.form?.cron_schedule,
+      itemCount: Array.isArray(app.form?.items) ? app.form.items.length : 0,
+    },
+    sourceConfig: app.sourceMode === 'source' ? {
+      type: app.src?.type,
+      database: app.src?.database,
+      url: app.src?.url,
+      directory: app.src?.directory,
+      skill: app.src?.skill,
+      query: app.src?.query,
+    } : null,
+    templates: Array.isArray(app.templates) ? app.templates.length : 0,
+    saved: app.saved,
+    error: app.error,
+  };
+};
+</script>
+<script src="/static/ask-twin.js"></script>
+<script src="/static/session-controls.js"></script>
+</body>
+</html>

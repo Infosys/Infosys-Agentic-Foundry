@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+#
+# agentos_act — Headlong skill: request a governed action from AgentOS.
+#
+# POSTs to the AgentOS observer gateway (/api/observers/act) with the service
+# X-API-Key. The gateway enforces the observer's trust tier + allowlist and
+# routes the action through human-in-the-loop approval. This is the ONLY write
+# path available to an observer.
+#
+# Env (provided by the identity's activate / .env):
+#   OBSERVERS_GATEWAY_URL   default http://127.0.0.1:8081
+#   OBSERVERS_API_KEY       service key (must match the server)
+#   IDENTITY_NAME           the observer name (provenance)
+#
+set -euo pipefail
+
+GATEWAY="${OBSERVERS_GATEWAY_URL:-http://127.0.0.1:8081}"
+API_KEY="${OBSERVERS_API_KEY:-}"
+OBSERVER="${IDENTITY_NAME:-unknown}"
+
+SKILL=""
+TASK=""
+CONTEXT=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --skill)   SKILL="$2";   shift 2 ;;
+    --task)    TASK="$2";    shift 2 ;;
+    --context) CONTEXT="$2"; shift 2 ;;
+    *) echo "unknown arg: $1" >&2; exit 2 ;;
+  esac
+done
+
+if [[ -z "$SKILL" || -z "$TASK" ]]; then
+  echo "usage: agentos_act --skill <name> --task <text> [--context <text>]" >&2
+  exit 2
+fi
+
+# Build JSON safely. Prefer jq (handles quoting/escaping, no fragile python
+# resolution); fall back to a known-good python3 only if jq is absent.
+if command -v jq >/dev/null 2>&1; then
+  PAYLOAD=$(jq -n \
+    --arg observer "$OBSERVER" --arg skill "$SKILL" \
+    --arg task "$TASK" --arg note "$CONTEXT" \
+    '{observer:$observer, skill:$skill, task:$task, context:{note:$note}, approval:"human"}')
+else
+  PY=$(command -v python3.13 || command -v python3)
+  PAYLOAD=$(OBSERVER="$OBSERVER" SKILL="$SKILL" TASK="$TASK" CONTEXT="$CONTEXT" "$PY" -c '
+import json, os
+print(json.dumps({
+    "observer": os.environ["OBSERVER"],
+    "skill":    os.environ["SKILL"],
+    "task":     os.environ["TASK"],
+    "context":  {"note": os.environ.get("CONTEXT", "")},
+    "approval": "human",
+}))')
+fi
+
+if [[ -z "$PAYLOAD" ]]; then
+  echo "agentos_act: failed to build request payload" >&2; exit 3
+fi
+
+# Build argv as an array so the conditional API-key header is passed as a single,
+# properly-quoted argument (an unquoted ${VAR:+...} expansion word-splits the header
+# into separate argv entries and curl never receives a valid X-API-Key).
+CURL_ARGS=(-sS -X POST "${GATEWAY}/api/observers/act" -H "Content-Type: application/json")
+if [[ -n "$API_KEY" ]]; then
+  CURL_ARGS+=(-H "X-API-Key: ${API_KEY}")
+fi
+curl "${CURL_ARGS[@]}" -d "${PAYLOAD}"
+echo

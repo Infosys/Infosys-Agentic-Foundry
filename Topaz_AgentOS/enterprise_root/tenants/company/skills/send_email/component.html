@@ -1,0 +1,36 @@
+<div class="skill-card skill-email" data-skill-component="send_email">
+  <div class="skill-card-head">
+    <div>
+      <div class="skill-card-kicker">Governed Action</div>
+      <h4>Send Email</h4>
+    </div>
+    <span class="skill-status" data-status>Draft</span>
+  </div>
+  <div class="skill-form-grid">
+    <label>
+      <span>To</span>
+      <input data-field="to" value="{{to}}" placeholder="recipient@example.com">
+    </label>
+    <label>
+      <span>CC</span>
+      <input data-field="cc" value="{{cc}}" placeholder="cc@example.com">
+    </label>
+    <label>
+      <span>From</span>
+      <input data-field="from_address" value="{{from}}" placeholder="sender@example.com">
+    </label>
+    <label>
+      <span>Subject</span>
+      <input data-field="subject" value="{{subject}}" placeholder="Subject">
+    </label>
+    <label class="wide">
+      <span>Body</span>
+      <textarea data-field="body" rows="8" placeholder="Email body">{{body}}</textarea>
+    </label>
+  </div>
+  <div class="skill-card-actions">
+    <button type="button" class="btn secondary" data-action="skill-reset">Reset Draft</button>
+    <button type="button" class="btn" data-action="send-email">Send Email</button>
+  </div>
+  <div class="skill-card-note" data-message>Review and edit the fields. You will be asked to confirm before sending.</div>
+</div>

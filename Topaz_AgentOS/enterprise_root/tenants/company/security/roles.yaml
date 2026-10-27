@@ -1,0 +1,25 @@
+version: '1.0'
+description: "Role \u2192 permission definitions for tenant 'company'."
+roles:
+- id: user
+  name: User
+  description: Consume agents and skills; manage own data only.
+  permissions:
+  - agents.use
+  - skills.use
+- id: developer
+  name: Developer
+  description: Build and test skills, agents, and developer tools; run evaluations.
+  permissions:
+  - agents.use
+  - skills.use
+  - skills.author
+  - agents.author
+  - tools.dev
+  - knowledge.write
+  - evals.run
+- id: admin
+  name: Administrator
+  description: "Full control plane \u2014 users, providers, security, schedules, everything."
+  permissions:
+  - '*'
