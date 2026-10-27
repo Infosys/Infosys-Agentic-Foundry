@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta:__legacy__"
+
+[project]
+name = "iaf-agent-skills"
+version = "1.0.0"
+description = "Skill-based routing and generic agent framework built on IAF-Agent-OS"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Infosys Generative AI", email = "genai@infosys.com"}
+]
+keywords = ["agent", "skills", "llm", "langchain", "langgraph", "ai"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+dependencies = [
+    "agentos-contracts>=0.1.0",
+    "agentos-model>=0.1.0",
+    "pyyaml>=6.0",
+    "langchain>=0.3.0",
+    "langchain-core>=0.3.0",
+    "langchain-openai>=0.2.0",
+    "langgraph>=0.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+]
+
+[project.urls]
+Homepage = "https://github.com/Infosys-Generative-AI/IAF_Agent_Skills"
+Repository = "https://github.com/Infosys-Generative-AI/IAF_Agent_Skills.git"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["iaf_agent_skills*"]
+
+# Platform hooks ship as package data so the framework-owned governance manifest
+# and its scripts survive an installed/built package (not just editable source).
+[tool.setuptools.package-data]
+"iaf_agent_skills.platform_hooks" = ["hooks.yaml", "scripts/*.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v"

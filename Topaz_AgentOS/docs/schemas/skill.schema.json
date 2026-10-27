@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iaf-agentos.local/schemas/skill.schema.json",
+  "title": "IAF AgentOS SKILL.md frontmatter",
+  "description": "Schema for the YAML frontmatter block at the top of every SKILL.md. Mirrors the fields read by IAF-Agent-Skills/iaf_agent_skills/loader.py.",
+  "type": "object",
+  "required": ["name", "description", "execution_mode"],
+  "additionalProperties": true,
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "Skill identifier. Lower-case snake_case; must match the parent folder name."
+    },
+    "version": {
+      "type": "string",
+      "default": "1.0",
+      "description": "Semantic-ish version string. Bump on breaking changes to triggers, tools, or contract."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 10,
+      "description": "Single-paragraph summary of what the skill does. Used by routers and the orchestrator manager LLM to decide when to invoke."
+    },
+    "execution_mode": {
+      "type": "string",
+      "enum": ["react", "workflow", "parallel", "supervisor", "orchestrator", "planned"],
+      "default": "react",
+      "description": "How the skill runs. 'react' = LLM picks tools each turn. 'workflow' = deterministic DAG. 'parallel' = fan-out. 'supervisor' = fixed worker fan-out. 'orchestrator' = manager LLM dynamically calls worker_skills. 'planned' = DAG planner."
+    },
+    "react_runtime": {
+      "type": "string",
+      "enum": ["langgraph", "native"],
+      "default": "langgraph",
+      "description": "Implementation runtime for execution_mode=react. 'langgraph' preserves the current LangGraph ReAct loop. 'native' selects the provider-native React runtime when an adapter is configured; otherwise rollback/fallback remains langgraph. This is not an execution_mode."
+    },
+    "triggers": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Phrases the router matches against user queries to suggest this skill."
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["shell", "write_file", "run_sql_query", "execute_code", "query_memory", "invoke_skill", "invoke_plan", "create_plan", "request_human_approval"]
+      },
+      "description": "Whitelist of tools the SkillAgent may bind. Final list is further filtered by entitlement policy."
+    },
+    "mcp_tools": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Names of MCP-provided tools to bind for this skill."
+    },
+    "mcp_connections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {"type": "string"},
+          "url": {"type": "string"},
+          "transport": {"type": "string", "enum": ["stdio", "sse", "http"]}
+        }
+      },
+      "description": "MCP connections to mount before the ReAct loop starts."
+    },
+    "context_files": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Reference list of markdown context files, read by the Skill Builder for display. NOTE: the runtime loader injects only the singular 'context_file' into the prompt; use that field for runtime injection."
+    },
+    "context_file": {
+      "type": "string",
+      "default": "",
+      "description": "Single per-skill context markdown (virtual path, e.g. /shared/contexts/x.md). Read by loader.py and auto-injected into the prompt when this skill is active. Empty string means none."
+    },
+    "connections": {
+      "type": "array",
+      "items": {"type": "object"},
+      "description": "Data connections (database/api/erp) bound for this skill. Read by loader.py into Skill.connections."
+    },
+    "profile": {
+      "type": "string",
+      "default": "",
+      "description": "Harness execution profile. Read by loader.py; empty string means the agent/tenant default profile."
+    },
+    "knowledge": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Knowledge entries this skill writes/reads in MEMORY.md. Used by learning hooks."
+    },
+    "sql_mode": {
+      "type": "string",
+      "enum": ["read_only", "read_write"],
+      "default": "read_only",
+      "description": "Whether run_sql_query may issue DML/DDL. Defaults to read-only."
+    },
+    "max_steps": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "default": 10,
+      "description": "Hard cap on iterations. For orchestrator/planned modes this bounds the manager loop; for react it bounds tool calls."
+    },
+    "worker_skills": {
+      "type": "array",
+      "description": "For execution_mode=supervisor/orchestrator. Either a list of skill names (strings) or objects with name + description.",
+      "items": {
+        "oneOf": [
+          {"type": "string"},
+          {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+              "name": {"type": "string"},
+              "description": {"type": "string"},
+              "task": {"type": "string"}
+            }
+          }
+        ]
+      }
+    },
+    "steps": {
+      "type": "array",
+      "description": "For execution_mode=workflow/parallel. Ordered list of steps; the engine executes them deterministically.",
+      "items": {
+        "type": "object",
+        "required": ["name", "action"],
+        "properties": {
+          "name": {"type": "string"},
+          "action": {"type": "string", "enum": ["shell", "skill", "condition", "run_sql_query", "write_file", "execute_code", "llm"]},
+          "params": {"type": "object"},
+          "depends_on": {"type": "array", "items": {"type": "string"}},
+          "skill": {"type": "string"},
+          "task": {"type": "string"},
+          "if": {"type": "string"},
+          "contains": {"type": "string"},
+          "equals": {"type": "string"},
+          "then": {"type": "string"},
+          "else": {"type": "string"}
+        }
+      }
+    },
+    "business_context": {
+      "type": "object",
+      "description": "Structured business rules and roles the skill enforces.",
+      "properties": {
+        "domain": {"type": "string"},
+        "process": {"type": "string"},
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "description"],
+            "properties": {
+              "id": {"type": "string"},
+              "description": {"type": "string"}
+            }
+          }
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {"type": "string"},
+              "responsibility": {"type": "string"}
+            }
+          }
+        },
+        "entity_types": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "approval_rules": {
+      "type": "object",
+      "description": "HITL gates. Maps tool/action names to approval requirements (always, threshold, role-based).",
+      "additionalProperties": true
+    },
+    "evidence_highlights": {
+      "type": "object",
+      "description": "Patterns the evidence viewer should highlight in outputs from this skill.",
+      "additionalProperties": true
+    },
+    "sufficiency_criteria": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Conditions that, when met, signal the agent has gathered enough to answer. Used by the ReAct stop-condition."
+    },
+    "files": {
+      "type": "object",
+      "description": "Auxiliary files bundled with the skill folder (templates, fixtures).",
+      "additionalProperties": true
+    },
+    "user_data": {
+      "type": "object",
+      "description": "Per-user data schema this skill reads/writes under enterprise_root/.../users/<user>/.",
+      "additionalProperties": true
+    },
+    "entitlements": {
+      "type": "object",
+      "description": "Policy hints consumed by the entitlement provider. Actual enforcement lives in enterprise_root/.../security/policies.yaml.",
+      "properties": {
+        "required_policies": {"type": "array", "items": {"type": "string"}},
+        "external_resources": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  }
+}

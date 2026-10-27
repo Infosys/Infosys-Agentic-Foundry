@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Observers · Topaz AgentOS</title>
+<script>
+// --- SEC-6: httponly cookie sent automatically; silent refresh on 401 ---
+(function(){
+  const _f = window.fetch;
+  window.fetch = async function(input, init={}){
+    const url = typeof input==='string'?input:input.url;
+    const api = url && (url.startsWith('/') || url.startsWith(location.origin));
+    const auth = url && (url.includes('/auth/login')||url.includes('/auth/refresh'));
+    // SEC-6: httponly cookie sent automatically — no manual Authorization header needed
+    if(api) init.credentials = init.credentials || 'include';
+    let r = await _f(input, init);
+    if(r.status===401 && api && !auth){
+      try{ const rf = await _f('/auth/refresh',{method:'POST',credentials:'include'});
+        if(rf.ok){ r = await _f(input, init); }
+        else { location.href='/login'; }
+      }catch(e){ location.href='/login'; }
+    }
+    return r;
+  };
+})();
+</script>
+<style>
+  :root{
+    --bg:#eef3fb; --panel:#ffffff; --panel-2:#f4f7fb; --border:#c9d5e7;
+    --text:#172033; --muted:#607089; --accent:#315fdc; --accent-2:#7c3aed;
+    --green:#167a3b; --amber:#b7791f; --red:#dc2626; --grey:#64748b;
+    --shadow:0 1px 3px rgba(30,50,90,.08),0 8px 24px rgba(30,50,90,.06);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;color:var(--text);font:14px/1.5 -apple-system,Segoe UI,Roboto,Arial,sans-serif;
+       background:linear-gradient(160deg,#e9eefb,#eef3fb);min-height:100vh}
+  .top{display:flex;align-items:center;gap:12px;padding:16px 26px}
+  .top h1{font-size:19px;margin:0;font-weight:750}.crumb{color:var(--muted);font-size:13px}.spacer{flex:1}.muted{color:var(--muted)}
+  a{color:var(--accent);text-decoration:none}
+  .btn{padding:8px 14px;border-radius:9px;font-size:13px;border:1px solid var(--border);background:#fff;color:var(--text);cursor:pointer;font-weight:500}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;box-shadow:0 8px 20px rgba(49,95,220,.28)}
+  .btn.green{background:#e7f6ec;border-color:#b5e0c2;color:var(--green)}
+  .btn.red{background:#fdecec;border-color:#f3c9c9;color:var(--red)}
+  .btn.sm{padding:5px 11px;font-size:12px}
+  .page{padding:6px 26px 34px;max-width:1320px;margin:0 auto}
+  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin:10px 0 20px}
+  .kpi{position:relative;overflow:hidden;background:#fff;border:1px solid var(--border);border-radius:16px;padding:15px 16px;box-shadow:var(--shadow)}
+  .kpi::after{content:"";position:absolute;right:-28px;bottom:-30px;width:96px;height:96px;border-radius:50%;background:var(--tint,rgba(99,102,241,.06))}
+  .kpi .top{display:flex;align-items:center;gap:9px;margin-bottom:8px;position:relative;z-index:1}
+  .kpi .ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:15px}
+  .kpi .l{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:800}
+  .kpi .v{font-size:28px;font-weight:800;margin:2px 0 2px;position:relative;z-index:1}.kpi .s{font-size:11.5px;color:var(--muted);position:relative;z-index:1}
+  .v.green{color:var(--green)}.v.amber{color:var(--amber)}.v.red{color:var(--red)}.v.blue{color:var(--accent)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:18px}
+  .grid>*{min-width:0}
+  .oc{background:var(--panel);border:1px solid var(--border);border-radius:18px;padding:18px;box-shadow:var(--shadow);cursor:pointer;transition:.15s;min-width:0;overflow:hidden}
+  .oc:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(30,50,90,.14)}
+  .oc .h{display:flex;align-items:center;gap:8px}.oc .t{font-size:16.5px;font-weight:700}
+  .dot{width:9px;height:9px;border-radius:50%}.dot.on{background:var(--green);box-shadow:0 0 8px rgba(22,122,59,.5)}.dot.off{background:var(--grey)}
+  .badge{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;padding:3px 9px;border-radius:999px}
+  .b-run{background:#e7f6ec;color:var(--green)}.b-stop{background:#eef1f6;color:var(--grey)}.b-tier{background:#f1ecfe;color:var(--accent-2)}
+  .sub{color:var(--muted);font-size:12.5px;margin-top:6px}.mono{font-family:ui-monospace,Menlo,monospace}
+  .mini{display:flex;gap:16px;margin-top:13px;padding-top:12px;border-top:1px solid var(--border)}
+  .mini div{font-size:11px;color:var(--muted)}.mini b{display:block;font-size:18px;color:var(--text)}
+  .mini b.am{color:var(--amber)}.mini b.gr{color:var(--green)}
+  .alert{background:#fff4f4;border:1px solid #f6cccc;border-radius:12px;padding:10px 13px;margin-top:12px;font-size:12.5px}.alert b{color:#b42318}
+  .foot{display:flex;gap:8px;margin-top:14px}
+  #empty{color:var(--muted);padding:40px;text-align:center}
+  .watch{color:var(--muted);font-size:12px;margin-top:8px}
+  .watch b{color:var(--text);font-weight:600}
+  /* executive observer card */
+  .oc .h{gap:9px}
+  .oc .t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .focus{color:var(--text);font-size:13px;line-height:1.45;margin-top:9px;min-height:19px;
+          display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .scope{display:flex;align-items:center;gap:6px;margin-top:9px;font-size:11.5px;color:var(--muted);
+          white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .scope .sp{min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .scope .mdl{flex:none;color:var(--accent-2);font-weight:600}
+  .rules{display:flex;align-items:baseline;gap:8px;margin-top:11px;padding-top:11px;border-top:1px solid var(--border);font-size:12px;min-width:0}
+  .rules .rk{flex:none;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+  .rules .rv{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-weight:600}
+  .rules .rv.none{color:var(--muted);font-weight:500}
+  .mini{margin-top:12px}
+  .filters{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:9px 12px;box-shadow:var(--shadow);margin:0 0 16px}
+  .fp{padding:5px 12px;border-radius:999px;font-size:12.5px;border:1px solid var(--border);background:#fff;color:var(--muted);cursor:pointer}
+  .fp.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .fp b{font-weight:800;margin-left:3px}
+  .search{margin-left:auto;min-width:280px;border:1px solid var(--border);border-radius:9px;padding:7px 11px;font-size:13px;color:var(--text)}
+  .sect{color:var(--accent);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-top:4px}
+  .secth{font-size:13px;color:var(--muted);margin:2px 0 14px}
+  .attn{background:var(--panel);border:1px solid #f1d5d5;border-radius:16px;padding:16px 18px;box-shadow:var(--shadow);margin-bottom:20px}
+  .attn h3{margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#b42318;font-weight:800}
+  .attn-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--border);font-size:13px}
+  .attn-row:first-of-type{border-top:0}
+  .pillmini{font-size:10px;font-weight:800;text-transform:uppercase;padding:2px 8px;border-radius:999px;background:#fbf1de;color:var(--amber)}
+</style>
+</head>
+<body>
+  <div class="top">
+    <h1>👁 Observers</h1><span class="crumb">/ fleet</span>
+    <div class="spacer"></div>
+    <a href="/dashboard/v2" class="muted" style="font-size:12px">← Dashboard</a>
+    <button class="btn primary" onclick="alert('New Observer form — Configure tab on the detail page')">+ New Observer</button>
+  </div>
+  <div class="page">
+    <div class="kpis" id="kpis"></div>
+    <div class="filters">
+      <span class="fp on" id="f-all" onclick="setFilter('all')">All <b id="c-all">0</b></span>
+      <span class="fp" id="f-running" onclick="setFilter('running')">Running <b id="c-run">0</b></span>
+      <span class="fp" id="f-stopped" onclick="setFilter('stopped')">Stopped <b id="c-stop">0</b></span>
+      <span class="fp" id="f-attention" onclick="setFilter('attention')">Needs approval <b id="c-att">0</b></span>
+      <input class="search" id="search" placeholder="Search name or scope…" oninput="render()"/>
+    </div>
+    <div id="attention"></div>
+    <div class="sect">Observer fleet</div>
+    <div class="secth">Each card is a live Headlong observer. Open one for its live stream, detections, approvals + outcomes, config, and chat.</div>
+    <div class="grid" id="grid"></div>
+    <div id="empty" style="display:none">No observers configured, or the Observers subsystem is disabled.</div>
+  </div>
+
+<script>
+async function jget(u){ const r=await fetch(u); if(!r.ok) throw new Error(u+' '+r.status); return r.json(); }
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+const TINT={base:'rgba(49,95,220,.10)',green:'rgba(22,122,59,.13)',amber:'rgba(176,121,31,.15)',red:'rgba(220,38,38,.11)'};
+const ICOL={base:'var(--accent)',green:'var(--green)',amber:'var(--amber)',red:'var(--red)'};
+function kpiCard(l,v,s,cls,icon){
+  const k=(cls&&TINT[cls])?cls:'base', tint=TINT[k], icol=ICOL[k];
+  return `<div class="kpi" style="--tint:${tint}">
+    <div class="top"><div class="ic" style="background:${tint};color:${icol}">${icon||'•'}</div><div class="l">${l}</div></div>
+    <div class="v ${cls||''}">${v}</div><div class="s">${s||''}</div></div>`;
+}
+
+// --- friendly formatters for the executive card ---
+function _shortPath(p){
+  p = String(p||'');
+  if(!p.includes('/')) return p;
+  const segs = p.split('/').filter(Boolean);
+  return (segs.length>2?'…/':'/') + segs.slice(-2).join('/');
+}
+function _scopeParts(o){
+  return (o.watch||[]).map(w=>{
+    if(w.path) return {label:_shortPath(w.path), full:w.path, icon:(w.type==='file'?'📄':'📁')};
+    if(w.dsn||w.url){ const u=w.dsn||w.url; let host=u; try{host=new URL(u).host||u;}catch(e){} return {label:host, full:u, icon:'🔗'}; }
+    return {label:String(w.type||'—'), full:String(w.type||''), icon:'•'};
+  });
+}
+function _ruleName(t){
+  if(t.name) return t.name;
+  if(t.field) return `${t.field} ${t.op} ${t.value}`;
+  const p=String(t.pattern||'').replace(/\(\?i\)/g,'').replace(/\.\{[^}]*\}/g,'…');
+  return p.slice(0,22) || 'rule';
+}
+function _ruleDetail(t){
+  const cond = t.field ? `${t.field} ${t.op} ${t.value}` : (t.pattern||'');
+  return `${t.name?t.name+': ':''}${cond} → ${t.skill||'?'}`;
+}
+
+function observerCard(o){
+  const running = o.status && o.status.running;
+  const m = o.metrics || {};
+  const tier = o.trust_tier || 'recommend';
+  const pending = m.pending||0;
+  const rate = (m.approve_rate==null?'—':m.approve_rate+'%');
+  const focus = o.focus || o.vibe || 'General-purpose Headlong observer.';
+  const scopeParts = _scopeParts(o);
+  const scopeLabel = scopeParts.map(s=>s.icon+' '+s.label).join('   ·   ') || '—';
+  const scopeFull = scopeParts.map(s=>s.full).join('   ·   ');
+  const trigs = (o.triggers||[]);
+  const ruleNames = trigs.map(_ruleName).join('  ·  ');
+  const ruleFull = trigs.map(_ruleDetail).join('\n') || 'no triggers set';
+  const nav = `location.href='/observers/${encodeURIComponent(o.name)}'`;
+  return `<div class="oc" onclick="${nav}">
+    <div class="h"><span class="dot ${running?'on':'off'}"></span><span class="t">${esc(o.name)}</span>
+      <span class="spacer"></span>
+      <span class="badge b-tier">${esc(tier)}</span>
+      <span class="badge ${running?'b-run':'b-stop'}">${running?'running':'stopped'}</span></div>
+    <div class="focus" title="${esc(focus)}">${esc(focus)}</div>
+    <div class="scope" title="${esc(scopeFull)}"><span class="sp">${esc(scopeLabel)}</span>${o.model?`<span class="mdl">· ${esc(o.model)}</span>`:''}</div>
+    <div class="rules"><span class="rk">Rules</span><span class="rv ${trigs.length?'':'none'}" title="${esc(ruleFull)}">${trigs.length?esc(ruleNames):'no triggers set'}</span></div>
+    <div class="mini">
+      <div><b>${m.detections||0}</b>detections</div>
+      <div><b class="am">${pending}</b>pending</div>
+      <div><b class="gr">${rate}</b>approve</div>
+      <div><b>${m.outcomes||0}</b>outcomes</div>
+    </div>
+    ${pending>0?`<div class="alert">⏳ <b>${pending} approval${pending>1?'s':''} waiting</b> — human decision needed.</div>`:''}
+    <div class="foot">
+      <button class="btn primary sm" onclick="event.stopPropagation();${nav}">Open Observer</button>
+      ${running
+        ? `<button class="btn red sm" onclick="event.stopPropagation();lifecycle('${o.name}','stop')">Stop</button>`
+        : `<button class="btn green sm" onclick="event.stopPropagation();lifecycle('${o.name}','start')">▶ Start</button>`}
+    </div></div>`;
+}
+
+async function lifecycle(name, action){
+  try{ await fetch(`/api/observers/${encodeURIComponent(name)}/${action}`,{method:'POST'}); }
+  catch(e){}
+  setTimeout(load, 800);
+}
+
+let LIST=[]; let FILTER='all';
+async function load(){
+  try{ LIST = (await jget('/api/observers')).observers || []; }
+  catch(e){ document.getElementById('empty').style.display='block'; return; }
+  document.getElementById('empty').style.display = LIST.length?'none':'block';
+  await Promise.all(LIST.map(async o=>{
+    try{ o.status = await jget(`/api/observers/${encodeURIComponent(o.name)}/status`); }catch(e){ o.status={}; }
+    try{ o.metrics = await jget(`/api/observers/${encodeURIComponent(o.name)}/metrics`); }catch(e){ o.metrics={}; }
+  }));
+  // aggregate the actual pending detections (only for observers that have any)
+  await Promise.all(LIST.map(async o=>{
+    o.pendingDets=[];
+    if(o.metrics && o.metrics.pending>0){
+      try{ const d=await jget(`/api/observers/${encodeURIComponent(o.name)}/detections`);
+        o.pendingDets=(d.detections||[]).filter(x=>x.status==='pending'); }catch(e){}
+    }
+  }));
+  renderKPIs(); renderAttention(); render();
+}
+function renderKPIs(){
+  const running = LIST.filter(o=>o.status&&o.status.running).length;
+  const pending = LIST.reduce((a,o)=>a+((o.metrics&&o.metrics.pending)||0),0);
+  const dets = LIST.reduce((a,o)=>a+((o.metrics&&o.metrics.detections)||0),0);
+  const outs = LIST.reduce((a,o)=>a+((o.metrics&&o.metrics.outcomes)||0),0);
+  document.getElementById('kpis').innerHTML =
+     kpiCard('Observers', LIST.length, `${running} running · ${LIST.length-running} stopped`,'base','👁')
+   + kpiCard('Running', running, 'minds live now','green','⚡')
+   + kpiCard('Approvals waiting', pending, 'human decision needed','amber','⏳')
+   + kpiCard('Detections', dets, 'across all observers','base','🔔')
+   + kpiCard('Outcomes', outs, 'post-approval results','green','✓');
+}
+function renderAttention(){
+  const rows=[]; LIST.forEach(o=>(o.pendingDets||[]).forEach(d=>rows.push({o:o.name,d})));
+  document.getElementById('c-att').textContent = rows.length;
+  const el=document.getElementById('attention');
+  if(!rows.length){ el.innerHTML=''; return; }
+  el.innerHTML = `<div class="attn"><h3>⏳ ${rows.length} approval${rows.length>1?'s':''} waiting across the fleet</h3>`
+   + rows.slice(0,6).map(r=>`<div class="attn-row"><span class="pillmini">pending</span><b>${esc(r.o)}</b>
+       <span class="muted" style="font-size:12.5px">${esc((r.d.task||r.d.reason||r.d.id)).slice(0,72)}</span>
+       <span class="spacer"></span><a href="/observers/${encodeURIComponent(r.o)}">Review →</a></div>`).join('')
+   + (rows.length>6?`<div class="attn-row" style="color:var(--muted);font-size:12px">+${rows.length-6} more…</div>`:'')
+   + `</div>`;
+}
+function matchFilter(o){
+  const q=(document.getElementById('search').value||'').toLowerCase().trim();
+  const running=o.status&&o.status.running;
+  if(FILTER==='running'&&!running) return false;
+  if(FILTER==='stopped'&&running) return false;
+  if(FILTER==='attention'&&!(o.metrics&&o.metrics.pending>0)) return false;
+  if(q){ const hay=(o.name+' '+((o.watch||[]).map(w=>w.path||w.dsn||w.url||'').join(' '))).toLowerCase(); if(!hay.includes(q)) return false; }
+  return true;
+}
+function render(){
+  const running=LIST.filter(o=>o.status&&o.status.running).length;
+  document.getElementById('c-all').textContent=LIST.length;
+  document.getElementById('c-run').textContent=running;
+  document.getElementById('c-stop').textContent=LIST.length-running;
+  const shown=LIST.filter(matchFilter);
+  document.getElementById('grid').innerHTML = shown.map(observerCard).join('')
+    || '<div class="secth" style="grid-column:1/-1">No observers match this filter.</div>';
+}
+function setFilter(f){ FILTER=f; ['all','running','stopped','attention'].forEach(x=>document.getElementById('f-'+x).classList.toggle('on',x===f)); render(); }
+load();
+setInterval(load, 15000);
+</script>
+<!-- SEC-7: shared idle-session timeout + user menu. -->
+<script src="/static/session-controls.js"></script>
+</body>
+</html>

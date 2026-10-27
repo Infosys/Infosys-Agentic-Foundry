@@ -1,0 +1,2795 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Agent Workstreams · Topaz AgentOS</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <script defer src="/static/vendor/alpine.min.js"></script>
+  <script src="/static/vendor/marked.min.js"></script>
+  <script>
+  (function() {
+    // gear settings menu + demo reset (openshell feature)
+    window.toggleGear = function(e){ e && e.stopPropagation(); document.getElementById('gearMenu').classList.toggle('open'); };
+    document.addEventListener('click', (e) => {
+      const w = e.target.closest('.gear-wrap'); if (!w) { const m = document.getElementById('gearMenu'); if (m) m.classList.remove('open'); }
+    });
+  })();
+// SEC-6: read user display info from readable cookie
+function _getIafUser() {
+    try {
+        const raw = document.cookie.split('; ').find(r => r.startsWith('iaf_user='));
+        if (!raw) return {};
+        return JSON.parse(decodeURIComponent(raw.replace(/^iaf_user=/, '')));
+    } catch { return {}; }
+}
+
+  // SEC-6: clean up stale localStorage tokens from before cookie migration
+        localStorage.removeItem('iaf_access_token');
+        localStorage.removeItem('iaf_user');
+        localStorage.removeItem('workstreams_date_from');
+        localStorage.removeItem('workstreams_date_to');
+        /* Unified Light/Dark theme — FOUC guard runs before first paint; controller in /static/theme.js. */
+        (function(){try{var m={hybrid:'light',light:'light',dark:'dark'},ls=window.localStorage;var v=m[ls.getItem('iaf_theme')]||m[ls.getItem('iaf_workstreams_theme')]||m[ls.getItem('iaf-theme')];if(!v)v=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';var r=document.documentElement;r.setAttribute('data-theme',v);r.classList.add(v==='light'?'light-mode':'dark-mode');r.style.colorScheme=v;}catch(e){}})();
+  </script>
+  <link rel="stylesheet" href="/static/theme.css">
+  <script src="/static/theme.js"></script>
+  <!-- Auth: auto-inject Bearer token on all API calls + silent refresh on 401 -->
+  <script>
+  (function() {
+      const _origFetch = window.fetch;
+      window.fetch = async function(input, init = {}) {
+          const url = typeof input === 'string' ? input : input.url;
+          const isApiCall = url && (url.startsWith('/') || url.startsWith(location.origin));
+          const isAuthEndpoint = url && (url.includes('/auth/login') || url.includes('/auth/register') ||
+                                         url.includes('/auth/refresh') || url.includes('/auth/policy') ||
+                                         url.includes('/auth/registration-mode'));
+          // SEC-6: httponly cookie sent automatically — no manual Authorization header needed
+          if (isApiCall) init.credentials = init.credentials || 'include';
+          let response = await _origFetch(input, init);
+          if (response.status === 401 && isApiCall && !isAuthEndpoint) {
+              try {
+                  const refresh = await _origFetch('/auth/refresh', { method: 'POST', credentials: 'include' });
+                  if (refresh.ok) {
+                      const data = await refresh.json();
+                      // SEC-6: server updated httponly cookie; no localStorage write needed
+                      response = await _origFetch(input, init);  // cookie updated by server; retry
+                  } else {
+                      // SEC-6: stale tokens cleaned up at interceptor init
+                      window.location.href = (window.__BASE_PATH__ || '') + '/login';
+                  }
+              } catch {}
+          }
+          return response;
+      };
+  })();
+  </script>
+  <style>
+    :root {
+      --bg: #090d14;
+      --panel: #111827;
+      --panel-2: #172033;
+      --panel-3: #1d2940;
+      --border: #2a3548;
+      --text: #eef4ff;
+      --muted: #95a3b8;
+      --accent: #5b8cff;
+      --accent-2: #8b5cf6;
+      --cyan: #22d3ee;
+      --green: #3fb950;
+      --amber: #f4b740;
+      --red: #ff6b6b;
+      --grey: #6e7681;
+    }
+    :root[data-theme="hybrid"] {
+      --bg: #eef3fb;
+      --panel: #ffffff;
+      --panel-2: #f4f7fb;
+      --panel-3: #e7eef8;
+      --border: #c9d5e7;
+      --text: #172033;
+      --muted: #607089;
+      --accent: #315fdc;
+      --accent-2: #7c3aed;
+      --cyan: #0284c7;
+      --green: #167a3b;
+      --amber: #b7791f;
+      --red: #dc2626;
+      --grey: #64748b;
+    }
+    :root[data-theme="light"] {
+      --bg: #f7f9fc;
+      --panel: #ffffff;
+      --panel-2: #f3f6fb;
+      --panel-3: #e8eef7;
+      --border: #d5deeb;
+      --text: #111827;
+      --muted: #667085;
+      --accent: #2563eb;
+      --accent-2: #7c3aed;
+      --cyan: #0891b2;
+      --green: #15803d;
+      --amber: #b45309;
+      --red: #dc2626;
+      --grey: #64748b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background:
+        radial-gradient(circle at top left, rgba(91,140,255,0.16), transparent 30%),
+        radial-gradient(circle at top right, rgba(139,92,246,0.12), transparent 28%),
+        var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      font-size: 14px; line-height: 1.45;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .topbar {
+      background: rgba(17, 24, 39, 0.88); border-bottom: 1px solid var(--border);
+      padding: 12px 20px; display: flex; align-items: center; gap: 24px;
+      backdrop-filter: blur(16px);
+    }
+    .topbar h1 { font-size: 16px; font-weight: 600; }
+    .topbar nav { display: flex; gap: 16px; font-size: 13px; }
+    .topbar nav a { color: var(--muted); }
+    .topbar nav a.current { color: var(--text); }
+    .theme-switch { margin-left: auto; display: flex; align-items: center; gap: 7px; }
+    .theme-switch span { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+    .theme-select {
+      background: var(--panel-2); border: 1px solid var(--border);
+      color: var(--text); border-radius: 999px; padding: 5px 10px;
+      font-size: 12px; outline: none;
+    }
+    /* gear settings menu */
+    .gear-wrap { position: relative; }
+    .gear-btn { width: 32px; height: 32px; border-radius: 9px; border: 1px solid var(--border);
+      background: var(--panel-2); color: var(--muted); font-size: 16px; cursor: pointer; line-height: 1;
+      display: flex; align-items: center; justify-content: center; transition: .15s; }
+    .gear-btn:hover { color: var(--text); border-color: var(--accent); }
+    .gear-menu { position: absolute; top: 40px; right: 0; z-index: 60; display: none; min-width: 210px;
+      background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 10px;
+      box-shadow: 0 16px 40px rgba(0,0,0,.28); }
+    .gear-menu.open { display: block; }
+    .gm-sec { padding: 6px 4px; }
+    .gm-sec + .gm-sec { border-top: 1px solid var(--border); margin-top: 4px; }
+    .gm-label { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin: 2px 4px 8px; }
+    .gm-sec .theme-select { width: 100%; }
+    .gm-item { display: flex; align-items: center; width: 100%; text-align: left; gap: 2px;
+      padding: 8px 10px; border-radius: 8px; border: none; background: none; color: var(--text);
+      font-size: 13px; font-weight: 550; cursor: pointer; text-decoration: none; }
+    .gm-item:hover { background: var(--panel-2); }
+    .gm-item:disabled { opacity: .6; cursor: default; }
+    .container { max-width: 1440px; margin: 0 auto; padding: 22px 20px; }
+    .page-head {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      gap: 18px; margin-bottom: 14px;
+    }
+    .eyebrow {
+      color: var(--cyan); text-transform: uppercase; letter-spacing: 0.14em;
+      font-size: 11px; font-weight: 700; margin-bottom: 4px;
+    }
+    .page-head h2 { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+    .page-sub { color: var(--muted); font-size: 13px; margin-top: 4px; max-width: 680px; }
+    .btn {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: white; border: none;
+      padding: 8px 14px; border-radius: 8px; font-size: 13px;
+      cursor: pointer; font-weight: 650;
+      box-shadow: 0 10px 28px rgba(91, 140, 255, 0.22);
+    }
+    .btn:hover { filter: brightness(1.08); text-decoration: none; }
+    .btn.secondary {
+      background: rgba(23, 32, 51, 0.86); color: var(--text);
+      border: 1px solid var(--border); box-shadow: none;
+    }
+    .btn.secondary:hover { background: var(--panel-3); }
+    .btn[disabled] { opacity: 0.55; cursor: wait; }
+    .snapshot-grid {
+      display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px; margin-bottom: 14px;
+    }
+    .snapshot-strip-head {
+      display: flex; justify-content: space-between; align-items: flex-end;
+      gap: 12px; margin: -2px 2px 8px;
+    }
+    .snapshot-strip-head .title { color: var(--text); font-size: 13px; font-weight: 850; letter-spacing: -.01em; }
+    .snapshot-strip-head .sub { color: var(--muted); font-size: 11px; }
+    .snapshot-grid.northstar-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .snapshot-card {
+      position: relative; overflow: hidden;
+      background: linear-gradient(180deg, rgba(29,41,64,.94), rgba(17,24,39,.94));
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      border-radius: 14px; padding: 12px 13px;
+      min-height: 82px;
+    }
+    .snapshot-card.explainable { cursor: pointer; transition: border-color .15s, transform .15s, background .15s; }
+    .snapshot-card.explainable:hover { transform: translateY(-1px); border-color: rgba(91,140,255,.48); background: linear-gradient(180deg, rgba(34,48,76,.96), rgba(17,24,39,.96)); }
+    .snapshot-card::after {
+      content: ""; position: absolute; inset: auto -20px -36px auto;
+      width: 82px; height: 82px; border-radius: 50%;
+      background: rgba(91,140,255,0.12);
+    }
+    .snapshot-label {
+      color: var(--muted); font-size: 11px; text-transform: uppercase;
+      letter-spacing: 0.08em; font-weight: 700;
+    }
+    .snapshot-value {
+      font-size: 25px; font-weight: 800; margin-top: 4px; letter-spacing: -0.03em;
+    }
+    .snapshot-note { color: var(--muted); font-size: 11px; margin-top: 1px; }
+    .snapshot-card.hot { border-color: rgba(244,183,64,.36); }
+    .snapshot-card.hot .snapshot-value { color: var(--amber); }
+    .snapshot-card.bad { border-color: rgba(255,107,107,.34); }
+    .snapshot-card.bad .snapshot-value { color: var(--red); }
+    .snapshot-card.good .snapshot-value { color: var(--green); }
+    .control-bar {
+      display: flex; gap: 10px; margin-bottom: 12px; align-items: center;
+      flex-wrap: wrap;
+      background: rgba(17,24,39,0.72); border: 1px solid rgba(148,163,184,.14);
+      padding: 10px; border-radius: 14px;
+    }
+    .filters { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; }
+    .chip {
+      padding: 5px 10px; border-radius: 999px;
+      background: var(--panel-2); border: 1px solid var(--border);
+      cursor: pointer; font-size: 12px; color: var(--muted);
+      user-select: none;
+    }
+    .chip:hover { color: var(--text); }
+    .chip.active { background: var(--accent); color: white; border-color: var(--accent); }
+    .chip-count { opacity: .75; margin-left: 5px; font-variant-numeric: tabular-nums; }
+    .tools {
+      display: flex; gap: 8px; align-items: center; margin-left: auto; flex-wrap: wrap;
+    }
+    .search, .select {
+      background: var(--panel-2); border: 1px solid var(--border);
+      padding: 7px 10px; border-radius: 8px; color: var(--text);
+      font-size: 13px;
+    }
+    .search { width: 270px; }
+    .select { min-width: 150px; }
+    .search:focus, .select:focus { outline: none; border-color: var(--accent); }
+    .section-head {
+      display: flex; justify-content: space-between; align-items: flex-end;
+      gap: 14px; margin: 8px 2px 12px;
+    }
+    .section-head h3 {
+      font-size: 18px; letter-spacing: -0.02em; margin-top: 2px;
+    }
+    .section-note { color: var(--muted); font-size: 12px; max-width: 620px; }
+    .shown-count {
+      color: var(--muted); font-size: 12px; border: 1px solid var(--border);
+      background: var(--panel-2); padding: 5px 10px; border-radius: 999px;
+      white-space: nowrap;
+    }
+    .workstream-grid {
+      display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .domain-band { margin-bottom: 22px; }
+    .domain-band-head { display: flex; align-items: center; gap: 10px; margin: 4px 2px 11px; }
+    .domain-band-head .lbl { font-size: 12.5px; font-weight: 700; letter-spacing: .04em; color: var(--text); text-transform: uppercase; }
+    .domain-band-head .cnt { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .domain-band-head .rule { flex: 1; height: 1px; background: var(--border); }
+    .domain-band-head .lab-toggle { font-size: 11px; color: var(--muted); border: 1px solid var(--border); background: var(--panel-2); border-radius: 999px; padding: 2px 10px; cursor: pointer; }
+    .domain-band-head .lab-toggle:hover { color: var(--text); border-color: rgba(91,140,255,.42); }
+    .ws-card {
+      background: linear-gradient(180deg, rgba(17,24,39,.96), rgba(13,19,31,.96));
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      border-radius: 16px; padding: 16px 17px;
+      transition: border-color 0.15s, transform 0.15s, background 0.15s;
+      display: flex; flex-direction: column; gap: 12px; min-height: 200px;
+    }
+    .ws-card:hover { border-color: rgba(91,140,255,.55); transform: translateY(-1px); }
+    /* --- Executive tile --- */
+    .ws-head { display: flex; align-items: center; justify-content: space-between; gap: 9px; }
+    .ws-domain {
+      font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+      padding: 3px 8px; border-radius: 7px; background: rgba(148,163,184,.12); color: var(--muted);
+    }
+    .ws-domain.dom-p2p { background: rgba(91,140,255,.15); color: #7ea2ff; }
+    .ws-domain.dom-o2c { background: rgba(63,185,80,.15); color: var(--green); }
+    .ws-domain.dom-r2r { background: rgba(244,183,64,.17); color: var(--amber); }
+    .ws-domain.dom-treasury { background: rgba(167,139,250,.18); color: #a78bfa; }
+    .ws-domain.dom-o2o { background: rgba(45,212,191,.15); color: #2dd4bf; }
+    .ws-status {
+      display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 650;
+      text-transform: uppercase; letter-spacing: .4px; color: var(--muted); white-space: nowrap;
+    }
+    .ws-status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--grey); }
+    .ws-status.active { color: var(--green); } .ws-status.active .dot { background: var(--green); box-shadow: 0 0 0 3px rgba(63,185,80,.16); }
+    .ws-status.paused { color: var(--amber); } .ws-status.paused .dot { background: var(--amber); }
+    .ws-status.completed { color: var(--grey); } .ws-status.completed .dot { background: var(--grey); }
+    .ws-status.failed { color: var(--red); } .ws-status.failed .dot { background: var(--red); }
+    .ws-title { font-weight: 760; font-size: 19px; letter-spacing: -.02em; line-height: 1.2; color: var(--text); }
+    .ws-prog { display: grid; gap: 8px; margin-top: 1px; }
+    .ws-progline { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 7px; }
+    .ws-progline strong { color: var(--text); font-weight: 780; font-size: 13px; }
+    .ws-progline .sep { opacity: .45; }
+    .ws-counts { display: flex; gap: 18px; font-size: 12px; color: var(--muted); }
+    .ws-counts .wc strong { font-weight: 780; margin-left: 4px; color: var(--text); }
+    .ws-counts .wc.done strong { color: var(--green); }
+    .ws-counts .wc.awaiting strong { color: var(--amber); }
+    .ws-counts .wc.failed strong { color: var(--red); }
+    .ws-main { min-width: 0; }
+    .ws-row1 {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 9px; margin-bottom: 5px; min-width: 0;
+    }
+    .ws-name {
+      font-weight: 750; font-size: 16px; color: var(--text);
+      line-height: 1.25;
+    }
+    .ws-display {
+      color: var(--muted); font-size: 12px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .pill {
+      display: inline-block; padding: 2px 9px; border-radius: 10px;
+      font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;
+      white-space: nowrap;
+    }
+    .pill.active { background: rgba(63, 185, 80, 0.15); color: var(--green); }
+    .pill.paused { background: rgba(210, 153, 34, 0.15); color: var(--amber); }
+    .pill.completed { background: rgba(110, 118, 129, 0.18); color: var(--grey); }
+    .pill.failed { background: rgba(248, 81, 73, 0.15); color: var(--red); }
+    .ws-meta {
+      display: flex; gap: 10px; font-size: 12px; color: var(--muted);
+      flex-wrap: wrap;
+    }
+    .ws-meta strong { color: var(--text); font-weight: 500; }
+    .health {
+      display: grid; gap: 6px; padding: 10px;
+      border: 1px solid rgba(148,163,184,.12);
+      background: rgba(148,163,184,.06); border-radius: 12px;
+    }
+    .health-score { display: flex; justify-content: space-between; align-items: baseline; }
+    .health-score .n { font-size: 20px; font-weight: 800; letter-spacing: -0.03em; }
+    .health-score .lbl { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+    .progress {
+      height: 8px; background: var(--panel-2); border-radius: 999px;
+      overflow: hidden; display: flex;
+    }
+    .progress > span { display: block; height: 100%; }
+    .progress .done { background: var(--green); }
+    .progress .failed { background: var(--red); }
+    .progress .awaiting { background: var(--amber); }
+    .progress .in_progress { background: var(--accent); }
+    .mini-counts {
+      display: flex; gap: 7px; flex-wrap: wrap;
+    }
+    .mini-count {
+      padding: 3px 7px; border-radius: 999px; background: rgba(148,163,184,.08);
+      color: var(--muted); font-size: 11px; border: 1px solid rgba(148,163,184,.12);
+    }
+    .mini-count strong { color: var(--text); font-weight: 700; }
+    .mini-count.done strong { color: var(--green); }
+    .mini-count.failed strong { color: var(--red); }
+    .mini-count.awaiting strong { color: var(--amber); }
+    .mini-count.running strong { color: var(--accent); }
+    .attention {
+      display: flex; gap: 8px; align-items: flex-start;
+      padding: 8px 10px; border-radius: 11px;
+      background: rgba(148,163,184,.07); border: 1px solid rgba(148,163,184,.12);
+      min-height: 68px;
+    }
+    .attention.hot { background: rgba(244,183,64,.10); border-color: rgba(244,183,64,.26); }
+    .attention.bad { background: rgba(255,107,107,.10); border-color: rgba(255,107,107,.25); }
+    .attention.live { background: rgba(91,140,255,.10); border-color: rgba(91,140,255,.25); }
+    .attention .icon { font-size: 15px; line-height: 1.2; }
+    .attention .title { font-size: 12px; font-weight: 700; color: var(--text); }
+    .attention .sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+    .timeline-cell {
+      color: var(--muted); font-size: 12px; display: grid; gap: 3px;
+      border-top: 1px solid rgba(148,163,184,.12);
+      padding-top: 10px;
+    }
+    .timeline-cell strong { color: var(--text); font-weight: 650; }
+    .ws-actions { display: flex; gap: 7px; justify-content: space-between; margin-top: auto; }
+    .ws-actions .btn { padding: 7px 12px; font-size: 12px; }
+    .empty {
+      text-align: center; padding: 60px 20px; color: var(--muted);
+      background: var(--panel); border: 1px dashed var(--border);
+      border-radius: 8px;
+    }
+    .loading { color: var(--muted); padding: 30px; text-align: center; }
+    .error-banner {
+      background: rgba(255,107,107,.10); border: 1px solid rgba(255,107,107,.28);
+      color: #ffd4d4; border-radius: 10px; padding: 10px 12px; margin-bottom: 12px;
+      font-size: 13px;
+    }
+
+    @keyframes hb_pulse { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
+    @keyframes hb_ring  { 0% { box-shadow: 0 0 0 0 rgba(47,129,247,.30); } 70% { box-shadow: 0 0 0 6px rgba(47,129,247,0); } 100% { box-shadow: 0 0 0 0 rgba(47,129,247,0); } }
+    .ws-card.live { border-color: rgba(91,140,255,.48); animation: hb_ring 2.2s infinite; }
+    .progress > span { transition: width .7s cubic-bezier(.22,.61,.36,1); }
+    .hero-stat {
+      display: inline-flex; align-items: center; gap: 8px; margin-top: 8px;
+      padding: 5px 12px; border-radius: 14px; font-size: 13px; font-weight: 600;
+      border: 1px solid var(--border); background: var(--panel-2); color: var(--muted);
+    }
+    .hero-stat.live { color: var(--accent); border-color: rgba(47,129,247,.4); background: rgba(47,129,247,.08); }
+    .hero-stat .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--grey); }
+    .hero-stat.live .dot { background: var(--accent); animation: hb_pulse 1.1s infinite; }
+
+    .operating-brief {
+      display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(340px, .85fr);
+      gap: 14px; margin-bottom: 14px;
+    }
+    .brief-card {
+      background: linear-gradient(180deg, rgba(17,24,39,.96), rgba(13,19,31,.96));
+      border: 1px solid rgba(148,163,184,.16);
+      border-radius: 18px; padding: 16px;
+      box-shadow: 0 18px 44px rgba(0,0,0,.16);
+      min-width: 0;
+    }
+    .brief-card.primary {
+      overflow: hidden; position: relative;
+    }
+    .brief-card.primary::after {
+      content: ""; position: absolute; width: 220px; height: 220px; right: -96px; bottom: -122px;
+      border-radius: 999px; background: radial-gradient(circle, rgba(91,140,255,.18), transparent 68%);
+      pointer-events: none;
+    }
+    .brief-head { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; position: relative; z-index: 1; }
+    .brief-head.compact { align-items: center; margin-bottom: 10px; }
+    .brief-card h3 { font-size: 23px; line-height: 1.12; letter-spacing: -.03em; margin-top: 3px; }
+    .brief-copy { color: var(--muted); font-size: 13px; max-width: 720px; margin-top: 5px; }
+    .brief-time { color: var(--muted); font-size: 11px; white-space: nowrap; border: 1px solid rgba(148,163,184,.18); border-radius: 999px; padding: 5px 9px; background: rgba(148,163,184,.07); }
+    .brief-time strong { color: var(--text); font-weight: 650; }
+    .brief-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; margin-top: 15px; position: relative; z-index: 1; }
+    .brief-metric {
+      text-align: left; background: rgba(148,163,184,.07); border: 1px solid rgba(148,163,184,.14);
+      color: var(--text); border-radius: 14px; padding: 10px; cursor: pointer;
+      transition: transform .15s, border-color .15s, background .15s;
+    }
+    .brief-metric:hover { transform: translateY(-1px); border-color: rgba(91,140,255,.45); background: rgba(91,140,255,.10); }
+    .brief-metric .n { display: block; font-size: 23px; font-weight: 850; letter-spacing: -.04em; }
+    .brief-metric .lbl { display: block; color: var(--muted); font-size: 11px; margin-top: 1px; }
+    .brief-metric.hot .n { color: var(--amber); }
+    .brief-metric.live .n { color: var(--accent); }
+    .brief-metric.bad .n { color: var(--red); }
+    .brief-metric.good .n { color: var(--green); }
+    .lens-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+    .lens-chip {
+      border: 1px solid var(--border); background: var(--panel-2); color: var(--muted);
+      border-radius: 999px; padding: 5px 9px; font-size: 11px; font-weight: 750; cursor: pointer;
+    }
+    .lens-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .lens-feed { display: grid; gap: 8px; margin-top: 10px; }
+    .lens-row {
+      display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 9px;
+      padding: 9px 10px; border-radius: 13px; border: 1px solid rgba(148,163,184,.13);
+      background: rgba(148,163,184,.06); color: var(--text); text-decoration: none;
+    }
+    .lens-row:hover { border-color: rgba(91,140,255,.38); background: rgba(91,140,255,.09); text-decoration: none; }
+    .lens-row .status-dot { width: 8px; height: 8px; border-radius: 999px; background: var(--grey); box-shadow: 0 0 12px currentColor; }
+    .lens-row.hot .status-dot { background: var(--amber); color: var(--amber); }
+    .lens-row.live .status-dot { background: var(--accent); color: var(--accent); }
+    .lens-row.bad .status-dot { background: var(--red); color: var(--red); }
+    .lens-row.good .status-dot { background: var(--green); color: var(--green); }
+    .lens-row-title { font-size: 12px; font-weight: 750; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .lens-row-sub { color: var(--muted); font-size: 11px; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .lens-row-count { color: var(--text); font-size: 12px; font-weight: 800; border: 1px solid rgba(148,163,184,.16); background: rgba(148,163,184,.08); border-radius: 999px; min-width: 28px; padding: 3px 7px; text-align: center; }
+    .lens-empty { color: var(--muted); font-size: 12px; padding: 12px; border: 1px dashed rgba(148,163,184,.22); border-radius: 13px; background: rgba(148,163,184,.05); }
+
+
+    .copilot-shell {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 0;
+      transition: grid-template-columns .18s ease;
+      min-height: calc(100vh - 62px);
+    }
+    .copilot-shell.copilot-open { grid-template-columns: minmax(0, 1fr) var(--home-copilot-width, 390px); }
+    .copilot-main { min-width: 0; transition: padding-right .18s ease; }
+    .home-copilot {
+      position: sticky; top: 0; height: 100vh; min-width: 0; overflow: hidden;
+      border-left: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(17,24,39,.98), rgba(8,13,24,.98));
+      box-shadow: -18px 0 44px rgba(0,0,0,.22); z-index: 40;
+    }
+    .home-copilot-inner {
+      height: 100%; display: flex; flex-direction: column; padding: 14px;
+      opacity: 0; transform: translateX(14px); transition: opacity .14s ease, transform .14s ease;
+      pointer-events: none;
+    }
+    .copilot-shell.copilot-open .home-copilot-inner { opacity: 1; transform: translateX(0); pointer-events: auto; }
+    .home-copilot-tab {
+      position: fixed; top: 156px; right: 0; z-index: 60; writing-mode: vertical-rl; transform: rotate(180deg);
+      border: 1px solid rgba(91,140,255,.46); border-right: none; border-radius: 12px 0 0 12px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: white; padding: 12px 8px;
+      font-size: 12px; font-weight: 850; letter-spacing: .04em; cursor: pointer; box-shadow: 0 14px 36px rgba(0,0,0,.28);
+    }
+    .copilot-shell.copilot-open .home-copilot-tab { display: none; }
+    .home-copilot-resize {
+      position: absolute; left: 0; top: 0; bottom: 0; width: 16px; cursor: ew-resize;
+      background: linear-gradient(90deg, rgba(91,140,255,.34), rgba(91,140,255,.08), transparent);
+      opacity: .85; z-index: 2;
+    }
+    .home-copilot-resize::after {
+      content: ""; position: absolute; top: 50%; left: 4px; width: 4px; height: 48px; transform: translateY(-50%);
+      border-radius: 999px; background: repeating-linear-gradient(to bottom, rgba(238,244,255,.74) 0 3px, transparent 3px 8px);
+    }
+    .home-copilot-resize:hover,
+    .home-copilot.resizing .home-copilot-resize { opacity: 1; background: linear-gradient(90deg, rgba(91,140,255,.52), rgba(91,140,255,.12), transparent); }
+    .home-copilot-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 2px 0 12px 4px; border-bottom: 1px solid rgba(148,163,184,.14); }
+    .home-copilot-head h3 { font-size: 16px; margin: 0; }
+    .home-copilot-head .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .home-copilot-resize-note { color: var(--muted); font-size: 10px; margin-top: 4px; }
+    .home-copilot-actions { display: flex; gap: 6px; align-items: center; }
+    .icon-btn { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); cursor: pointer; }
+    .home-copilot-skill { display: flex; align-items: center; gap: 8px; padding: 10px 0; color: var(--muted); font-size: 12px; }
+    .home-copilot-skill select { flex: 1; min-width: 0; background: var(--panel-2); border: 1px solid var(--border); color: var(--text); border-radius: 9px; padding: 7px 8px; font-size: 12px; }
+    .home-copilot-prompts { display: flex; gap: 6px; flex-wrap: wrap; padding-bottom: 10px; }
+    .home-prompt-chip { border: 1px solid rgba(148,163,184,.18); background: rgba(148,163,184,.08); color: var(--text); border-radius: 999px; padding: 5px 9px; font-size: 11px; cursor: pointer; }
+    .home-prompt-chip:hover { border-color: rgba(91,140,255,.42); background: rgba(91,140,255,.11); }
+    .home-chat-thread { flex: 1; min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: 10px; padding: 8px 2px 10px 4px; }
+    .home-chat-empty { border: 1px dashed rgba(148,163,184,.22); border-radius: 14px; padding: 14px; color: var(--muted); font-size: 12px; background: rgba(148,163,184,.05); }
+    .home-chat-turn { border: 1px solid rgba(148,163,184,.14); background: rgba(148,163,184,.06); border-radius: 14px; padding: 10px; display: grid; gap: 7px; }
+    .home-chat-turn.pending { opacity: .78; }
+    .home-chat-turn .turn-skill { color: var(--cyan); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; font-weight: 800; }
+    .home-chat-turn .q { color: var(--text); font-size: 12px; font-weight: 750; }
+    .home-chat-turn .a { color: var(--muted); font-size: 12px; line-height: 1.45; white-space: pre-wrap; }
+    .home-chat-turn .a.chat-prose { white-space: normal; }
+    .home-chat-turn .a.chat-prose :is(p,ul,ol,pre,blockquote) { margin: 0 0 8px; }
+    .home-chat-turn .a.chat-prose ul, .home-chat-turn .a.chat-prose ol { padding-left: 18px; }
+    .home-chat-turn .a.chat-prose code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 11px; background: rgba(148,163,184,.12); border-radius: 5px; padding: 1px 4px; }
+    .home-chat-turn .a.chat-prose pre { overflow-x: auto; background: rgba(0,0,0,.25); border: 1px solid rgba(148,163,184,.14); border-radius: 10px; padding: 9px; }
+    .home-chat-turn .a.chat-prose a { color: var(--accent); }
+    .home-copilot-status-dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; margin-right: 6px; background: var(--grey); }
+    .home-copilot-status-dot.on { background: var(--green); box-shadow: 0 0 0 3px rgba(63,185,80,.12); }
+    /* WS-4: edit workstream modal. */
+    .ws-edit-backdrop { position: fixed; inset: 0; z-index: 9998; display: flex;
+      align-items: center; justify-content: center; padding: 24px;
+      background: rgba(0,0,0,.55); }
+    .ws-edit-modal { width: 100%; max-width: 520px; max-height: 88vh; overflow-y: auto;
+      background: var(--surface, #161b22); border: 1px solid rgba(127,127,127,.35);
+      border-radius: 12px; padding: 20px 22px; box-shadow: 0 18px 48px rgba(0,0,0,.5); }
+    .ws-edit-title { margin: 0 0 16px; font-size: 16px; }
+    .ws-edit-label { display: block; margin-bottom: 12px; font-size: 12px;
+      color: var(--muted, #8b949e); }
+    .ws-edit-input { display: block; width: 100%; margin-top: 5px; padding: 7px 9px;
+      font: inherit; font-size: 13px; color: inherit; background: rgba(127,127,127,.08);
+      border: 1px solid rgba(127,127,127,.32); border-radius: 6px; box-sizing: border-box; }
+    .ws-edit-input:disabled { opacity: .5; cursor: not-allowed; }
+    .ws-edit-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .ws-edit-lock { margin: 4px 0 14px; padding: 9px 11px; border-radius: 6px;
+      border: 1px solid rgba(180,83,9,.45); background: rgba(180,83,9,.12);
+      color: #f0b429; font-size: 12px; line-height: 1.45; }
+    .ws-edit-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+    /* WS-5: destructive action reads as destructive. */
+    .btn.danger { border-color: rgba(248,81,73,.45); color: var(--red); }
+    .btn.danger:hover:not(:disabled) { background: rgba(248,81,73,.12); }
+    .notice-banner { margin: 0 0 14px; padding: 10px 14px; border-radius: 8px;
+      border: 1px solid rgba(63,185,80,.35); background: rgba(63,185,80,.08);
+      color: var(--green); font-size: 13px; }
+    /* WS-2: a spent retry budget is a distinct state from "still connecting". */
+    .home-copilot-status-dot.err { background: var(--red); box-shadow: 0 0 0 3px rgba(248,81,73,.12); }
+    .skill-component-shell { margin: 10px 0; }
+    .skill-component-loading, .home-skill-component { border: 1px dashed var(--border); border-radius: 12px; padding: 12px; color: var(--muted); background: var(--panel-2); font-size: 12px; }
+    .home-skill-component-title { font-size: 12px; font-weight: 800; color: var(--text); margin-bottom: 6px; }
+    .skill-card { border: 1px solid rgba(47,129,247,.26); border-radius: 14px; overflow: hidden; background: var(--panel); box-shadow: 0 10px 26px rgba(15,23,42,.12); font-size: 12px; color: var(--text); }
+    .skill-card-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; padding: 12px 14px; border-bottom: 1px solid var(--border); background: linear-gradient(135deg, rgba(47,129,247,.13), rgba(63,185,80,.06)); }
+    .skill-card-kicker { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+    .skill-card h4 { margin: 2px 0 0; font-size: 14px; color: var(--text); }
+    .skill-status { border: 1px solid var(--border); border-radius: 999px; padding: 3px 8px; background: var(--panel-2); color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .skill-status.ok { color: var(--green); border-color: rgba(63,185,80,.35); }
+    .skill-status.err { color: var(--red); border-color: rgba(248,81,73,.35); }
+    .skill-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 12px 14px; }
+    .skill-form-grid label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 11px; }
+    .skill-form-grid label.wide { grid-column: 1 / -1; }
+    .skill-form-grid input, .skill-form-grid textarea, .skill-card select { width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); color: var(--text); padding: 7px 8px; font-size: 12px; font-family: inherit; }
+    .skill-form-grid textarea { resize: vertical; min-height: 110px; }
+    .skill-card-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 0 14px 12px; flex-wrap: wrap; }
+    .skill-card-note { padding: 9px 14px; border-top: 1px solid var(--border); color: var(--muted); background: var(--panel-2); font-size: 11px; }
+    .home-chat-input { display: grid; grid-template-columns: minmax(0, 1fr) clamp(68px, 20%, 96px); gap: 8px; border-top: 1px solid rgba(148,163,184,.14); padding-top: 10px; align-items: start; }
+    .home-chat-input .btn { width: 100%; min-width: 0; padding-left: 8px; padding-right: 8px; white-space: nowrap; }
+    .home-chat-input-wrap { position: relative; min-width: 0; }
+    .home-chat-input textarea { width: 100%; min-height: 44px; max-height: 120px; resize: vertical; background: var(--panel-2); border: 1px solid var(--border); color: var(--text); border-radius: 12px; padding: 9px 10px; font-size: 13px; font-family: inherit; }
+    .home-skill-popup { position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); max-height: 220px; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 18px 40px rgba(0,0,0,.35); padding: 6px; z-index: 70; }
+    .home-skill-popup .hint { color: var(--muted); font-size: 11px; padding: 6px 8px; }
+    .home-skill-option { padding: 7px 8px; border-radius: 9px; color: var(--text); font-size: 12px; cursor: pointer; }
+    .home-skill-option.active, .home-skill-option:hover { background: rgba(91,140,255,.14); }
+    .home-chat-status { min-height: 18px; color: var(--muted); font-size: 11px; margin-top: 6px; }
+    .home-chat-status.err { color: var(--red); }
+    :root[data-theme="hybrid"] .home-copilot,
+    :root[data-theme="light"] .home-copilot { background: linear-gradient(180deg, rgba(255,255,255,.99), rgba(244,247,251,.99)); box-shadow: -18px 0 44px rgba(15,23,42,.13); }
+    :root[data-theme="hybrid"] .home-chat-turn,
+    :root[data-theme="light"] .home-chat-turn,
+    :root[data-theme="hybrid"] .home-chat-empty,
+    :root[data-theme="light"] .home-chat-empty { background: rgba(241,245,249,.88); border-color: rgba(100,116,139,.18); }
+
+    @media (prefers-reduced-motion: reduce) {
+      .ws-card.live, .hero-stat.live .dot { animation: none !important; }
+      .progress > span { transition: none; }
+    }
+    @media (max-width: 1100px) {
+      .operating-brief { grid-template-columns: 1fr; }
+      .snapshot-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .workstream-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .copilot-shell.copilot-open { grid-template-columns: minmax(0, 1fr); }
+      .copilot-shell.copilot-open .home-copilot {
+        position: fixed;
+        top: 0;
+        right: 0;
+        width: min(var(--home-copilot-width, 390px), 92vw);
+        max-width: 92vw;
+      }
+      .ws-actions { justify-content: flex-start; }
+      .tools { margin-left: 0; width: 100%; }
+      .search { flex: 1; min-width: 220px; }
+    }
+    @media (max-width: 680px) {
+      .page-head { flex-direction: column; }
+      .brief-head { flex-direction: column; }
+      .brief-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .snapshot-grid, .workstream-grid { grid-template-columns: 1fr; }
+      .section-head { align-items: flex-start; flex-direction: column; }
+    }
+
+    :root[data-theme="hybrid"] body,
+    :root[data-theme="light"] body {
+      background:
+        radial-gradient(circle at top left, rgba(37,99,235,0.13), transparent 30%),
+        radial-gradient(circle at top right, rgba(124,58,237,0.10), transparent 28%),
+        var(--bg);
+    }
+    :root[data-theme="hybrid"] .topbar {
+      background: rgba(15, 23, 42, 0.94);
+      border-bottom-color: rgba(148, 163, 184, 0.24);
+    }
+    :root[data-theme="hybrid"] .topbar h1,
+    :root[data-theme="hybrid"] .topbar nav a.current { color: #f8fafc; }
+    :root[data-theme="hybrid"] .topbar nav a,
+    :root[data-theme="hybrid"] .theme-switch span { color: #cbd5e1; }
+    :root[data-theme="hybrid"] .theme-select {
+      background: rgba(30, 41, 59, 0.92); color: #f8fafc; border-color: rgba(148, 163, 184, 0.35);
+    }
+    :root[data-theme="light"] .topbar {
+      background: rgba(255, 255, 255, 0.88);
+      box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06);
+    }
+    :root[data-theme="hybrid"] .snapshot-card,
+    :root[data-theme="light"] .snapshot-card,
+    :root[data-theme="hybrid"] .ws-card,
+    :root[data-theme="light"] .ws-card,
+    :root[data-theme="hybrid"] .brief-card,
+    :root[data-theme="light"] .brief-card {
+      background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(244,247,251,.98));
+      border-color: rgba(100,116,139,.20);
+      box-shadow: 0 12px 34px rgba(15, 23, 42, 0.07);
+    }
+    :root[data-theme="hybrid"] .brief-metric,
+    :root[data-theme="light"] .brief-metric,
+    :root[data-theme="hybrid"] .lens-row,
+    :root[data-theme="light"] .lens-row {
+      background: rgba(241,245,249,.86);
+      border-color: rgba(100,116,139,.18);
+    }
+    :root[data-theme="hybrid"] .brief-metric:hover,
+    :root[data-theme="light"] .brief-metric:hover,
+    :root[data-theme="hybrid"] .lens-row:hover,
+    :root[data-theme="light"] .lens-row:hover {
+      background: rgba(232,238,252,.96);
+      border-color: rgba(49,95,220,.34);
+    }
+    :root[data-theme="hybrid"] .control-bar,
+    :root[data-theme="hybrid"] .shown-count,
+    :root[data-theme="light"] .control-bar {
+      background: rgba(255,255,255,.72);
+      border-color: rgba(100,116,139,.18);
+      box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05);
+    }
+    :root[data-theme="light"] .shown-count {
+      background: rgba(255,255,255,.72);
+      border-color: rgba(100,116,139,.18);
+      box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05);
+    }
+    :root[data-theme="hybrid"] .btn.secondary,
+    :root[data-theme="light"] .btn.secondary {
+      background: var(--panel-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      box-shadow: none;
+    }
+    :root[data-theme="hybrid"] .btn.secondary:hover,
+    :root[data-theme="light"] .btn.secondary:hover {
+      background: var(--panel-3);
+    }
+    :root[data-theme="hybrid"] .attention,
+    :root[data-theme="light"] .attention,
+    :root[data-theme="hybrid"] .mini-count,
+    :root[data-theme="light"] .mini-count {
+      background: rgba(241,245,249,.86);
+      border-color: rgba(100,116,139,.18);
+    }
+    :root[data-theme="hybrid"] .attention.live,
+    :root[data-theme="light"] .attention.live { background: rgba(37,99,235,.08); }
+    :root[data-theme="hybrid"] .attention.hot,
+    :root[data-theme="light"] .attention.hot { background: rgba(180,83,9,.08); }
+    :root[data-theme="hybrid"] .attention.bad,
+    :root[data-theme="light"] .attention.bad { background: rgba(220,38,38,.08); }
+
+    /* Date range filter */
+    .date-field { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12px; }
+    .date-input { min-width: 0; padding: 6px 8px; color-scheme: dark; }
+    .date-basis { min-width: 0; padding: 6px 8px; }
+    :root[data-theme="hybrid"] .date-input,
+    :root[data-theme="light"] .date-input { color-scheme: light; }
+    /* Notifications */
+    .notif-wrap { position: relative; }
+    .notif-btn { position: relative; font-size: 15px; }
+    .notif-badge {
+      position: absolute; top: -5px; right: -5px; min-width: 16px; height: 16px;
+      padding: 0 4px; border-radius: 999px; background: var(--red); color: #fff;
+      font-size: 10px; font-weight: 800; line-height: 16px; text-align: center;
+      box-shadow: 0 0 0 2px var(--panel);
+    }
+    .notif-panel {
+      position: absolute; top: calc(100% + 8px); right: 0; z-index: 80; width: 300px;
+      max-height: 360px; overflow-y: auto; padding: 8px;
+      background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+      box-shadow: 0 18px 44px rgba(0,0,0,.35);
+    }
+    .notif-head { font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+      color: var(--muted); font-weight: 800; padding: 4px 6px 8px; }
+    .notif-empty { color: var(--muted); font-size: 12px; padding: 8px 6px; }
+    .notif-row { display: flex; gap: 9px; align-items: flex-start; padding: 8px 6px;
+      border-radius: 9px; color: var(--text); text-decoration: none; }
+    .notif-row:hover { background: rgba(148,163,184,.10); text-decoration: none; }
+    .notif-icon { font-size: 14px; line-height: 1.3; }
+    .notif-row.bad .notif-icon { color: var(--red); }
+    .notif-row.hot .notif-icon { color: var(--amber); }
+    .notif-title { display: block; font-size: 12px; font-weight: 750;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .notif-text { display: block; font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+    [x-cloak] { display: none !important; }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Topaz AgentOS</h1>
+  <nav>
+    <a href="/static/index.html">Chat</a>
+    <a href="/static/dashboard_v2.html">Dashboard</a>
+    <a href="/static/workstreams.html" class="current">Agent Workstreams</a>
+    <a href="/static/finops.html">FinOps</a>
+  </nav>
+  <div class="theme-switch gear-wrap">
+    <span>Theme</span>
+    <button type="button" data-theme-toggle class="iaf-theme-toggle" aria-label="Toggle light/dark theme">
+      <svg class="iaf-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+      <svg class="iaf-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>
+    </button>
+  </div>
+  <!-- WS-3: session-controls.js renders the signed-in identity and Sign Out here. -->
+  <div data-session-controls></div>
+</div>
+
+<div class="copilot-shell" :class="{ 'copilot-open': homeCopilotOpen }" :style="homeCopilotShellStyle()" x-data="workstreamsIndex()" x-init="init()" x-cloak>
+  <main class="copilot-main">
+<div class="container">
+
+  <div class="page-head">
+    <div>
+      <div class="eyebrow">Workstream Brief</div>
+      <h2>Agent Workstreams</h2>
+      <div class="hero-stat" :class="{ live: totalWorking() > 0 }">
+        <span class="dot"></span>
+        <span x-text="heroStatusLabel()"></span>
+      </div>
+    </div>
+    <a href="/static/workstream_new.html" class="btn">+ New Workstream</a>
+  </div>
+
+
+  <div class="snapshot-strip-head" x-show="!loading || items.length">
+    <div>
+      <div class="eyebrow">North Star Business Metrics</div>
+    </div>
+  </div>
+  <div class="snapshot-grid northstar-grid" x-show="!loading || items.length">
+    <div class="snapshot-card explainable" role="button" tabindex="0"
+         @click="explainNorthStarCard('cycle_time')"
+         @keydown.enter.prevent="explainNorthStarCard('cycle_time')">
+      <div class="snapshot-label">Cycle Time</div>
+      <div class="snapshot-value" x-text="`${northStarMetrics().daysToClose}d`"></div>
+      <div class="snapshot-note" x-text="`${northStarMetrics().delayedCount} delayed drivers · ${northStarMetrics().maxDelayDays}d max aging`"></div>
+    </div>
+    <div class="snapshot-card explainable" :class="{ hot: northStarMetrics().delayedValue > 0 }" role="button" tabindex="0"
+         @click="explainNorthStarCard('delayed_value')"
+         @keydown.enter.prevent="explainNorthStarCard('delayed_value')">
+      <div class="snapshot-label">Delayed Value</div>
+      <div class="snapshot-value" x-text="formatMoney(northStarMetrics().delayedValue)"></div>
+      <div class="snapshot-note">blocked value across open workstream drivers</div>
+    </div>
+    <div class="snapshot-card explainable" :class="{ hot: summary().awaiting > 0 }" role="button" tabindex="0"
+         @click="explainNorthStarCard('approval_sla')"
+         @keydown.enter.prevent="explainNorthStarCard('approval_sla')">
+      <div class="snapshot-label">Approval SLA Risk</div>
+      <div class="snapshot-value" x-text="northStarMetrics().approvalSlaRisk"></div>
+      <div class="snapshot-note" x-text="`${summary().awaiting} approval blockers · ${summary().failed} exceptions`"></div>
+    </div>
+    <div class="snapshot-card explainable" :class="{ bad: summary().failed > 0 }" role="button" tabindex="0"
+         @click="explainNorthStarCard('delay_drivers')"
+         @keydown.enter.prevent="explainNorthStarCard('delay_drivers')">
+      <div class="snapshot-label">Top Delay Driver</div>
+      <div class="snapshot-value" x-text="northStarMetrics().topDriverLabel"></div>
+      <div class="snapshot-note" x-text="northStarMetrics().topDriverNote"></div>
+    </div>
+  </div>
+
+  <section class="operating-brief" x-show="!loading || items.length">
+    <article class="brief-card primary">
+      <div class="brief-head">
+        <div>
+          <div class="eyebrow">Operations Today</div>
+          <h3 x-text="briefHeadline()">Today in Operations</h3>
+        </div>
+        <div class="brief-time">Updated <strong x-text="briefUpdatedAt()"></strong></div>
+      </div>
+      <div class="brief-metrics">
+        <button class="brief-metric hot" @click="operatingLens = 'decisions'">
+          <span class="n" x-text="summary().awaiting"></span>
+          <span class="lbl">decisions waiting</span>
+        </button>
+        <button class="brief-metric live" @click="operatingLens = 'agents'">
+          <span class="n" x-text="summary().working"></span>
+          <span class="lbl">agents working</span>
+        </button>
+        <button class="brief-metric bad" @click="operatingLens = 'exceptions'">
+          <span class="n" x-text="summary().failed"></span>
+          <span class="lbl">exceptions to triage</span>
+        </button>
+        <button class="brief-metric good" @click="operatingLens = 'completed'">
+          <span class="n" x-text="summary().done"></span>
+          <span class="lbl">handled outcomes</span>
+        </button>
+      </div>
+    </article>
+
+    <aside class="brief-card">
+      <div class="brief-head compact">
+        <div>
+          <div class="eyebrow">Current View</div>
+          <div class="brief-copy" x-text="activeLens().note"></div>
+        </div>
+      </div>
+      <div class="lens-tabs">
+        <template x-for="lens in operatingLenses" :key="lens.id">
+          <button class="lens-chip" :class="{ active: operatingLens === lens.id }" @click="operatingLens = lens.id" x-text="lens.label"></button>
+        </template>
+      </div>
+      <div class="lens-feed">
+        <template x-for="entry in activeLensItems()" :key="`${entry.name}-${entry.kind}`">
+          <a class="lens-row" :class="entry.tone" :href="`/static/workstream_detail.html?name=${encodeURIComponent(entry.name)}`">
+            <span class="status-dot"></span>
+            <span>
+              <span class="lens-row-title" x-text="entry.title"></span>
+              <span class="lens-row-sub" x-text="entry.sub"></span>
+            </span>
+            <span class="lens-row-count" x-text="entry.count"></span>
+          </a>
+        </template>
+        <div class="lens-empty" x-show="activeLensItems().length === 0" x-text="activeLensEmpty()"></div>
+      </div>
+    </aside>
+  </section>
+
+  <div class="snapshot-grid" x-show="!loading || items.length">
+    <div class="snapshot-card">
+      <div class="snapshot-label">Workstreams</div>
+      <div class="snapshot-value" x-text="items.length"></div>
+      <div class="snapshot-note" x-text="`${summary().active} active · ${summary().paused} paused`"></div>
+    </div>
+    <div class="snapshot-card good">
+      <div class="snapshot-label">Handled Outcomes</div>
+      <div class="snapshot-value" x-text="summary().done"></div>
+      <div class="snapshot-note" x-text="`${completionRate()}% completion rate`"></div>
+    </div>
+    <div class="snapshot-card" :class="{ hot: summary().working > 0 }">
+      <div class="snapshot-label">Agents Working</div>
+      <div class="snapshot-value" x-text="summary().working"></div>
+      <div class="snapshot-note" x-text="summary().working ? 'running now' : 'capacity available'"></div>
+    </div>
+    <div class="snapshot-card" :class="{ hot: summary().awaiting > 0 }">
+      <div class="snapshot-label">Human Decisions</div>
+      <div class="snapshot-value" x-text="summary().awaiting"></div>
+      <div class="snapshot-note" x-text="summary().awaiting ? 'approval queue needs attention' : 'no approval blockers'"></div>
+    </div>
+    <div class="snapshot-card" :class="{ bad: summary().failed > 0 }">
+      <div class="snapshot-label">Exception Backlog</div>
+      <div class="snapshot-value" x-text="summary().failed + summary().pending"></div>
+      <div class="snapshot-note" x-text="`${summary().pending} queued · ${summary().failed} failed`"></div>
+    </div>
+    <div class="snapshot-card" :class="{ hot: summary().pending > 0 }">
+      <div class="snapshot-label">Queued Work</div>
+      <div class="snapshot-value" x-text="summary().pending"></div>
+      <div class="snapshot-note">ready for agent execution</div>
+    </div>
+    <div class="snapshot-card" :class="{ hot: summary().awaiting > 0 }">
+      <div class="snapshot-label">Judgement Queue</div>
+      <div class="snapshot-value" x-text="summary().awaiting"></div>
+      <div class="snapshot-note">evidence assembled for humans</div>
+    </div>
+    <div class="snapshot-card" :class="{ bad: summary().failed > 0 }">
+      <div class="snapshot-label">Control Exceptions</div>
+      <div class="snapshot-value" x-text="summary().failed"></div>
+      <div class="snapshot-note">need retry or triage</div>
+    </div>
+    <div class="snapshot-card good">
+      <div class="snapshot-label">Completed Outcomes</div>
+      <div class="snapshot-value" x-text="summary().done"></div>
+      <div class="snapshot-note">agent or human resolved</div>
+    </div>
+    <div class="snapshot-card">
+      <div class="snapshot-label">Policy Flywheel</div>
+      <div class="snapshot-value" x-text="policyOpportunityCount()"></div>
+      <div class="snapshot-note">workstreams with policy signals</div>
+    </div>
+  </div>
+
+  <div class="control-bar">
+    <div class="filters">
+      <template x-for="f in filters" :key="f">
+        <span class="chip" :class="{ active: statusFilter === f }" @click="statusFilter = f"
+          <span x-text="filterLabel(f)"></span><span class="chip-count" x-text="filterCount(f)"></span>
+        </span>
+      </template>
+    </div>
+    <div class="tools">
+      <input class="search" type="text" x-model="search" placeholder="Search name, owner, skill…">
+      <select class="select" x-model="domainFilter">
+        <option value="">Domain: All</option>
+        <template x-for="d in domainOptions()" :key="d.id">
+          <option :value="d.id" x-text="`${d.label} (${d.count})`"></option>
+        </template>
+      </select>
+      <!-- Date range filter: pick which date to filter on, then a From/To range. -->
+      <label class="date-field">Date
+        <select class="select date-basis" x-model="dateBasis" aria-label="Date field to filter on">
+          <option value="created_at">Created</option>
+          <option value="started_at">Started</option>
+          <option value="completed_at">Completed</option>
+        </select>
+      </label>
+      <label class="date-field">From
+        <input type="date" class="select date-input" x-model="dateFrom" :max="dateTo || null"
+               aria-label="Filter from date">
+      </label>
+      <label class="date-field">To
+        <input type="date" class="select date-input" x-model="dateTo" :min="dateFrom || null"
+               aria-label="Filter to date">
+      </label>
+      <button class="icon-btn" style="width:auto;padding:0 9px;" x-show="dateFrom || dateTo"
+              @click="clearDateRange()" title="Clear date range">Clear dates</button>
+      <select class="select" x-model="sortMode">
+        <option value="attention">Sort: attention first</option>
+        <option value="recent">Sort: recently active</option>
+        <option value="progress">Sort: most complete</option>
+        <option value="name">Sort: name</option>
+      </select>
+      <!-- Manual refresh: reload data without reloading the whole browser page. -->
+      <button class="icon-btn" @click="reload()" :disabled="loading"
+              title="Refresh workstream data" aria-label="Refresh workstreams">
+        <span x-text="loading ? '…' : '↻'"></span>
+      </button>
+      <!-- Notifications: pending approvals and exceptions needing attention. -->
+      <div class="notif-wrap">
+        <button class="icon-btn notif-btn" @click.stop="notifOpen = !notifOpen"
+                :aria-expanded="notifOpen ? 'true' : 'false'" aria-label="Notifications"
+                title="Pending approvals & exceptions">
+          🔔
+          <span class="notif-badge" x-show="notificationCount() > 0" x-text="notificationCount()"></span>
+        </button>
+        <div class="notif-panel" x-show="notifOpen" @click.outside="notifOpen = false" x-cloak>
+          <div class="notif-head">Needs attention</div>
+          <template x-if="notifications().length === 0">
+            <div class="notif-empty">No pending approvals or exceptions.</div>
+          </template>
+          <template x-for="n in notifications()" :key="n.key">
+            <a class="notif-row" :class="n.tone"
+               :href="`/static/workstream_detail.html?name=${encodeURIComponent(n.name)}`">
+              <span class="notif-icon" x-text="n.icon"></span>
+              <span style="min-width:0;">
+                <span class="notif-title" x-text="n.title"></span>
+                <span class="notif-text" x-text="n.text"></span>
+              </span>
+            </a>
+          </template>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div x-show="errorMessage" class="error-banner" x-text="errorMessage"></div>
+  <div x-show="noticeMessage" class="notice-banner" x-text="noticeMessage"></div>
+
+  <!-- WS-4: edit workstream. Metadata is always editable; skill and execution
+       settings are locked while the workstream is running, with the reason shown
+       rather than the fields silently ignoring input. -->
+  <div x-show="editOpen" class="ws-edit-backdrop" @click.self="cancelEditWorkstream()"
+       @keydown.window.escape="cancelEditWorkstream()"
+       @keydown="_trapEditTab($event)" x-cloak>
+    <div class="ws-edit-modal" role="dialog" aria-modal="true" aria-label="Edit workstream">
+      <template x-if="editDraft">
+        <div>
+          <h3 class="ws-edit-title">Edit <span x-text="editDraft.name"></span></h3>
+
+          <label class="ws-edit-label">Display name
+            <input type="text" class="ws-edit-input" x-model="editDraft.display_name"
+                   data-ws-edit-display-name placeholder="Human-readable name">
+          </label>
+
+          <label class="ws-edit-label">Owner
+            <input type="text" class="ws-edit-input" x-model="editDraft.owner"
+                   data-ws-edit-owner placeholder="Owner email address">
+          </label>
+
+          <label class="ws-edit-label">Description
+            <textarea class="ws-edit-input" rows="3" x-model="editDraft.description"
+                      data-ws-edit-description placeholder="What this workstream covers"></textarea>
+          </label>
+
+          <div class="ws-edit-lock" x-show="editExecutionLocked()" x-text="editLockReason()"></div>
+
+          <label class="ws-edit-label">Skill
+            <select class="ws-edit-input" x-model="editDraft.skill"
+                    data-ws-edit-skill :disabled="editExecutionLocked()">
+              <option value="" x-text="editDraft.skill ? editDraft.skill : '— none —'"></option>
+              <!-- REV-7: only skills the workstream runtime can resolve. -->
+              <template x-for="s in bindableSkills()" :key="s.name">
+                <option :value="s.name" x-text="s.name"></option>
+              </template>
+            </select>
+          </label>
+
+          <div class="ws-edit-row">
+            <label class="ws-edit-label">Batch size
+              <input type="number" min="1" max="100" class="ws-edit-input"
+                     x-model.number="editDraft.batch_size"
+                     data-ws-edit-batch-size :disabled="editExecutionLocked()">
+            </label>
+            <label class="ws-edit-label">Parallelism
+              <input type="number" min="1" max="10" class="ws-edit-input"
+                     x-model.number="editDraft.parallelism"
+                     data-ws-edit-parallelism :disabled="editExecutionLocked()">
+            </label>
+          </div>
+
+          <div class="ws-edit-actions">
+            <button class="btn secondary" data-ws-edit-cancel
+                    @click="cancelEditWorkstream()">Cancel</button>
+            <button class="btn" data-ws-edit-save
+                    :disabled="actionBusy === editDraft.name"
+                    @click="saveEditWorkstream()">Save changes</button>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+  <div x-show="loading" class="loading">Loading workstreams…</div>
+
+  <div x-show="!loading && filtered().length === 0" class="empty">
+    <div style="font-size: 36px; margin-bottom: 10px;">📋</div>
+    <div style="font-size: 16px; margin-bottom: 6px; color: var(--text);">
+      No workstreams yet
+    </div>
+    <div style="font-size: 13px;">
+      Install or activate workstreams to show the operating view
+    </div>
+    <div style="margin-top: 18px;">
+      <a href="/static/workstream_new.html" class="btn">+ New Workstream</a>
+    </div>
+  </div>
+
+  <div class="section-head" x-show="!loading && filtered().length">
+    <div>
+      <div class="eyebrow">Workstream Cards</div>
+      <h3>Active workstreams</h3>
+    </div>
+    <div class="shown-count" x-text="`${shownCount()} shown · ${visibleDomains().length} ${visibleDomains().length === 1 ? 'domain' : 'domains'} · ${summary().total} runtime items`"></div>
+  </div>
+
+  <div class="ws-domains" x-show="!loading && filtered().length">
+   <template x-for="d in visibleDomains()" :key="d.id">
+    <section class="domain-band">
+      <div class="domain-band-head">
+        <span class="lbl" x-text="d.label"></span>
+        <span class="cnt" x-text="d.count + (d.count === 1 ? ' workstream' : ' workstreams')"></span>
+        <span class="rule"></span>
+      </div>
+      <div class="workstream-grid">
+    <template x-for="ws in rowsForDomain(d.id)" :key="ws.name">
+      <div class="ws-card" :class="{ live: ((ws.by_status && ws.by_status.in_progress) || 0) > 0 }"
+           :title="ws.name + '  ·  Skill: ' + (ws.skill || '—') + '  ·  Owner: ' + (ws.owner || '—') + '  ·  Started: ' + formatDate(ws.started_at || ws.created_at)">
+        <div class="ws-head">
+          <span class="ws-domain" :class="'dom-' + domainOf(ws)" x-text="domainShort(domainOf(ws))"></span>
+          <span class="ws-status" :class="ws.status"><span class="dot"></span><span x-text="ws.status"></span></span>
+        </div>
+
+        <div class="ws-title" x-text="friendlyName(ws)"></div>
+
+        <div class="ws-prog">
+          <div class="progress" :title="progressTitle(ws)">
+            <span class="done" :style="`width: ${pct(ws, 'done')}%`"></span>
+            <span class="failed" :style="`width: ${pct(ws, 'failed')}%`"></span>
+            <span class="awaiting" :style="`width: ${pct(ws, 'awaiting_human')}%`"></span>
+            <span class="in_progress" :style="`width: ${pct(ws, 'in_progress')}%`"></span>
+          </div>
+          <div class="ws-progline"><strong x-text="healthScore(ws) + '%'"></strong> complete
+            <span class="sep">·</span><span x-text="statusLine(ws)"></span></div>
+        </div>
+
+        <div class="ws-counts">
+          <span class="wc done">Done <strong x-text="count(ws, 'done')"></strong></span>
+          <span class="wc awaiting">HITL <strong x-text="count(ws, 'awaiting_human')"></strong></span>
+          <span class="wc failed">Fail <strong x-text="count(ws, 'failed')"></strong></span>
+        </div>
+
+        <div class="ws-actions">
+          <a class="btn" :href="`/static/workstream_detail.html?name=${encodeURIComponent(ws.name)}`">Open Workstream</a>
+          <button class="btn secondary" x-show="canRunNow(ws)"
+                  :disabled="actionBusy === ws.name" @click="runNow(ws)">Run Now</button>
+          <button class="btn secondary" x-show="ws.status === 'active'"
+                  :disabled="actionBusy === ws.name" @click="pause(ws.name)">Pause</button>
+          <button class="btn secondary" x-show="ws.status === 'paused'"
+                  :disabled="actionBusy === ws.name" @click="resume(ws.name)">Resume</button>
+          <!-- WS-4 / WS-5: manage actions. Delete is gated on permission; the
+               server stays authoritative via require_scoped_identity. -->
+          <button class="btn secondary" data-ws-edit
+                  :disabled="actionBusy === ws.name" @click="openEditWorkstream(ws)">Edit</button>
+          <button class="btn danger" data-ws-delete x-show="canDelete()"
+                  :disabled="actionBusy === ws.name" @click="deleteWorkstream(ws.name)">Delete</button>
+        </div>
+      </div>
+    </template>
+      </div>
+    </section>
+   </template>
+  </div>
+
+</div>
+  </main>
+
+  <button class="home-copilot-tab" @click="openHomeCopilot()">Workstream Copilot</button>
+  <aside class="home-copilot" :class="{ resizing: homeCopilotResizing }" x-show="homeCopilotOpen || homeCopilotResizing">
+    <div class="home-copilot-resize" title="Drag to resize Workstream Copilot" @mousedown.prevent="beginHomeCopilotResize($event)"></div>
+    <div class="home-copilot-inner">
+      <div class="home-copilot-head">
+        <div>
+          <h3><span class="home-copilot-status-dot" :class="{ on: homeCopilotWsConnected, err: homeCopilotWsFailed }"></span>Workstream Copilot</h3>
+          <!-- WS-2: three states, not two. A refused connection must not keep
+               claiming it is still connecting. -->
+          <div class="sub" x-text="homeCopilotWsConnected ? 'Connected to main chat runtime.' : (homeCopilotWsFailed ? 'Not connected to the chat runtime.' : 'Connecting to main chat runtime…')"></div>
+          <div class="home-copilot-resize-note">Drag the left edge to resize.</div>
+        </div>
+        <div class="home-copilot-actions">
+          <button x-show="homeCopilotWsFailed" class="icon-btn" style="width:auto;padding:0 9px;" title="Retry connecting to the chat runtime" @click="retryHomeCopilot()">Retry</button>
+          <button class="icon-btn" style="width:auto;padding:0 9px;" title="Toggle width" @click="toggleHomeCopilotWide()" x-text="homeCopilotWide ? 'Normal' : 'Wide'"></button>
+          <button class="icon-btn" title="Close" @click="closeHomeCopilot()">×</button>
+        </div>
+      </div>
+      <div class="home-copilot-skill">
+        <span>Skill</span>
+        <select x-model="homeCopilotSkillMode" @change="persistHomeCopilotSkillMode()">
+          <option value="auto">Auto / page-aware</option>
+          <template x-for="skill in homeCopilotSkills()" :key="skill.name">
+            <option :value="skill.name" x-text="skill.name"></option>
+          </template>
+        </select>
+      </div>
+      <div class="home-copilot-prompts">
+        <template x-for="prompt in homeCopilotPrompts()" :key="prompt">
+          <button class="home-prompt-chip" @click="seedHomeCopilotPrompt(prompt)" x-text="prompt"></button>
+        </template>
+      </div>
+      <div class="home-chat-thread" data-home-copilot-thread>
+        <template x-if="homeCopilotTurns.length === 0">
+          <div class="home-chat-empty">Ask Workstream Copilot what needs attention, which agents are active, or where to open next.</div>
+        </template>
+        <template x-for="turn in homeCopilotTurns" :key="turn.id">
+          <div class="home-chat-turn" :class="{ pending: turn.pending }">
+            <div class="turn-skill" x-show="turn.skill" x-text="`Skill: ${turn.skill}`"></div>
+            <div class="q" x-text="turn.message"></div>
+            <template x-if="turn.pending && !turn.response">
+              <div class="a" x-text="homeCopilotTypingStatus || 'Thinking…'"></div>
+            </template>
+            <template x-if="turn.response">
+              <div class="a chat-prose" x-html="renderHomeCopilotMarkdown(turn.response)"></div>
+            </template>
+          </div>
+        </template>
+      </div>
+      <form class="home-chat-input" @submit.prevent="submitHomeCopilot()">
+        <div class="home-chat-input-wrap">
+          <div class="home-skill-popup" x-show="homeSkillPopupOpen" x-cloak>
+            <div class="hint">Type <strong>@skill</strong> to route this Workstream Copilot turn</div>
+            <template x-for="(skill, idx) in homeSkillSuggestions()" :key="skill.name">
+              <div class="home-skill-option" :class="{ active: homeSkillPopupIndex === idx }" @mousedown.prevent="selectHomeSkillMention(skill.name)">
+                <strong x-text="skill.name"></strong>
+                <span x-show="skill.description" x-text="` — ${String(skill.description).slice(0, 80)}`"></span>
+              </div>
+            </template>
+          </div>
+          <textarea name="message" x-model="homeCopilotDraft" @input="handleHomeCopilotInput()" @keydown="handleHomeCopilotKeydown($event)" placeholder="Ask about this page, or type @skill..."></textarea>
+          <div class="home-chat-status" :class="{ err: homeCopilotError }" x-text="homeCopilotError || (homeCopilotBusy ? 'Sending…' : '')"></div>
+        </div>
+        <button class="btn" type="submit" :disabled="homeCopilotBusy" x-text="homeCopilotBusy ? 'Sending…' : 'Send'"></button>
+      </form>
+    </div>
+  </aside>
+</div>
+
+<script>
+
+function escapeHomeCopilotHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function sanitizeHomeCopilotHtml(html) {
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  template.content.querySelectorAll('script, style, iframe, object, embed').forEach(node => node.remove());
+  template.content.querySelectorAll('*').forEach(node => {
+    [...node.attributes].forEach(attr => {
+      const name = attr.name.toLowerCase();
+      const value = String(attr.value || '').trim().toLowerCase();
+      if (name.startsWith('on') || value.startsWith('javascript:') || value.startsWith('data:') || value.startsWith('vbscript:')) node.removeAttribute(attr.name);
+    });
+    if (node.tagName === 'A') {
+      node.setAttribute('target', '_blank');
+      node.setAttribute('rel', 'noopener noreferrer');
+    }
+  });
+  return template.innerHTML;
+}
+
+function fillHomeCopilotSkillTemplate(template, props) {
+  return String(template || '').replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, key) => {
+    const value = props && props[key] !== undefined ? props[key] : '';
+    return escapeHomeCopilotHtml(Array.isArray(value) ? value.join(', ') : value);
+  });
+}
+
+function renderHomeCopilotMarkdownText(text) {
+  const raw = String(text || '');
+  const prepared = raw.replace(/```skill_component\s*([\s\S]*?)```/g, (_, jsonText) => {
+    try {
+      const component = JSON.parse(String(jsonText || '').trim());
+      const skill = String(component.skill || '').replace(/[^a-zA-Z0-9_-]/g, '');
+      const props = encodeURIComponent(JSON.stringify(component.props || {}));
+      if (!skill) return '';
+      return `<div class="skill-component-shell home-skill-component" data-skill-component-placeholder data-skill="${escapeHomeCopilotHtml(skill)}" data-props="${escapeHomeCopilotHtml(props)}"><div class="home-skill-component-title">${escapeHomeCopilotHtml(skill)} action</div><div>Loading ${escapeHomeCopilotHtml(skill)} form...</div></div>`;
+    } catch {
+      return `<pre><code>${escapeHomeCopilotHtml(jsonText)}</code></pre>`;
+    }
+  });
+  const html = window.marked && typeof window.marked.parse === 'function'
+    ? window.marked.parse(prepared, { breaks: true, gfm: true })
+    : escapeHomeCopilotHtml(prepared).replace(/\n/g, '<br>');
+  return sanitizeHomeCopilotHtml(html);
+}
+
+const WS_DOMAIN_DEFS = {
+  p2p:      { label: 'Procure-to-Pay (P2P)',          prefixes: ['p2p', 'ap', 'bp', 'fin'] },
+  o2c:      { label: 'Order-to-Cash (O2C)',           prefixes: ['o2c', 'ar'] },
+  r2r:      { label: 'Record-to-Report (R2R)',        prefixes: ['r2r', 'control'] },
+  sts:      { label: 'Trade Settlement (STS)',        prefixes: ['sts'] },
+  treasury: { label: 'Treasury',                      prefixes: ['treasury'] },
+  o2o:      { label: 'Opportunity-to-Order (NTT)',    prefixes: ['ntt'] },
+  tax:      { label: 'Tax',                            prefixes: ['tax'] },
+  fpa:      { label: 'FP&A',                           prefixes: ['fpa'] },
+  other:    { label: 'Other',                          prefixes: [] },
+};
+// Every workstream renders in a domain band (by name prefix, else "Other"). Nothing is
+// hidden automatically: a new or template-created workstream starts with 0 items and may
+// use any skill mode, and must still be visible right after it is created.
+const WS_DOMAIN_ORDER = ['p2p', 'o2c', 'r2r', 'sts', 'treasury', 'o2o', 'tax', 'fpa', 'other'];
+// Friendly card titles — curated for the demo workstreams; everything else is prettified.
+const WS_FRIENDLY = {
+  fin_invoice_p2p: 'AP Invoice-to-Pay',
+  fin_document_ingestion: 'Document Ingestion',
+  o2c_credit_collections: 'Credit & Collections',
+  r2r_period_close: 'Period-End Close',
+  treasury_bank_recon: 'Bank Reconciliation & Settlement',
+  bp_p2p_agentic_flow_demo: 'P2P Agentic Flow',
+  ar_dispute_resolution: 'Dispute Resolution',
+};
+const WS_DOMAIN_SHORT = { p2p:'P2P', o2c:'O2C', r2r:'R2R', sts:'STS', treasury:'Treasury', o2o:'O2O', tax:'Tax', fpa:'FP&A', other:'' };
+function _prettyWs(name){
+  let s = String(name||'').replace(/^(fin|ap|bp|o2c|ar|r2r|control|sts|treasury|ntt|tax|fpa|research|test)_/, '');
+  s = s.replace(/_/g,' ').trim().replace(/\b\w/g, c => c.toUpperCase());
+  return s.replace(/\bP2p\b/g,'P2P').replace(/\bO2c\b/g,'O2C').replace(/\bR2r\b/g,'R2R').replace(/\bO2o\b/g,'O2O')
+          .replace(/\bAp\b/g,'AP').replace(/\bGr\b/g,'GR').replace(/\bIdp\b/g,'IDP').replace(/\bSox\b/g,'SOX').replace(/\bVat\b/g,'VAT') || name;
+}
+
+function workstreamsIndex() {
+  return {
+    items: [],
+    skills: [],
+    homeCopilotOpen: localStorage.getItem('workstreams_home_copilot_open') === '1',
+    homeCopilotWidth: Number(localStorage.getItem('workstreams_home_copilot_width') || 390),
+    homeCopilotNormalWidth: Number(localStorage.getItem('workstreams_home_copilot_normal_width') || 390),
+    homeCopilotWide: localStorage.getItem('workstreams_home_copilot_wide') === '1',
+    homeCopilotResizing: false,
+    homeCopilotDraft: '',
+    homeCopilotBusy: false,
+    homeCopilotError: '',
+    homeCopilotTurns: [],
+    homeCopilotWs: null,
+    homeCopilotWsConnected: false,
+    // WS-2: bounded reconnect. Without a cap and a terminal state, a refused
+    // connection is indistinguishable from a slow one and the panel reads
+    // "Connecting…" forever.
+    homeCopilotWsAttempts: 0,
+    homeCopilotWsFailed: false,
+    homeCopilotWsMaxAttempts: 5,
+    // Tracks whether homeCopilotError came from the connection (ours to clear on
+    // reconnect) rather than from a failed user request (theirs to keep).
+    homeCopilotWsErrorIsConnection: false,
+    // REV-4: pending backoff dial, so closing the panel can cancel it.
+    homeCopilotReconnectTimer: null,
+    homeCopilotStreamingTurnId: '',
+    homeCopilotTypingStatus: '',
+    _homeSkillComponentTemplateCache: {},
+    _homeSkillComponentObserver: null,
+    _homeSkillComponentHydrationTimer: null,
+    homeCopilotSessionId: `workstreams_home_copilot_${Date.now()}`,
+    homeCopilotSkillMode: localStorage.getItem('workstreams_home_copilot_skill_mode') || 'auto',
+    homeSkillPopupOpen: false,
+    homeSkillPopupQuery: '',
+    homeSkillPopupIndex: 0,
+    _homeCopilotResizeMove: null,
+    _homeCopilotResizeUp: null,
+    loading: true,
+    statusFilter: (localStorage.getItem('workstreams_status_filter') || ''),
+    domainFilter: '',
+    showLab: false,
+    search: (localStorage.getItem('workstreams_search') || ''),
+    sortMode: (localStorage.getItem('workstreams_sort_mode') || 'attention'),
+    dateFrom: '',
+    dateTo: '',
+    dateBasis: (localStorage.getItem('workstreams_date_basis') || 'created_at'),
+    notifOpen: false,
+    operatingLens: 'today',
+    operatingLenses: [
+      { id: 'today', label: 'Today', note: '' },
+      { id: 'decisions', label: 'Decisions', note: 'Items paused on a human approval or judgement call.' },
+      { id: 'agents', label: 'Agents', note: 'Workstreams where agents are actively executing.' },
+      { id: 'exceptions', label: 'Exceptions', note: 'Failed items that need retry, skip, or evidence inspection.' },
+      { id: 'completed', label: 'Handled', note: 'Outcomes completed by agents or people.' },
+      { id: 'patterns', label: 'Patterns', note: 'Workstreams showing policy, governance, or control signals.' },
+    ],
+    actionBusy: '',
+    errorMessage: '',
+    // WS-5: non-error feedback (e.g. what a delete also removed).
+    noticeMessage: '',
+    // REV-2: what the caller may do to workstreams, per the tenant policy.
+    // Fails closed until loadCapabilities() answers.
+    capabilities: { read: true, write: false, delete: false },
+    // WS-4: edit form. editDraft is a copy, so Cancel truly discards.
+    editOpen: false,
+    editDraft: null,
+    // REV-6: element to restore focus to when the dialog closes.
+    _editReturnFocusTo: null,
+    filters: ['', 'active', 'paused', 'completed', 'failed'],
+    pollTimer: null,
+
+    async init() {
+      await this.reload();
+      await this.loadSkills();
+      await this.loadCapabilities();
+      this.connectHomeCopilot();
+      this.installHomeSkillComponentObserver();
+      this.pollTimer = setInterval(() => { if (!document.hidden) this.reload(true); }, 9000);
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) this.reload(true); });
+      // Escape closes the Workstream Copilot panel (keyboard accessibility).
+      // If the @skill mention popup is open, Escape closes that first (handled
+      // in handleHomeCopilotKeydown); only close the panel when it isn't.
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && this.homeCopilotOpen && !this.homeSkillPopupOpen) {
+          this.closeHomeCopilot();
+        }
+      });
+      // Persist view preferences (sort + filters) so they survive a page reload.
+      this.$watch('sortMode', (v) => localStorage.setItem('workstreams_sort_mode', v));
+      this.$watch('statusFilter', (v) => localStorage.setItem('workstreams_status_filter', v || ''));
+      this.$watch('search', (v) => localStorage.setItem('workstreams_search', v || ''));
+      this.$watch('dateBasis', (v) => localStorage.setItem('workstreams_date_basis', v || 'created_at'));
+    },
+
+    async loadSkills() {
+      try {
+        const r = await fetch('/api/skills');
+        if (!r.ok) throw new Error(`Skill load failed (${r.status})`);
+        const data = await r.json();
+        this.skills = Array.isArray(data.skills) ? data.skills : Object.entries(data.skills || {}).map(([name, meta]) => ({ name, ...(meta || {}) }));
+      } catch (e) {
+        console.warn('failed to load skills', e);
+        this.skills = [];
+      }
+    },
+
+
+    homeCopilotShellStyle() {
+      return `--home-copilot-width: ${this.currentHomeCopilotWidth()}px`;
+    },
+
+    currentHomeCopilotWidth() {
+      return this.homeCopilotWide ? Math.max(this.homeCopilotWidth, 560) : Math.min(this.homeCopilotWidth, 520);
+    },
+
+    openHomeCopilot() {
+      this.homeCopilotOpen = true;
+      localStorage.setItem('workstreams_home_copilot_open', '1');
+      this.connectHomeCopilot();
+      setTimeout(() => {
+        const input = document.querySelector('.home-chat-input textarea');
+        if (input) input.focus();
+      }, 0);
+    },
+
+    closeHomeCopilot() {
+      this.homeCopilotOpen = false;
+      // REV-4: drop any dial queued during backoff.
+      if (this.homeCopilotReconnectTimer) {
+        clearTimeout(this.homeCopilotReconnectTimer);
+        this.homeCopilotReconnectTimer = null;
+      }
+      localStorage.setItem('workstreams_home_copilot_open', '0');
+    },
+
+    toggleHomeCopilotWide() {
+      if (this.homeCopilotWide) {
+        this.homeCopilotWide = false;
+        this.homeCopilotWidth = Math.max(320, Math.min(520, this.homeCopilotNormalWidth || 390));
+      } else {
+        this.homeCopilotNormalWidth = Math.max(320, Math.min(520, this.homeCopilotWidth || 390));
+        this.homeCopilotWide = true;
+        this.homeCopilotWidth = Math.max(620, this.homeCopilotWidth || 620);
+      }
+      localStorage.setItem('workstreams_home_copilot_wide', this.homeCopilotWide ? '1' : '0');
+      localStorage.setItem('workstreams_home_copilot_width', String(this.homeCopilotWidth));
+      localStorage.setItem('workstreams_home_copilot_normal_width', String(this.homeCopilotNormalWidth));
+    },
+
+    setHomeCopilotWideMode() {
+      this.homeCopilotWide = true;
+      this.homeCopilotWidth = Math.max(620, this.homeCopilotWidth || 620);
+      localStorage.setItem('workstreams_home_copilot_wide', '1');
+      localStorage.setItem('workstreams_home_copilot_width', String(this.homeCopilotWidth));
+    },
+
+    beginHomeCopilotResize(event) {
+      const startX = event.clientX;
+      const startWidth = this.currentHomeCopilotWidth();
+      const clamp = value => Math.max(320, Math.min(820, value));
+      this.homeCopilotResizing = true;
+      document.body.style.userSelect = 'none';
+      this._homeCopilotResizeMove = moveEvent => {
+        const next = clamp(startWidth + (startX - moveEvent.clientX));
+        this.homeCopilotWidth = next;
+        this.homeCopilotWide = next >= 540;
+        if (next < 540) this.homeCopilotNormalWidth = next;
+      };
+      this._homeCopilotResizeUp = () => {
+        this.homeCopilotResizing = false;
+        document.body.style.userSelect = '';
+        localStorage.setItem('workstreams_home_copilot_width', String(this.homeCopilotWidth));
+        localStorage.setItem('workstreams_home_copilot_normal_width', String(this.homeCopilotNormalWidth));
+        localStorage.setItem('workstreams_home_copilot_wide', this.homeCopilotWide ? '1' : '0');
+        document.removeEventListener('mousemove', this._homeCopilotResizeMove);
+        document.removeEventListener('mouseup', this._homeCopilotResizeUp);
+        this._homeCopilotResizeMove = null;
+        this._homeCopilotResizeUp = null;
+      };
+      document.addEventListener('mousemove', this._homeCopilotResizeMove);
+      document.addEventListener('mouseup', this._homeCopilotResizeUp);
+    },
+
+    homeCopilotSkills() {
+      return (this.skills || []).filter(skill => skill && skill.name).slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    },
+
+    persistHomeCopilotSkillMode() {
+      localStorage.setItem('workstreams_home_copilot_skill_mode', this.homeCopilotSkillMode || 'auto');
+    },
+
+    homeSkillSuggestions() {
+      const q = (this.homeSkillPopupQuery || '').toLowerCase();
+      return this.homeCopilotSkills().filter(skill => !q || skill.name.toLowerCase().includes(q)).slice(0, 8);
+    },
+
+    handleHomeCopilotInput() {
+      const match = (this.homeCopilotDraft || '').match(/(^|\s)@([a-zA-Z0-9_-]*)$/);
+      this.homeSkillPopupOpen = !!match;
+      this.homeSkillPopupQuery = match ? match[2] : '';
+      this.homeSkillPopupIndex = 0;
+    },
+
+    handleHomeCopilotKeydown(event) {
+      if (this.homeSkillPopupOpen) {
+        const suggestions = this.homeSkillSuggestions();
+        if (event.key === 'ArrowDown') {
+          event.preventDefault();
+          this.homeSkillPopupIndex = suggestions.length ? (this.homeSkillPopupIndex + 1) % suggestions.length : 0;
+          return;
+        }
+        if (event.key === 'ArrowUp') {
+          event.preventDefault();
+          this.homeSkillPopupIndex = suggestions.length ? (this.homeSkillPopupIndex - 1 + suggestions.length) % suggestions.length : 0;
+          return;
+        }
+        if (event.key === 'Enter' && !event.shiftKey && suggestions[this.homeSkillPopupIndex]) {
+          event.preventDefault();
+          this.selectHomeSkillMention(suggestions[this.homeSkillPopupIndex].name);
+          return;
+        }
+        if (event.key === 'Escape') {
+          this.homeSkillPopupOpen = false;
+          return;
+        }
+      }
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        this.submitHomeCopilot();
+      }
+    },
+
+    selectHomeSkillMention(skillName) {
+      this.homeCopilotDraft = (this.homeCopilotDraft || '').replace(/(^|\s)@[a-zA-Z0-9_-]*$/, `$1@${skillName} `);
+      this.homeSkillPopupOpen = false;
+      setTimeout(() => document.querySelector('.home-chat-input textarea')?.focus(), 0);
+    },
+
+    resolveHomeCopilotSkill(raw) {
+      let message = String(raw || '').trim();
+      let skillName = this.homeCopilotSkillMode && this.homeCopilotSkillMode !== 'auto' ? this.homeCopilotSkillMode : null;
+      const mention = message.match(/^@([a-zA-Z0-9_-]+)\s+([\s\S]*)$/);
+      if (mention) {
+        skillName = mention[1];
+        message = mention[2].trim();
+      }
+      const alias = this.homeCopilotSkills().find(skill => skillName && skill.name.toLowerCase() === skillName.toLowerCase());
+      if (alias) skillName = alias.name;
+      return { message, skillName };
+    },
+
+    homeCopilotPrompts() {
+      return ['Brief me on this page.', 'What needs attention?', 'Which agents are working?', 'What should I open next?'];
+    },
+
+    seedHomeCopilotPrompt(prompt) {
+      this.openHomeCopilot();
+      this.homeCopilotDraft = prompt;
+      setTimeout(() => document.querySelector('.home-chat-input textarea')?.focus(), 0);
+    },
+
+    homeCopilotUserId() {
+      try {
+        const user = _getIafUser();
+        return user.user_id || user.email || 'demo';
+      } catch {
+        return 'demo';
+      }
+    },
+
+    homeCopilotPageContext() {
+      const visible = typeof this.filtered === 'function' ? this.filtered().slice(0, 12) : [];
+      return {
+        source_page: 'workstreams',
+        page: 'workstreams_index',
+        operatingLens: this.operatingLens,
+        activeLens: this.activeLens(),
+        statusFilter: this.statusFilter,
+        search: this.search,
+        sortMode: this.sortMode,
+        summary: this.summary(),
+        north_star_metrics: this.northStarMetrics(),
+        top_delay_drivers: this.businessDrivers(10),
+        visibleRecords: visible.map(ws => ({
+          name: ws.name,
+          display_name: ws.display_name,
+          status: ws.status,
+          skill: ws.skill,
+          owner: ws.owner,
+          total_items: ws.total_items,
+          by_status: ws.by_status,
+          attention: this.attention(ws),
+        })),
+      };
+    },
+
+    scrollHomeCopilotToBottom() {
+      setTimeout(() => {
+        const el = document.querySelector('[data-home-copilot-thread]');
+        if (el) el.scrollTop = el.scrollHeight;
+      }, 0);
+    },
+
+    scheduleHomeSkillComponentHydration() {
+      clearTimeout(this._homeSkillComponentHydrationTimer);
+      this._homeSkillComponentHydrationTimer = setTimeout(() => this.hydrateHomeSkillComponents(), 0);
+    },
+
+    installHomeSkillComponentObserver() {
+      if (this._homeSkillComponentObserver || !window.MutationObserver) return;
+      const target = document.querySelector('[x-data="workstreamsIndex()"]') || document.body;
+      this._homeSkillComponentObserver = new MutationObserver((mutations) => {
+        const sawPlaceholder = mutations.some(mutation => Array.from(mutation.addedNodes || []).some(node => node.nodeType === 1 && (node.matches?.('[data-skill-component-placeholder]') || node.querySelector?.('[data-skill-component-placeholder]'))));
+        if (sawPlaceholder) this.scheduleHomeSkillComponentHydration();
+      });
+      this._homeSkillComponentObserver.observe(target, { childList: true, subtree: true });
+    },
+
+    async hydrateHomeSkillComponents(root = document) {
+      const placeholders = Array.from(root.querySelectorAll('[data-skill-component-placeholder]:not([data-loaded]):not([data-loading])'));
+      for (const node of placeholders) {
+        node.dataset.loading = 'true';
+        const skill = node.dataset.skill || '';
+        let props = {};
+        try { props = JSON.parse(decodeURIComponent(node.dataset.props || '%7B%7D')); } catch { props = {}; }
+        try {
+          let template = this._homeSkillComponentTemplateCache[skill];
+          if (!template) {
+            const r = await fetch(`/api/skills/${encodeURIComponent(skill)}/component`);
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            template = await r.text();
+            this._homeSkillComponentTemplateCache[skill] = template;
+          }
+          node.innerHTML = fillHomeCopilotSkillTemplate(template, props);
+          node.dataset.loaded = 'true';
+          delete node.dataset.loading;
+          node.querySelectorAll('[data-field]').forEach(field => { field.dataset.originalValue = field.value || ''; });
+          node.querySelectorAll('[data-skill-component]').forEach(card => this.wireHomeSkillComponent(card));
+        } catch (e) {
+          node.innerHTML = `<div class="home-skill-component-title">${escapeHomeCopilotHtml(skill)} action</div><div>Unable to load component: ${escapeHomeCopilotHtml(e.message || e)}</div>`;
+          node.dataset.loaded = 'error';
+          delete node.dataset.loading;
+        }
+      }
+    },
+
+    wireHomeSkillComponent(card) {
+      card.querySelectorAll('[data-action]').forEach(button => {
+        if (button.dataset.homeSkillButtonWired === 'true') return;
+        button.dataset.homeSkillButtonWired = 'true';
+        button.addEventListener('click', async (event) => {
+          event.preventDefault(); event.stopPropagation();
+          await this.handleHomeSkillComponentAction(card, button.dataset.action);
+        });
+      });
+    },
+
+    collectHomeSkillFields(card) {
+      const payload = {};
+      card.querySelectorAll('[data-field]').forEach(field => { payload[field.dataset.field] = field.value || ''; });
+      return payload;
+    },
+
+    setHomeSkillComponentMessage(card, message, tone = '') {
+      const status = card.querySelector('[data-status]');
+      const note = card.querySelector('[data-message]');
+      if (status) {
+        status.textContent = tone === 'ok' ? 'Completed' : tone === 'err' ? 'Error' : 'Draft';
+        status.classList.toggle('ok', tone === 'ok');
+        status.classList.toggle('err', tone === 'err');
+      }
+      if (note) note.textContent = message;
+    },
+
+    async handleHomeSkillComponentAction(card, action) {
+      if (action === 'skill-reset') {
+        card.querySelectorAll('[data-field]').forEach(field => { field.value = field.dataset.originalValue || ''; });
+        this.setHomeSkillComponentMessage(card, 'Draft reset. Review and confirm before sending/posting.');
+        return;
+      }
+      if (action === 'send-email') await this.sendHomeEmailComponent(card);
+      else if (action === 'post-sap') await this.postHomeSapComponent(card);
+    },
+
+    async sendHomeEmailComponent(card) {
+      const fields = this.collectHomeSkillFields(card);
+      const payload = {
+        to: String(fields.to || '').split(/[;,]/).map(v => v.trim()).filter(Boolean),
+        cc: String(fields.cc || '').split(/[;,]/).map(v => v.trim()).filter(Boolean),
+        from_address: fields.from_address || '',
+        subject: fields.subject || '',
+        body: fields.body || '',
+      };
+      if (!payload.to.length || !payload.subject || !payload.body) {
+        this.setHomeSkillComponentMessage(card, 'To, Subject, and Body are required before sending.', 'err');
+        return;
+      }
+      if (!window.confirm(`Send email to ${payload.to.join(', ')} with subject "${payload.subject}"?`)) {
+        this.setHomeSkillComponentMessage(card, 'Send cancelled. You can continue editing the draft.');
+        return;
+      }
+      await this.postHomeSkillAction(card, '/api/send-email', payload, 'Email sent/queued successfully.');
+    },
+
+    async postHomeSapComponent(card) {
+      const payload = this.collectHomeSkillFields(card);
+      payload.metadata = Object.assign({}, payload.metadata || {}, { source: 'workstream_copilot_skill_component', source_page: 'workstreams', session_id: this.homeCopilotSessionId });
+      if (!payload.company_code || !payload.document_type || !payload.posting_date || !payload.reference) {
+        this.setHomeSkillComponentMessage(card, 'Company Code, Document Type, Posting Date, and Reference are required before posting.', 'err');
+        return;
+      }
+      if (!window.confirm(`Post to SAP for company ${payload.company_code}, reference "${payload.reference}", amount ${payload.currency || ''} ${payload.amount || ''}?`)) {
+        this.setHomeSkillComponentMessage(card, 'SAP post cancelled. You can continue editing the payload.');
+        return;
+      }
+      await this.postHomeSkillAction(card, '/api/post-to-sap', payload, 'SAP post accepted successfully.');
+    },
+
+    async postHomeSkillAction(card, url, payload, successMessage) {
+      const buttons = Array.from(card.querySelectorAll('button'));
+      buttons.forEach(btn => { btn.disabled = true; });
+      this.setHomeSkillComponentMessage(card, 'Submitting...');
+      try {
+        const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        const data = await r.json();
+        if (!r.ok || data.success === false) throw new Error(data.error || data.detail || `HTTP ${r.status}`);
+        if (data.approval_required || data.hitl_approval) {
+          const approval = data.hitl_approval || {};
+          this.setHomeSkillComponentMessage(card, data.message || `Approval required${approval.approval_id ? ` (${approval.approval_id.slice(0, 8)})` : ''}.`, 'err');
+          return;
+        }
+        this.setHomeSkillComponentMessage(card, data.message || successMessage, 'ok');
+      } catch (e) {
+        this.setHomeSkillComponentMessage(card, `Action failed: ${e.message || e}`, 'err');
+      } finally {
+        buttons.forEach(btn => { btn.disabled = false; });
+      }
+    },
+
+    renderHomeCopilotMarkdown(text) { return renderHomeCopilotMarkdownText(text); },
+
+    connectHomeCopilot() {
+      if (this.homeCopilotWs && this.homeCopilotWs.readyState === WebSocket.OPEN) return;
+      // WS-2: once the retry budget is spent, stop dialling. Only an explicit
+      // retryHomeCopilot() clears this, so a dead backend cannot spin forever.
+      if (this.homeCopilotWsFailed) return;
+      // REV-4: never dial for a panel the user has closed. A backoff timer
+      // scheduled before the close would otherwise still fire.
+      if (!this.homeCopilotOpen) return;
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      // SEC-6: auth travels as the httponly iaf_access_token cookie, which the
+      // browser sends automatically on the WS upgrade handshake. No query param.
+      try {
+        this.homeCopilotWs = new WebSocket(`${proto}://${location.host}/ws/chat`);
+        this.homeCopilotWs.onopen = () => {
+          // A successful connect retires any earlier failures, so a later drop
+          // gets a fresh budget rather than inheriting a spent one.
+          this.homeCopilotWsConnected = true;
+          this.homeCopilotWsAttempts = 0;
+          this.homeCopilotWsFailed = false;
+          if (this.homeCopilotWsErrorIsConnection) {
+            this.homeCopilotError = '';
+            this.homeCopilotWsErrorIsConnection = false;
+          }
+        };
+        this.homeCopilotWs.onclose = () => {
+          this.homeCopilotWsConnected = false;
+          this.homeCopilotWs = null;
+          if (!this.homeCopilotOpen) return;
+
+          this.homeCopilotWsAttempts += 1;
+          if (this.homeCopilotWsAttempts >= this.homeCopilotWsMaxAttempts) {
+            // WS-2: terminal state. Say so instead of implying work in progress.
+            this.homeCopilotWsFailed = true;
+            this.homeCopilotError =
+              `Could not reach the chat runtime after ${this.homeCopilotWsAttempts} attempts. ` +
+              `It may be offline, or your session may have expired — reload to sign in again.`;
+            this.homeCopilotWsErrorIsConnection = true;
+            return;
+          }
+          // Capped exponential backoff: 2.5s, 5s, 10s, 20s, ceiling 30s.
+          const delay = Math.min(2500 * Math.pow(2, this.homeCopilotWsAttempts - 1), 30000);
+          // REV-4: keep the id so closeHomeCopilot() can cancel the dial.
+          this.homeCopilotReconnectTimer = setTimeout(() => {
+            this.homeCopilotReconnectTimer = null;
+            this.connectHomeCopilot();
+          }, delay);
+        };
+        this.homeCopilotWs.onerror = () => { this.homeCopilotWsConnected = false; };
+        this.homeCopilotWs.onmessage = event => {
+          try { this.handleHomeCopilotWsMessage(JSON.parse(event.data)); }
+          catch (err) { this.finishHomeCopilotWithError(`Could not parse response: ${err.message}`); }
+        };
+      } catch (err) {
+        this.homeCopilotWsConnected = false;
+        this.homeCopilotWsFailed = true;
+        this.homeCopilotError = String(err?.message || err);
+        this.homeCopilotWsErrorIsConnection = true;
+      }
+    },
+
+    /** WS-2: user-driven retry. Resets the budget and dials again. */
+    retryHomeCopilot() {
+      this.homeCopilotWsAttempts = 0;
+      this.homeCopilotWsFailed = false;
+      if (this.homeCopilotWsErrorIsConnection) {
+        this.homeCopilotError = '';
+        this.homeCopilotWsErrorIsConnection = false;
+      }
+      this.connectHomeCopilot();
+    },
+
+    activeHomeCopilotTurn() {
+      return this.homeCopilotTurns.find(turn => turn.id === this.homeCopilotStreamingTurnId) || this.homeCopilotTurns[this.homeCopilotTurns.length - 1] || null;
+    },
+
+    handleHomeCopilotWsMessage(data) {
+      const type = data.type || data.event;
+      if (type === 'status' || type === 'routing' || type === 'progress' || type === 'heartbeat') {
+        this.homeCopilotTypingStatus = data.message || data.status || data.content || 'Thinking...';
+        this.scrollHomeCopilotToBottom();
+        return;
+      }
+      if (type === 'token') {
+        const turn = this.activeHomeCopilotTurn();
+        if (!turn) return;
+        turn.response = `${turn.response || ''}${data.token || ''}`;
+        turn.pending = true;
+        this.scrollHomeCopilotToBottom();
+        return;
+      }
+      if (type === 'response' || type === 'message') {
+        const turn = this.activeHomeCopilotTurn();
+        if (!turn) return;
+        const content = data.content || data.response || data.message || '';
+        if (content) turn.response = content;
+        turn.skill = data.skill || turn.skill || '';
+        turn.pending = false;
+        this.homeCopilotBusy = false;
+        this.homeCopilotTypingStatus = '';
+        this.homeCopilotStreamingTurnId = '';
+        this.scheduleHomeSkillComponentHydration();
+        this.scrollHomeCopilotToBottom();
+        return;
+      }
+      if (type === 'error') this.finishHomeCopilotWithError(data.content || data.message || 'Workstream Copilot failed.');
+    },
+
+    finishHomeCopilotWithError(message) {
+      const turn = this.activeHomeCopilotTurn();
+      if (turn) turn.pending = false;
+      this.homeCopilotBusy = false;
+      this.homeCopilotTypingStatus = '';
+      this.homeCopilotStreamingTurnId = '';
+      this.homeCopilotError = String(message || 'Workstream Copilot failed.');
+    },
+
+    homeCopilotPayload(message, skillName) {
+      return {
+        content: message,
+        tenant_id: 'company',
+        agent_id: 'enterprise_agent',
+        user_id: this.homeCopilotUserId(),
+        session_id: this.homeCopilotSessionId,
+        skill_name: skillName || null,
+        source_page: 'workstreams',
+        page_context: this.homeCopilotPageContext(),
+        human_approval: true,
+        render_ui: true,
+        light_mode: false,
+      };
+    },
+
+    async sendHomeCopilotFallback(payload, turn) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000);
+      try {
+        const r = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal, body: JSON.stringify(payload) });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+        turn.response = data.response || data.content || data.message || JSON.stringify(data);
+        turn.skill = data.skill || payload.skill_name || turn.skill || '';
+        turn.pending = false;
+        this.scheduleHomeSkillComponentHydration();
+      } catch (e) {
+        turn.pending = false;
+        this.homeCopilotError = e?.name === 'AbortError' ? 'This Copilot request timed out. Try a narrower question or pick a specific skill.' : String(e?.message || e);
+      } finally {
+        clearTimeout(timeoutId);
+        this.homeCopilotBusy = false;
+        this.homeCopilotStreamingTurnId = '';
+        this.scrollHomeCopilotToBottom();
+      }
+    },
+
+    async submitHomeCopilot() {
+      const resolved = this.resolveHomeCopilotSkill(this.homeCopilotDraft);
+      const message = resolved.message;
+      const skillName = resolved.skillName;
+      if (!message) {
+        this.homeCopilotError = 'Type a message before sending.';
+        return;
+      }
+      this.openHomeCopilot();
+      this.homeCopilotDraft = '';
+      this.homeSkillPopupOpen = false;
+      this.homeCopilotError = '';
+      this.homeCopilotBusy = true;
+      this.homeCopilotTypingStatus = 'Thinking...';
+      const chatSkillName = skillName || null;
+      const turn = { id: `${Date.now()}-${Math.random()}`, message, response: '', skill: chatSkillName || 'auto', pending: true };
+      this.homeCopilotTurns.push(turn);
+      this.homeCopilotStreamingTurnId = turn.id;
+      this.scrollHomeCopilotToBottom();
+      const payload = this.homeCopilotPayload(message, chatSkillName);
+      if (this.homeCopilotWs && this.homeCopilotWs.readyState === WebSocket.OPEN) {
+        this.homeCopilotWs.send(JSON.stringify(payload));
+        return;
+      }
+      this.connectHomeCopilot();
+      await this.sendHomeCopilotFallback(payload, turn);
+    },
+
+    async sendHomeCopilotMessage(message, skillName = null, options = {}) {
+      const text = String(message || '').trim();
+      if (!text) return null;
+      this.openHomeCopilot();
+      this.homeCopilotError = '';
+      this.homeCopilotBusy = true;
+      this.homeCopilotTypingStatus = 'Thinking...';
+      if (options.wide) this.setHomeCopilotWideMode();
+      const turn = { id: `${Date.now()}-${Math.random()}`, message: options.displayMessage || text, response: '', skill: skillName || 'auto', pending: true };
+      this.homeCopilotTurns.push(turn);
+      this.homeCopilotStreamingTurnId = turn.id;
+      this.scrollHomeCopilotToBottom();
+      const payload = this.homeCopilotPayload(text, skillName || null);
+      if (this.homeCopilotWs && this.homeCopilotWs.readyState === WebSocket.OPEN) {
+        this.homeCopilotWs.send(JSON.stringify(payload));
+        return turn;
+      }
+      this.connectHomeCopilot();
+      await this.sendHomeCopilotFallback(payload, turn);
+      return turn;
+    },
+
+    async reload(silent = false) {
+      if (!silent) this.loading = true;
+      try {
+        const url = '/api/workstreams';
+        const r = await fetch(url);
+        if (!r.ok) throw new Error(`Load failed (${r.status})`);
+        const data = await r.json();
+        this.items = data.workstreams || [];
+        this.errorMessage = '';
+      } catch (e) {
+        console.error('failed to load workstreams', e);
+        this.errorMessage = 'Unable to refresh workstreams. Check server connectivity and auth.';
+        if (!silent) this.items = [];
+      } finally {
+        this.loading = false;
+      }
+    },
+
+
+    activeLens() {
+      return this.operatingLenses.find(lens => lens.id === this.operatingLens) || this.operatingLenses[0];
+    },
+
+    briefUpdatedAt() {
+      try { return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+      catch { return 'now'; }
+    },
+
+    briefHeadline() {
+      const s = this.summary();
+      if (s.awaiting > 0) return `${s.awaiting} decision${s.awaiting === 1 ? '' : 's'} need you`;
+      if (s.failed > 0) return `${s.failed} exception${s.failed === 1 ? '' : 's'} need triage`;
+      if (s.working > 0) return `${s.working} agent${s.working === 1 ? '' : 's'} working now`;
+      if (s.pending > 0) return `${s.pending} item${s.pending === 1 ? '' : 's'} ready for agents`;
+      return 'No urgent work waiting';
+    },
+
+    activeLensItems() {
+      const lens = this.operatingLens;
+      const rows = [...this.items].filter(ws => {
+        if (lens === 'decisions') return this.count(ws, 'awaiting_human') > 0;
+        if (lens === 'agents') return this.count(ws, 'in_progress') > 0;
+        if (lens === 'exceptions') return this.count(ws, 'failed') > 0;
+        if (lens === 'completed') return this.count(ws, 'done') > 0 || ws.status === 'completed';
+        if (lens === 'patterns') return this.hasPolicySignal(ws);
+        return this.count(ws, 'awaiting_human') > 0 || this.count(ws, 'failed') > 0 || this.count(ws, 'in_progress') > 0 || this.count(ws, 'pending') > 0;
+      });
+      return rows
+        .sort((a, b) => this.sortValue(b) - this.sortValue(a) || String(a.display_name || a.name).localeCompare(String(b.display_name || b.name)))
+        .slice(0, 5)
+        .map(ws => this.lensEntry(ws, lens));
+    },
+
+    lensEntry(ws, lens) {
+      let kind = lens;
+      if (lens === 'today') {
+        if (this.count(ws, 'awaiting_human') > 0) kind = 'decisions';
+        else if (this.count(ws, 'failed') > 0) kind = 'exceptions';
+        else if (this.count(ws, 'in_progress') > 0) kind = 'agents';
+        else kind = 'queued';
+      }
+      const countMap = {
+        decisions: this.count(ws, 'awaiting_human'),
+        agents: this.count(ws, 'in_progress'),
+        exceptions: this.count(ws, 'failed'),
+        completed: this.count(ws, 'done'),
+        patterns: this.hasPolicySignal(ws) ? 1 : 0,
+        queued: this.count(ws, 'pending'),
+      };
+      const title = ws.display_name || ws.name;
+      const subMap = {
+        decisions: 'Waiting on approval or judgement',
+        agents: 'Agent execution in progress',
+        exceptions: 'Retry, skip, or inspect evidence',
+        completed: 'Completed outcomes ready to review',
+        patterns: 'Repeated control or policy signal',
+        queued: 'Ready for the next agent run',
+      };
+      const toneMap = { decisions: 'hot', agents: 'live', exceptions: 'bad', completed: 'good', patterns: 'hot', queued: '' };
+      return { name: ws.name, title, sub: subMap[kind] || 'Open workstream', count: countMap[kind] || 0, tone: toneMap[kind] || '', kind };
+    },
+
+    activeLensEmpty() {
+      const label = this.activeLens().label.toLowerCase();
+      return `No ${label} items right now.`;
+    },
+
+    hasPolicySignal(ws) {
+      const text = `${ws.name || ''} ${ws.display_name || ''} ${ws.description || ''} ${ws.skill || ''}`.toLowerCase();
+      return text.includes('policy') || text.includes('governance') || text.includes('control');
+    },
+
+    totalWorking() {
+      return this.items.reduce((s, w) => s + (((w.by_status || {}).in_progress) || 0), 0);
+    },
+    activeCount() {
+      return this.items.filter(w => (((w.by_status || {}).in_progress) || 0) > 0).length;
+    },
+
+    heroStatusLabel() {
+      const working = this.totalWorking();
+      if (working > 0) {
+        const streams = this.activeCount();
+        return `${working} agent${working > 1 ? 's' : ''} working across ${streams} workstream${streams > 1 ? 's' : ''}`;
+      }
+      const s = this.summary();
+      if (s.active > 0) {
+        const bits = [];
+        if (s.awaiting > 0) bits.push(`${s.awaiting} awaiting approval`);
+        if (s.failed > 0) bits.push(`${s.failed} exception${s.failed > 1 ? 's' : ''}`);
+        if (s.pending > 0) bits.push(`${s.pending} queued`);
+        const tail = bits.length ? ` · ${bits.join(' · ')}` : ' · no agents running right now';
+        return `${s.active} active workstream${s.active > 1 ? 's' : ''}${tail}`;
+      }
+      if (this.items.length > 0) {
+        return `${this.items.length} workstream${this.items.length > 1 ? 's' : ''} · none active`;
+      }
+      return 'No workstreams yet';
+    },
+
+    summary() {
+      return this.items.reduce((acc, ws) => {
+        const by = ws.by_status || {};
+        acc.total += Number(ws.total_items || 0);
+        acc.done += Number(by.done || 0);
+        acc.failed += Number(by.failed || 0);
+        acc.awaiting += Number(by.awaiting_human || 0);
+        acc.working += Number(by.in_progress || 0);
+        acc.pending += Number(by.pending || 0);
+        if (ws.status === 'active') acc.active += 1;
+        if (ws.status === 'paused') acc.paused += 1;
+        return acc;
+      }, { total: 0, done: 0, failed: 0, awaiting: 0, working: 0, pending: 0, active: 0, paused: 0 });
+    },
+
+    formatMoney(value) {
+      const n = Number(value || 0);
+      if (!Number.isFinite(n) || n <= 0) return '£0';
+      if (n >= 1000000) return `£${(n / 1000000).toFixed(n >= 10000000 ? 0 : 1)}M`;
+      if (n >= 1000) return `£${Math.round(n / 1000)}K`;
+      return `£${Math.round(n)}`;
+    },
+
+    allWorkstreamItems() {
+      const rows = [];
+      (this.items || []).forEach(ws => {
+        const source = Array.isArray(ws.items) ? ws.items : (Array.isArray(ws.items_preview) ? ws.items_preview : []);
+        source.forEach(item => {
+          if (!item || typeof item !== 'object') return;
+          rows.push({ workstream: ws.name, workstream_display: ws.display_name || ws.name, skill: ws.skill || '', ...item });
+        });
+      });
+      return rows;
+    },
+
+    itemNumber(item, keys, fallback = 0) {
+      for (const key of keys) {
+        const raw = item && item[key];
+        if (raw !== undefined && raw !== null && raw !== '') {
+          const n = Number(String(raw).replace(/[^0-9.-]/g, ''));
+          if (Number.isFinite(n)) return n;
+        }
+      }
+      return fallback;
+    },
+
+    businessDrivers(limit = 8) {
+      const itemRows = this.allWorkstreamItems();
+      const fallback = itemRows.length ? itemRows : (this.items || []).map(ws => ({
+        workstream: ws.name,
+        workstream_display: ws.display_name || ws.name,
+        id: ws.name,
+        title: ws.display_name || ws.name,
+        status: ws.status,
+        by_status: ws.by_status,
+      }));
+      return fallback.map(row => {
+        const cs = row.case_summary || {};
+        const primary = String(cs.primary_entity || '').trim();
+        const secondary = String(cs.secondary_entity || '').trim();
+        const likelyParty = primary && !primary.includes('@') && !/^inv/i.test(primary) ? primary : secondary;
+        const by = row.by_status || {};
+        const status = String(row.status || '').toLowerCase();
+        const days = this.itemNumber(row, ['days_delayed', 'days_overdue', 'aging_days', 'age_days', 'days_open'], this.itemNumber(cs, ['age_or_sla'], status.includes('fail') ? 8 : status.includes('await') ? 6 : status.includes('pending') ? 4 : 2));
+        // No invented £25k/item placeholder: an item with no real amount/invoice/value
+        // field on it is worth £0 here, not a guess dressed up as a KPI.
+        const amount = this.itemNumber(row, ['amount', 'invoice_amount', 'value', 'blocked_value', 'exposure', 'estimated_value', 'priority_metric'], this.itemNumber(cs, ['impact_value'], 0));
+        const party = row.customer || row.customer_name || row.vendor || row.vendor_name || row.supplier || row.supplier_name || row.counterparty || likelyParty || primary || secondary || 'Not specified';
+        const invoice = row.invoice || row.invoice_id || row.invoice_number || row.invoice_num || (/^inv/i.test(secondary) ? secondary : '') || cs.case_id || row.id || row.title || row.workstream;
+        const blocker = row.blocker || row.blocking_reason || row.reason || row.status_reason || cs.priority_reason || cs.category || cs.recommended_action || row.last_result_summary || row.description || row.workstream_display || 'Open workstream signal';
+        return {
+          invoice: String(invoice || 'unknown'),
+          party: String(party || 'Not specified'),
+          amount,
+          days_delayed: days,
+          blocker: String(blocker || '').slice(0, 220),
+          status: row.status || 'open',
+          workstream: row.workstream_display || row.workstream || '',
+        };
+      })
+        .filter(row => row.amount > 0 || row.days_delayed > 0 || !String(row.status || '').match(/done|completed/i))
+        .sort((a, b) => (b.days_delayed - a.days_delayed) || (b.amount - a.amount))
+        .slice(0, limit);
+    },
+
+    northStarMetrics() {
+      const s = this.summary();
+      const drivers = this.businessDrivers(12);
+      // Sum of real driver amounts only -- no £25k/item fallback invention when it's 0.
+      const delayedValue = drivers.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+      const delayedCount = drivers.length || (s.pending + s.failed + s.awaiting);
+      const avgDays = drivers.length ? Math.round(drivers.reduce((sum, row) => sum + Number(row.days_delayed || 0), 0) / drivers.length) : Math.max(2, Math.round((s.pending + (s.awaiting * 1.5) + (s.failed * 2)) / Math.max(1, s.total) * 10));
+      const maxDelayDays = drivers.length ? Math.max(...drivers.map(row => Number(row.days_delayed || 0))) : avgDays;
+      const approvalSlaRisk = s.awaiting + s.failed;
+      const top = drivers[0] || null;
+      return {
+        daysToClose: avgDays,
+        maxDelayDays,
+        delayedValue,
+        delayedCount,
+        approvalSlaRisk,
+        topDriverLabel: top ? String(top.party).slice(0, 18) : 'No delay',
+        topDriverNote: top ? `${top.invoice} · ${top.days_delayed}d · ${this.formatMoney(top.amount)}` : 'No major delay driver visible from current workstream data.',
+      };
+    },
+
+    northStarCardContext(cardId) {
+      const metrics = this.northStarMetrics();
+      const s = this.summary();
+      const cards = {
+        cycle_time: { title: 'Cycle Time', value: `${metrics.daysToClose} days`, meaning: 'Current cycle-time pressure from open workstream drivers.' },
+        delayed_value: { title: 'Delayed Value', value: this.formatMoney(metrics.delayedValue), meaning: 'Blocked or aging business value across open workstream drivers.' },
+        approval_sla: { title: 'Approval SLA Risk', value: metrics.approvalSlaRisk, meaning: 'Human gates and exceptions currently slowing throughput.' },
+        delay_drivers: { title: 'Top Delay Driver', value: metrics.topDriverLabel, meaning: 'Largest current supplier/customer/invoice delay driver.' },
+      };
+      return {
+        card_group: 'North Star Business Metrics',
+        card_type: 'north_star_business_metric',
+        page: 'workstreams',
+        card_id: cardId,
+        summary: s,
+        metric: cards[cardId] || cards.cycle_time,
+        north_star_metrics: metrics,
+        top_delay_drivers: this.businessDrivers(10),
+      };
+    },
+
+    northStarExplainPrompt(cardContext) {
+      return [
+        'Explain this Workstreams North Star business metric for a business user.',
+        '',
+        'Use ONLY the structured metric context below. Be specific, but do not invent data beyond the context.',
+        '',
+        'Metric context:',
+        JSON.stringify(cardContext, null, 2),
+        '',
+        'Return:',
+        '1. Current business status in one sentence.',
+        '2. What is driving the metric.',
+        '3. A compact markdown table of top_delay_drivers with invoice/case, supplier/customer, amount, days delayed, blocker, and workstream.',
+        '4. Recommended next action.',
+      ].join('\n');
+    },
+
+    explainNorthStarCard(cardId) {
+      const context = this.northStarCardContext(cardId);
+      return this.sendHomeCopilotMessage(this.northStarExplainPrompt(context), null, {
+        wide: true,
+        displayMessage: `Explain metric: ${context.metric.title}`,
+      });
+    },
+
+    completionRate() {
+      const s = this.summary();
+      return s.total ? Math.round(100 * s.done / s.total) : 0;
+    },
+
+    filterLabel(f) {
+      return f === '' ? 'All' : f.replace(/_/g, ' ');
+    },
+
+    filterCount(f) {
+      const base = this.items;
+      if (!f) return base.length;
+      return base.filter(ws => ws.status === f).length;
+    },
+
+    filtered() {
+      const q = this.search.toLowerCase().trim();
+      const hasDateFilter = !!(this.dateFrom || this.dateTo);
+      const rows = this.items.filter(ws => {
+        if (this.statusFilter && ws.status !== this.statusFilter) return false;
+        if (q) {
+          const hay = `${ws.name || ''} ${ws.display_name || ''} ${ws.owner || ''} ${ws.skill || ''}`.toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+
+        if (hasDateFilter) {
+          const iso = this.wsDateKey(ws);
+          if (!iso) return false;                    // no date on this basis → excluded
+          if (this.dateFrom && iso < this.dateFrom) return false;
+          if (this.dateTo && iso > this.dateTo) return false;
+        }
+        return true;
+      });
+      return rows.sort((a, b) => this.sortValue(b) - this.sortValue(a) || String(a.display_name || a.name).localeCompare(String(b.display_name || b.name)));
+    },
+
+    // --- Domain grouping (client-side, by workstream name prefix) ---
+    domainOf(ws) {
+      const p = String((ws && ws.name) || '').split('_')[0];
+      const id = WS_DOMAIN_ORDER.find(k => (WS_DOMAIN_DEFS[k].prefixes || []).includes(p));
+      return id || 'other';
+    },
+    friendlyName(ws) {
+      if (!ws) return '';
+      if (WS_FRIENDLY[ws.name]) return WS_FRIENDLY[ws.name];
+      if (ws.display_name && ws.display_name !== ws.name) return ws.display_name;
+      return _prettyWs(ws.name);
+    },
+    domainShort(id) { return WS_DOMAIN_SHORT[id] || 'Other'; },
+    statusLine(ws) {
+      const run = this.count(ws, 'in_progress'), aw = this.count(ws, 'awaiting_human'),
+            pend = this.count(ws, 'pending'), fail = this.count(ws, 'failed'),
+            done = this.count(ws, 'done'), tot = ws.total_items || 0;
+      if (run > 0) return `${run} running`;
+      if (aw > 0) return `${aw} awaiting a person`;
+      if (pend > 0) return `${pend} in backlog`;
+      if (fail > 0) return `${fail} failed`;
+      if (tot > 0 && done === tot) return 'all complete';
+      return `${tot} item${tot === 1 ? '' : 's'}`;
+    },
+    domainCount(id) {
+      return this.items.filter(ws => this.domainOf(ws) === id).length;
+    },
+    domainOptions() {
+      return WS_DOMAIN_ORDER
+        .map(id => ({ id, label: WS_DOMAIN_DEFS[id].label, count: this.domainCount(id) }))
+        .filter(d => d.count > 0);
+    },
+    rowsForDomain(id) {
+      return this.filtered().filter(ws => this.domainOf(ws) === id);
+    },
+    visibleDomains() {
+      const rows = this.filtered();
+      const present = id => rows.some(ws => this.domainOf(ws) === id);
+      let ids = WS_DOMAIN_ORDER.filter(present);
+      if (this.domainFilter) ids = ids.filter(id => id === this.domainFilter);
+      return ids.map(id => ({ id, label: WS_DOMAIN_DEFS[id].label, count: this.rowsForDomain(id).length }));
+    },
+    shownCount() {
+      return this.visibleDomains().reduce((n, d) => n + d.count, 0);
+    },
+    wsDateKey(ws) {
+      if (!ws) return '';
+      let raw = ws[this.dateBasis];
+      if (!raw && this.dateBasis === 'created_at') {
+        raw = ws.started_at || ws.completed_at || '';
+      }
+      if (!raw) return '';
+      const d = new Date(raw);
+      if (isNaN(d.getTime())) return '';
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    },
+
+    notificationCount() {
+      const s = this.summary();
+      return Number(s.awaiting || 0) + Number(s.failed || 0);
+    },
+    notifications() {
+      const out = [];
+      this.items.forEach(ws => {
+        const awaiting = this.count(ws, 'awaiting_human');
+        const failed = this.count(ws, 'failed');
+        if (awaiting > 0) out.push({ key: `${ws.name}-await`, name: ws.name, title: ws.display_name || ws.name, tone: 'hot', icon: '⏳', text: `${awaiting} approval${awaiting > 1 ? 's' : ''} waiting` });
+        if (failed > 0) out.push({ key: `${ws.name}-fail`, name: ws.name, title: ws.display_name || ws.name, tone: 'bad', icon: '⚠', text: `${failed} exception${failed > 1 ? 's' : ''} to triage` });
+      });
+      return out.sort((a, b) => (a.tone === 'bad' ? -1 : 1) - (b.tone === 'bad' ? -1 : 1));
+    },
+    clearDateRange() {
+      this.dateFrom = '';
+      this.dateTo = '';
+    },
+
+    sortValue(ws) {
+      if (this.sortMode === 'name') return 0;
+      if (this.sortMode === 'progress') return this.healthScore(ws);
+      if (this.sortMode === 'recent') {
+        const raw = ws.completed_at || ws.started_at || ws.updated_at || ws.created_at || '';
+        return raw ? new Date(raw).getTime() : 0;
+      }
+      const by = ws.by_status || {};
+      return (Number(by.awaiting_human || 0) * 1000) +
+             (Number(by.failed || 0) * 800) +
+             (Number(by.in_progress || 0) * 300) +
+             (ws.status === 'active' ? 100 : 0) -
+             (ws.status === 'completed' ? 200 : 0);
+    },
+
+    count(ws, statusKey) {
+      return Number(((ws && ws.by_status) || {})[statusKey] || 0);
+    },
+
+    pct(ws, statusKey) {
+      const total = (ws && ws.total_items) || 1;
+      const n = this.count(ws, statusKey);
+      return Math.round(100 * n / total);
+    },
+
+    healthScore(ws) {
+      const total = (ws && ws.total_items) || 0;
+      return total ? Math.round(100 * this.count(ws, 'done') / total) : 0;
+    },
+
+    policyOpportunityCount() {
+      return this.items.filter(ws => this.hasPolicySignal(ws)).length;
+    },
+
+    progressTitle(ws) {
+      return `${this.count(ws, 'done')} done · ${this.count(ws, 'awaiting_human')} awaiting human · ${this.count(ws, 'failed')} failed · ${this.count(ws, 'in_progress')} running`;
+    },
+
+    attention(ws) {
+      const failed = this.count(ws, 'failed');
+      const awaiting = this.count(ws, 'awaiting_human');
+      const running = this.count(ws, 'in_progress');
+      const pending = this.count(ws, 'pending');
+      if (failed > 0) {
+        return { tone: 'bad', icon: '⚠', title: `${failed} exception${failed > 1 ? 's' : ''} need triage`, sub: 'Open details to retry, skip, or inspect evidence.' };
+      }
+      if (awaiting > 0) {
+        return { tone: 'hot', icon: '⏳', title: `${awaiting} approval${awaiting > 1 ? 's' : ''} waiting`, sub: 'Human decision is the current throughput blocker.' };
+      }
+      if (running > 0) {
+        return { tone: 'live', icon: '↻', title: `${running} agent${running > 1 ? 's' : ''} executing now`, sub: `${pending} item${pending === 1 ? '' : 's'} remain in backlog.` };
+      }
+      if (ws.status === 'completed') {
+        return { tone: '', icon: '✓', title: 'Completed and ready for review', sub: 'All items have reached a terminal state.' };
+      }
+      if (pending > 0) {
+        return { tone: '', icon: '▶', title: `${pending} item${pending > 1 ? 's' : ''} ready to run`, sub: 'Start or resume execution when capacity is available.' };
+      }
+      return { tone: '', icon: '•', title: 'No immediate action', sub: 'Workstream is idle with no active blockers.' };
+    },
+
+    formatDate(iso) {
+      if (!iso) return '—';
+      try {
+        const d = new Date(iso);
+        const now = new Date();
+        const diffMin = Math.round((now - d) / 60000);
+        if (diffMin < 1) return 'just now';
+        if (diffMin < 60) return `${diffMin}m ago`;
+        const diffHr = Math.round(diffMin / 60);
+        if (diffHr < 24) return `${diffHr}h ago`;
+        return d.toLocaleDateString();
+      } catch {
+        return iso;
+      }
+    },
+
+    canRunNow(ws) {
+      if (!ws) return false;
+      if (ws.status === 'paused') return false;
+      if (((ws.by_status && ws.by_status.in_progress) || 0) > 0) return false;
+      return ((ws.by_status && ws.by_status.pending) || 0) > 0;
+    },
+
+    async runNow(ws) {
+      const name = ws?.name;
+      if (!name) return;
+      // Confirm before a potentially disruptive action (starts a batch now).
+      if (!confirm(`Run "${name}" now? This starts a new batch immediately.`)) return;
+      this.actionBusy = name;
+      this.errorMessage = '';
+      try {
+        const count = Math.max(1, Math.min(Number(ws.batch_size || 1), 100));
+        const parallel = Math.max(1, Math.min(Number(ws.parallelism || 1), count, 10));
+        const r = await fetch(`/api/workstreams/${encodeURIComponent(name)}/run`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ count, parallel }),
+        });
+        if (!r.ok) throw new Error(`Run failed (${r.status})`);
+        await this.reload();
+      } catch (e) {
+        console.error(e);
+        this.errorMessage = `Could not run ${name}.`;
+      } finally {
+        this.actionBusy = '';
+      }
+    },
+
+    async pause(name) {
+      // Confirm before pausing - in-flight work on a production workstream may stop.
+      if (!confirm(`Are you sure you want to pause "${name}"?`)) return;
+      this.actionBusy = name;
+      this.errorMessage = '';
+      try {
+        const r = await fetch(`/api/workstreams/${encodeURIComponent(name)}/pause`, { method: 'POST' });
+        if (!r.ok) throw new Error(`Pause failed (${r.status})`);
+        await this.reload();
+      } catch (e) {
+        console.error(e);
+        this.errorMessage = `Could not pause ${name}.`;
+      } finally {
+        this.actionBusy = '';
+      }
+    },
+
+    async resume(name) {
+      this.actionBusy = name;
+      this.errorMessage = '';
+      try {
+        const r = await fetch(`/api/workstreams/${encodeURIComponent(name)}/resume`, { method: 'POST' });
+        if (!r.ok) throw new Error(`Resume failed (${r.status})`);
+        await this.reload();
+      } catch (e) {
+        console.error(e);
+        this.errorMessage = `Could not resume ${name}.`;
+      } finally {
+        this.actionBusy = '';
+      }
+    },
+
+    // ---- WS-4: edit ---------------------------------------------------------
+
+    /**
+     * Fields that change execution semantics are only safe to edit when nothing
+     * is in flight. Re-pointing a running workstream at a different skill leaves
+     * already-queued items bound to the previous skill's contract.
+     */
+    editExecutionLocked() {
+      const status = (this.editDraft && this.editDraft.status) || '';
+      return !['paused', 'completed'].includes(status);
+    },
+
+    editLockReason() {
+      if (!this.editExecutionLocked()) return '';
+      return 'Pause this workstream to change its skill or execution settings — ' +
+             'editing them while items are in flight would desync work already queued.';
+    },
+
+    /**
+     * REV-7: skills a workstream can actually be bound to.
+     *
+     * GET /api/skills appends the caller's personal skills, but a workstream runs
+     * server-side — and a cron-scheduled one runs as a service principal with no
+     * personal skill directory — so a personal binding would fail at run time.
+     * The PATCH validator already rejects them; this stops the form offering a
+     * choice the save would refuse.
+     *
+     * Discriminator: personal entries always carry a `scope`; global ones carry
+     * none. A personal skill that has been approved and published is skipped by
+     * the personal branch of that endpoint (it is already in the global list), so
+     * it arrives without a scope and becomes selectable with no special case.
+     */
+    bindableSkills() {
+      return (this.skills || []).filter(s => !s || !s.scope);
+    },
+
+    // ---- REV-6: modal focus management ------------------------------------
+
+    /** Focusable descendants of the dialog, in tab order. */
+    _editFocusables() {
+      const modal = document.querySelector('.ws-edit-modal');
+      if (!modal) return [];
+      return Array.from(modal.querySelectorAll(
+        'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), ' +
+        'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+      )).filter(el => el.offsetParent !== null);
+    },
+
+    /**
+     * Keep Tab inside the dialog. Without this, tabbing walks into the page
+     * behind it — the content is still in the accessibility tree and still
+     * focusable, so a keyboard or screen-reader user silently ends up
+     * interacting with a list they cannot see past the overlay.
+     */
+    _trapEditTab(event) {
+      if (event.key !== 'Tab') return;
+      const items = this._editFocusables();
+      if (!items.length) return;
+
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+
+      // Wrap at both ends, and pull focus back in if it has already escaped.
+      if (event.shiftKey) {
+        if (active === first || !items.includes(active)) {
+          event.preventDefault();
+          last.focus();
+        }
+      } else if (active === last || !items.includes(active)) {
+        event.preventDefault();
+        first.focus();
+      }
+    },
+
+    openEditWorkstream(ws) {
+      if (!ws || !ws.name) return;
+      this.errorMessage = '';
+      this.noticeMessage = '';
+      // REV-6: remember where focus came from so closing can restore it rather
+      // than dropping the user back at the top of the document.
+      this._editReturnFocusTo = document.activeElement;
+      // Copy rather than bind, so cancelling genuinely discards.
+      // `name` is deliberately carried for routing but never sent in the patch:
+      // it is the identity/filename key and is absent from WorkstreamPatch.
+      this.editDraft = {
+        name: ws.name,
+        status: ws.status || '',
+        display_name: ws.display_name || '',
+        owner: ws.owner || '',
+        description: ws.description || '',
+        skill: ws.skill || '',
+        batch_size: ws.batch_size == null ? 1 : ws.batch_size,
+        parallelism: ws.parallelism == null ? 1 : ws.parallelism,
+      };
+      this.editOpen = true;
+      // REV-6: move focus into the dialog once Alpine has rendered it.
+      this.$nextTick(() => {
+        const first = this._editFocusables()[0];
+        if (first) first.focus();
+      });
+    },
+
+    cancelEditWorkstream() {
+      this.editOpen = false;
+      this.editDraft = null;
+      // REV-6: hand focus back to whatever opened the dialog.
+      const back = this._editReturnFocusTo;
+      this._editReturnFocusTo = null;
+      if (back && typeof back.focus === 'function') {
+        this.$nextTick(() => back.focus());
+      }
+    },
+
+    async saveEditWorkstream() {
+      const draft = this.editDraft;
+      if (!draft || !draft.name) return;
+
+      // Metadata is always editable; execution fields only when not running.
+      const patch = {
+        display_name: draft.display_name,
+        owner: draft.owner,
+        description: draft.description,
+      };
+      if (!this.editExecutionLocked()) {
+        patch.skill = draft.skill;
+        patch.batch_size = Number(draft.batch_size);
+        patch.parallelism = Number(draft.parallelism);
+      }
+
+      this.actionBusy = draft.name;
+      this.errorMessage = '';
+      try {
+        const r = await fetch(`/api/workstreams/${encodeURIComponent(draft.name)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch),
+        });
+        if (r.status === 403) throw new Error('You do not have permission to edit this workstream.');
+        if (r.status === 404) throw new Error(`Workstream "${draft.name}" no longer exists.`);
+        // REV-1: 409 means the server refused an execution-field change because
+        // the workstream is not paused. The form should already prevent this, so
+        // reaching here means our view of the status was stale — reload to resync.
+        if (r.status === 400 || r.status === 409) {
+          // The server validates the merged document; surface its reasons
+          // verbatim rather than a generic failure.
+          let detail = '';
+          try {
+            const data = await r.json();
+            const errs = data && (data.detail?.errors || data.detail);
+            detail = Array.isArray(errs) ? errs.join('; ') : String(errs || '');
+          } catch { /* fall back to the generic message */ }
+          // Resync so a stale status in the open form cannot keep offering an
+          // edit the server will refuse. reload() only refreshes `items`, and
+          // editExecutionLocked() reads editDraft.status — so the draft has to be
+          // updated explicitly, or the dialog stays unlocked and the operator can
+          // resubmit the same rejected change indefinitely.
+          if (r.status === 409) {
+            try {
+              await this.reload(true);
+              const fresh = (this.items || []).find(ws => ws.name === draft.name);
+              if (fresh && this.editDraft) this.editDraft.status = fresh.status || '';
+            } catch { /* keep the server's rejection as the message */ }
+          }
+          throw new Error(detail || 'The changes were rejected as invalid.');
+        }
+        if (!r.ok) throw new Error(`Save failed (${r.status})`);
+
+        this.editOpen = false;
+        this.editDraft = null;
+        const back = this._editReturnFocusTo;
+        this._editReturnFocusTo = null;
+        if (back && typeof back.focus === 'function') {
+          this.$nextTick(() => back.focus());
+        }
+        this.noticeMessage = `Saved changes to ${draft.name}.`;
+        await this.reload();
+      } catch (e) {
+        console.error(e);
+        this.errorMessage = e?.message || `Could not save ${draft.name}.`;
+      } finally {
+        this.actionBusy = '';
+      }
+    },
+
+    // ---- WS-5: hard delete -------------------------------------------------
+
+    /**
+     * Whether to offer the Delete control.
+     *
+     * REV-2: derived from the server's entitlement decision, not from a role
+     * string. The previous `role === 'admin'` test was wrong in both directions:
+     * the tenant policy grants workstream delete to `user` and `manager` too (so
+     * permitted operators were denied the action), while an admin whose policy
+     * revokes it would still have been offered it. Re-hardcoding "not auditor"
+     * would drift again the next time the policy changes.
+     *
+     * Still cosmetic in the security sense — the server remains authoritative via
+     * require_scoped_identity(action="delete") — but it now agrees with the server
+     * instead of guessing.
+     */
+    canDelete() {
+      return this.capabilities.delete === true;
+    },
+
+    async loadCapabilities() {
+      try {
+        const r = await fetch('/api/workstreams/capabilities');
+        if (!r.ok) throw new Error(`Capabilities load failed (${r.status})`);
+        const data = await r.json();
+        this.capabilities = {
+          read: data.read === true,
+          write: data.write === true,
+          delete: data.delete === true,
+        };
+      } catch (e) {
+        // Fail closed: if we cannot establish what the caller may do, offer no
+        // destructive action rather than offering one that will 403.
+        console.warn('failed to load workstream capabilities', e);
+        this.capabilities = { read: true, write: false, delete: false };
+      }
+    },
+
+    /**
+     * Hard delete (product decision, 2026-09-01 — chosen over archive).
+     * Removes the workstream and its run history, and the API additionally tears
+     * down the paired cron job so no schedule fires against a workstream that no
+     * longer exists.
+     */
+    async deleteWorkstream(name) {
+      if (!name) return;
+      // Irreversible: name the target and say so plainly before proceeding.
+      if (!confirm(
+        `Permanently delete "${name}"?\n\n` +
+        `This removes the workstream, its item history, and any paired schedule. ` +
+        `This cannot be undone.`
+      )) return;
+
+      this.actionBusy = name;
+      this.errorMessage = '';
+      try {
+        const r = await fetch(`/api/workstreams/${encodeURIComponent(name)}`, { method: 'DELETE' });
+        if (r.status === 403) throw new Error('You do not have permission to delete this workstream.');
+        if (r.status === 404) throw new Error(`Workstream "${name}" no longer exists.`);
+        if (!r.ok) throw new Error(`Delete failed (${r.status})`);
+
+        // Surface the paired-cron outcome so the operator need not go and check
+        // the scheduler separately.
+        let removedCron = null;
+        let cronWarning = null;
+        try {
+          const data = await r.json();
+          removedCron = data && data.cron_removed;
+          cronWarning = data && data.cron_warning;
+        } catch { /* body is optional */ }
+        if (removedCron) {
+          this.noticeMessage = `Deleted ${name}. Paired schedule ${removedCron} was also removed.`;
+        } else if (cronWarning) {
+          // An orphaned schedule still fires. Reporting a bare success here is
+          // what made the earlier remove_job() bug invisible to operators.
+          this.noticeMessage = `Deleted ${name}.`;
+          this.errorMessage = cronWarning;
+        } else {
+          this.noticeMessage = `Deleted ${name}.`;
+        }
+        await this.reload();
+      } catch (e) {
+        console.error(e);
+        this.errorMessage = e?.message || `Could not delete ${name}.`;
+      } finally {
+        this.actionBusy = '';
+      }
+    },
+  };
+}
+</script>
+<script>
+window.AgentProPageContext = function() {
+  const root = document.querySelector('[x-data="workstreamsIndex()"]');
+  const app = window.Alpine && root ? Alpine.$data(root) : {};
+  const rows = Array.isArray(app.items) ? app.items : [];
+  return {
+    source_page: 'workstreams',
+    page: 'workstreams_index',
+    statusFilter: app.statusFilter,
+    search: app.search,
+    sortMode: app.sortMode,
+    counts: {
+      total: rows.length,
+      active: rows.filter(ws => ws.status === 'active').length,
+      paused: rows.filter(ws => ws.status === 'paused').length,
+      completed: rows.filter(ws => ws.status === 'completed').length,
+      working: typeof app.totalWorking === 'function' ? app.totalWorking() : 0,
+    },
+    visibleWorkstreams: typeof app.filtered === 'function'
+      ? app.filtered().slice(0, 8).map(ws => ({
+          name: ws.name,
+          status: ws.status,
+          skill: ws.skill,
+          owner: ws.owner,
+          items_total: ws.items_total,
+          by_status: ws.by_status,
+        }))
+      : [],
+  };
+};
+</script>
+<script src="/static/ask-twin.js"></script>
+<script src="/static/session-controls.js"></script>
+</body>
+</html>

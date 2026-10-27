@@ -1,0 +1,307 @@
+/*
+ * IAF AgentOS — unified theme tokens + global Light/Dark overrides.
+ * Single source of truth. Dark is the default; [data-theme="light"] on <html>
+ * flips every shared surface. Pages use the common Tailwind "dark" palette
+ * (bg-dark-*, text-gray-*, border-dark-*) so these global rules theme all pages.
+ *
+ * Opt-out: add class "themed-dark-hero" (or attribute data-keep-dark) to a
+ * container that must stay dark in both modes (e.g. a branded hero / canvas).
+ */
+
+/* ── Design tokens ─────────────────────────────────────────── */
+:root {
+  --iaf-bg: #080c14;
+  --iaf-surface: #0f172a;
+  --iaf-surface-2: #1e293b;
+  --iaf-surface-3: #131d33;
+  --iaf-border: #334155;
+  --iaf-border-soft: rgba(148, 163, 184, 0.16);
+  --iaf-text: #f1f5f9;
+  --iaf-text-muted: #94a3b8;
+  --iaf-accent: #6366f1;
+  --iaf-accent-light: #818cf8;
+  --iaf-accent-contrast: #ffffff;
+  --iaf-scroll-thumb: #334155;
+  --iaf-scroll-thumb-hover: #475569;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --iaf-bg: #f7f9fc;
+  --iaf-surface: #ffffff;
+  --iaf-surface-2: #eef3fb;
+  --iaf-surface-3: #ffffff;
+  --iaf-border: #d5deeb;
+  --iaf-border-soft: rgba(100, 116, 139, 0.20);
+  --iaf-text: #172033;
+  --iaf-text-muted: #475569;
+  --iaf-accent: #4f46e5;
+  --iaf-accent-light: #315fdc;
+  --iaf-accent-contrast: #ffffff;
+  --iaf-scroll-thumb: #c3cede;
+  --iaf-scroll-thumb-hover: #9fb0c8;
+  color-scheme: light;
+}
+
+/* Smooth, opt-in transition on theme switch (skipped for reduced-motion). */
+@media (prefers-reduced-motion: no-preference) {
+  html[data-theme] body,
+  html[data-theme] aside,
+  html[data-theme] header,
+  html[data-theme] main,
+  html[data-theme] [class*="bg-dark-"],
+  html[data-theme] [class*="border-dark-"] {
+    transition: background-color .22s ease, border-color .22s ease, color .22s ease;
+  }
+}
+
+/* ── Shared scrollbar ──────────────────────────────────────── */
+.scroll-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+.scroll-thin::-webkit-scrollbar-track { background: transparent; }
+.scroll-thin::-webkit-scrollbar-thumb { background: var(--iaf-scroll-thumb); border-radius: 3px; }
+.scroll-thin::-webkit-scrollbar-thumb:hover { background: var(--iaf-scroll-thumb-hover); }
+html[data-theme] * { scrollbar-color: var(--iaf-scroll-thumb) transparent; }
+
+/* ── Accessible theme toggle component ─────────────────────── */
+.iaf-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid var(--iaf-border-soft);
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--iaf-text);
+  cursor: pointer;
+  outline: none;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.iaf-theme-toggle:hover { border-color: var(--iaf-accent-light); }
+.iaf-theme-toggle:focus-visible { box-shadow: 0 0 0 2px var(--iaf-accent-light); }
+.iaf-theme-toggle .iaf-icon-sun,
+.iaf-theme-toggle .iaf-icon-moon { width: 17px; height: 17px; display: none; }
+/* Show the icon for the mode you'll switch TO. */
+html[data-theme="dark"] .iaf-theme-toggle .iaf-icon-sun { display: block; }
+html[data-theme="light"] .iaf-theme-toggle .iaf-icon-moon { display: block; }
+
+/* Auto-injected floating toggle (pages without their own control). */
+.iaf-theme-fab {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2147483000;
+  width: 42px;
+  height: 42px;
+  background: var(--iaf-surface);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+}
+html[data-theme="light"] .iaf-theme-fab { box-shadow: 0 6px 20px rgba(15, 23, 42, 0.14); }
+
+/* ═══════════════════════════════════════════════════════════
+   LIGHT MODE — global overrides for the shared Tailwind palette
+   ═══════════════════════════════════════════════════════════ */
+
+html[data-theme="light"] body {
+  background: var(--iaf-bg);
+  color: var(--iaf-text);
+}
+
+/* Surfaces */
+html[data-theme="light"] .bg-dark-950,
+html[data-theme="light"] .bg-dark-950\/50,
+html[data-theme="light"] .bg-dark-950\/60,
+html[data-theme="light"] .bg-dark-950\/70,
+html[data-theme="light"] .bg-dark-950\/80,
+html[data-theme="light"] .bg-dark-950\/95 {
+  background-color: #ffffff !important;
+}
+html[data-theme="light"] .bg-dark-900,
+html[data-theme="light"] .bg-dark-900\/50,
+html[data-theme="light"] .bg-dark-900\/60,
+html[data-theme="light"] .bg-dark-900\/80,
+html[data-theme="light"] .bg-dark-850 {
+  background-color: #ffffff !important;
+}
+html[data-theme="light"] .bg-dark-800,
+html[data-theme="light"] .bg-dark-800\/40,
+html[data-theme="light"] .bg-dark-800\/50,
+html[data-theme="light"] .bg-dark-800\/60,
+html[data-theme="light"] .bg-dark-800\/70,
+html[data-theme="light"] .bg-dark-700,
+html[data-theme="light"] .bg-dark-700\/50 {
+  background-color: #eef3fb !important;
+}
+html[data-theme="light"] .bg-gradient-to-br,
+html[data-theme="light"] .bg-gradient-to-b {
+  background-image: linear-gradient(135deg, #ffffff, #f4f7fb) !important;
+}
+
+/* Borders */
+html[data-theme="light"] .border-dark-950,
+html[data-theme="light"] .border-dark-900,
+html[data-theme="light"] .border-dark-800,
+html[data-theme="light"] .border-dark-700,
+html[data-theme="light"] .border-dark-700\/50,
+html[data-theme="light"] .border-dark-600 {
+  border-color: rgba(100, 116, 139, 0.22) !important;
+}
+html[data-theme="light"] .divide-dark-800 > :not([hidden]) ~ :not([hidden]),
+html[data-theme="light"] .divide-dark-700 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(100, 116, 139, 0.16) !important;
+}
+
+/* Neutral text */
+html[data-theme="light"] .text-white,
+html[data-theme="light"] .text-gray-100,
+html[data-theme="light"] .text-gray-200,
+html[data-theme="light"] .text-gray-300 {
+  color: #172033 !important;
+}
+html[data-theme="light"] .text-gray-400,
+html[data-theme="light"] .text-gray-500,
+html[data-theme="light"] .text-gray-600,
+html[data-theme="light"] .text-gray-700,
+html[data-theme="light"] .text-dark-600 {
+  color: #475569 !important;
+}
+html[data-theme="light"] .placeholder-gray-500::placeholder,
+html[data-theme="light"] .placeholder-gray-400::placeholder { color: #94a3b8 !important; }
+
+/* Accent text */
+html[data-theme="light"] .text-accent-light,
+html[data-theme="light"] .text-accent { color: #4f46e5 !important; }
+
+/* Colored text families — chosen light for dark bg; darken for readable-on-light. */
+html[data-theme="light"] [class*="text-red-3"],
+html[data-theme="light"] [class*="text-red-4"],
+html[data-theme="light"] [class*="text-rose-3"],
+html[data-theme="light"] [class*="text-rose-4"] { color: #dc2626 !important; }
+html[data-theme="light"] [class*="text-amber-"],
+html[data-theme="light"] [class*="text-yellow-"] { color: #b45309 !important; }
+html[data-theme="light"] [class*="text-orange-"] { color: #c2410c !important; }
+html[data-theme="light"] [class*="text-green-3"],
+html[data-theme="light"] [class*="text-green-4"],
+html[data-theme="light"] [class*="text-emerald-3"],
+html[data-theme="light"] [class*="text-emerald-4"] { color: #167a3b !important; }
+html[data-theme="light"] [class*="text-teal-"] { color: #0f766e !important; }
+html[data-theme="light"] [class*="text-cyan-"],
+html[data-theme="light"] [class*="text-sky-"] { color: #0e7490 !important; }
+html[data-theme="light"] [class*="text-blue-2"],
+html[data-theme="light"] [class*="text-blue-3"],
+html[data-theme="light"] [class*="text-blue-4"] { color: #2563eb !important; }
+html[data-theme="light"] [class*="text-indigo-"] { color: #4f46e5 !important; }
+html[data-theme="light"] [class*="text-violet-"],
+html[data-theme="light"] [class*="text-purple-"] { color: #7c3aed !important; }
+html[data-theme="light"] [class*="text-pink-"],
+html[data-theme="light"] [class*="text-fuchsia-"] { color: #db2777 !important; }
+
+/* Solid colored buttons/badges (shades 500-700 are solid) keep white text. */
+html[data-theme="light"] [class*="bg-red-5"][class*="text-white"],
+html[data-theme="light"] [class*="bg-red-6"][class*="text-white"],
+html[data-theme="light"] [class*="bg-red-7"][class*="text-white"],
+html[data-theme="light"] [class*="bg-orange-5"][class*="text-white"],
+html[data-theme="light"] [class*="bg-orange-6"][class*="text-white"],
+html[data-theme="light"] [class*="bg-amber-5"][class*="text-white"],
+html[data-theme="light"] [class*="bg-amber-6"][class*="text-white"],
+html[data-theme="light"] [class*="bg-green-5"][class*="text-white"],
+html[data-theme="light"] [class*="bg-green-6"][class*="text-white"],
+html[data-theme="light"] [class*="bg-emerald-5"][class*="text-white"],
+html[data-theme="light"] [class*="bg-emerald-6"][class*="text-white"],
+html[data-theme="light"] [class*="bg-teal-6"][class*="text-white"],
+html[data-theme="light"] [class*="bg-cyan-6"][class*="text-white"],
+html[data-theme="light"] [class*="bg-blue-5"][class*="text-white"],
+html[data-theme="light"] [class*="bg-blue-6"][class*="text-white"],
+html[data-theme="light"] [class*="bg-indigo-5"][class*="text-white"],
+html[data-theme="light"] [class*="bg-indigo-6"][class*="text-white"],
+html[data-theme="light"] [class*="bg-violet-6"][class*="text-white"],
+html[data-theme="light"] [class*="bg-violet-7"][class*="text-white"],
+html[data-theme="light"] [class*="bg-purple-6"][class*="text-white"],
+html[data-theme="light"] [class*="bg-pink-6"][class*="text-white"],
+html[data-theme="light"] .bg-accent[class*="text-white"],
+html[data-theme="light"] .bg-accent.text-white { color: #ffffff !important; }
+
+/* Form controls */
+html[data-theme="light"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+html[data-theme="light"] select,
+html[data-theme="light"] textarea {
+  background-color: #ffffff !important;
+  border-color: rgba(100, 116, 139, 0.28) !important;
+  color: #172033 !important;
+}
+
+/* Hover surfaces */
+html[data-theme="light"] [class*="hover:bg-dark-800"]:hover,
+html[data-theme="light"] [class*="hover:bg-dark-700"]:hover,
+html[data-theme="light"] [class*="hover:bg-gray-8"]:hover,
+html[data-theme="light"] [class*="hover:bg-gray-7"]:hover {
+  background-color: #e8eefc !important;
+}
+
+/* Skeleton loaders */
+html[data-theme="light"] .skeleton {
+  background: linear-gradient(90deg, #eef3fb 25%, #d8e2f0 50%, #eef3fb 75%) !important;
+  background-size: 200% 100% !important;
+}
+
+/* Sidebar + header get the light surface too. */
+html[data-theme="light"] aside,
+html[data-theme="light"] header {
+  background: linear-gradient(180deg, #ffffff, #f4f7fb) !important;
+  color: #172033 !important;
+}
+html[data-theme="light"] aside .sidebar-logo-text,
+html[data-theme="light"] .sidebar-logo-text { color: #172033 !important; }
+
+/* ── Inline hardcoded-dark styles (modals, injected components) ──
+   Elements using style="background:#161b22" etc. can't be reached by
+   class overrides, so their text (flipped to dark) becomes invisible on
+   the dark inline bg. Remap the common dark hexes for light mode. */
+html[data-theme="light"] [style*="#0d1117"]:not([data-keep-dark]),
+html[data-theme="light"] [style*="#161b22"]:not([data-keep-dark]),
+html[data-theme="light"] [style*="#161b27"]:not([data-keep-dark]),
+html[data-theme="light"] [style*="#0f172a"]:not([data-keep-dark]),
+html[data-theme="light"] [style*="#0b1120"]:not([data-keep-dark]),
+html[data-theme="light"] [style*="#13182a"]:not([data-keep-dark]) {
+  background-color: #ffffff !important;
+}
+html[data-theme="light"] [style*="#21262d"]:not([data-keep-dark]),
+html[data-theme="light"] [style*="#1e293b"]:not([data-keep-dark]),
+html[data-theme="light"] [style*="#1e2535"]:not([data-keep-dark]) {
+  background-color: #f3f6fb !important;
+}
+html[data-theme="light"] [style*="#30363d"]:not([data-keep-dark]) {
+  border-color: #d5deeb !important;
+}
+html[data-theme="light"] [style*="color:#c9d1d9"]:not([data-keep-dark]),
+html[data-theme="light"] [style*="color: #c9d1d9"]:not([data-keep-dark]),
+html[data-theme="light"] [style*="color:#e6edf3"]:not([data-keep-dark]),
+html[data-theme="light"] [style*="color:#c9d1d9"] :not([data-keep-dark]) {
+  color: #172033 !important;
+}
+html[data-theme="light"] [style*="color:#8b949e"]:not([data-keep-dark]),
+html[data-theme="light"] [style*="color: #8b949e"]:not([data-keep-dark]) {
+  color: #607089 !important;
+}
+
+/* ── Opt-out: keep an element dark in both themes ──────────── */
+html[data-theme="light"] .themed-dark-hero,
+html[data-theme="light"] [data-keep-dark] { color-scheme: dark; }
+html[data-theme="light"] .themed-dark-hero.bg-dark-950,
+html[data-theme="light"] .themed-dark-hero .bg-dark-950,
+html[data-theme="light"] .themed-dark-hero.bg-dark-900,
+html[data-theme="light"] .themed-dark-hero .bg-dark-900,
+html[data-theme="light"] [data-keep-dark].bg-dark-950,
+html[data-theme="light"] [data-keep-dark] .bg-dark-950,
+html[data-theme="light"] [data-keep-dark].bg-dark-900,
+html[data-theme="light"] [data-keep-dark] .bg-dark-900 {
+  background-color: #0f172a !important;
+  background-image: none !important;
+}
+html[data-theme="light"] .themed-dark-hero .text-white,
+html[data-theme="light"] [data-keep-dark] .text-white { color: #ffffff !important; }
+html[data-theme="light"] .themed-dark-hero .text-gray-300,
+html[data-theme="light"] [data-keep-dark] .text-gray-300 { color: #e2e8f0 !important; }
+html[data-theme="light"] .themed-dark-hero .text-gray-400,
+html[data-theme="light"] [data-keep-dark] .text-gray-400 { color: #cbd5e1 !important; }

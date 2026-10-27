@@ -1,0 +1,36 @@
+<div class="skill-card" data-skill-component="example_skill">
+  <div class="skill-card-head">
+    <div>
+      <div class="skill-card-kicker">ERP Posting</div>
+      <h4>{{posting_title}}</h4>
+    </div>
+    <span class="skill-status" data-status>Draft</span>
+  </div>
+  <div class="skill-form-grid">
+    <label>
+      <span>Company Code</span>
+      <input data-field="company_code" value="{{company_code}}" placeholder="1000">
+    </label>
+    <label>
+      <span>Document Type</span>
+      <input data-field="document_type" value="{{document_type}}" placeholder="KR">
+    </label>
+    <label>
+      <span>Posting Date</span>
+      <input data-field="posting_date" value="{{posting_date}}" placeholder="YYYY-MM-DD">
+    </label>
+    <label>
+      <span>Amount</span>
+      <input data-field="amount" value="{{amount}}" placeholder="0.00">
+    </label>
+    <label class="wide">
+      <span>Reference</span>
+      <textarea data-field="reference" rows="3" placeholder="Posting reference">{{reference}}</textarea>
+    </label>
+  </div>
+  <div class="skill-card-actions">
+    <button type="button" class="btn secondary" data-action="skill-reset">Reset Draft</button>
+    <button type="button" class="btn" data-action="post-sap">Post to SAP</button>
+  </div>
+  <div class="skill-card-note" data-message>Posting is sent only after explicit confirmation.</div>
+</div>

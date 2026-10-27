@@ -1,0 +1,689 @@
+version: '1.0'
+description: Default AgentPro entitlement policy for the sample company tenant.
+policies:
+- id: admin-full-access
+  effect: allow
+  roles:
+  - admin
+  actions:
+  - '*'
+  resources:
+  - '*'
+  reason: Administrators can manage tenant resources.
+- id: authenticated-users-can-use-fetch-canonical
+  effect: allow
+  roles:
+  - user
+  - manager
+  - auditor
+  actions:
+  - use
+  - call
+  - read
+  resources:
+  - tool:fetch_canonical
+  reason: fetch_canonical is a read-only, binding-scoped canonical data tool safe for all authenticated users.
+- id: authenticated-users-can-use-default-agent
+  effect: allow
+  roles:
+  - user
+  - manager
+  - auditor
+  actions:
+  - access
+  - call
+  - use
+  - read
+  - test
+  resources:
+  - agent:*
+  - skill:general
+  - skill:component_authoring
+  - context:/shared/Enterprise_Context.md
+  - context:/shared/contexts/entity_guide.md
+  - tool:shell
+  - tool:query_memory
+  - mcp:ap_tools
+  - external:platform.ap_tools_mcp
+  reason: Authenticated users get the default agent and general assistant only unless group claims grant
+    domain skills.
+- id: finance-groups-can-use-finance-skills
+  effect: allow
+  groups:
+  - finance
+  actions:
+  - access
+  - use
+  - read
+  - test
+  resources:
+  - skill:fa_ap
+  - skill:fa_ar
+  - skill:fa_gl
+  - skill:invoice_processing_ap
+  reason: Full finance groups can use AP, AR, GL, and invoice-processing skills.
+- id: finance-groups-can-draft-governance-policies
+  effect: allow
+  groups:
+  - finance
+  - finance-ap
+  - finance-ar
+  - finance-gl
+  actions:
+  - use
+  - read
+  - test
+  resources:
+  - skill:policy_authoring
+  reason: Finance users can draft approval/governance policy YAML; saving and publishing remain separate
+    governed actions.
+- id: authenticated-users-can-use-demo-communication-skill
+  effect: allow
+  roles:
+  - user
+  - manager
+  - auditor
+  actions:
+  - use
+  - read
+  - test
+  resources:
+  - skill:send_email
+  reason: Demo workstreams render email-draft skill components and allow users to discuss the generated
+    communication.
+- id: authenticated-users-can-use-private-evals
+  effect: allow
+  roles:
+  - user
+  - manager
+  - auditor
+  actions:
+  - read
+  - write
+  - use
+  - test
+  resources:
+  - eval:*
+  reason: Authenticated users can author, run, test, and review tenant-owned Private Learning Loop eval
+    assets.
+- id: authenticated-users-can-use-trace-value-router
+  effect: allow
+  roles:
+  - user
+  - manager
+  - auditor
+  actions:
+  - read
+  - use
+  - promote
+  - write
+  resources:
+  - trace_value:*
+  - skill:trace_value_router
+  - knowledge:*
+  reason: Authenticated users can evaluate trace value recommendations and create governed pending-review
+    learning items.
+- id: authenticated-users-can-use-tenant-control-plane
+  effect: allow
+  roles:
+  - user
+  - manager
+  actions:
+  - read
+  - write
+  - use
+  - delete
+  resources:
+  - knowledge:*
+  - memory:*
+  - workstream:*
+  - observer:*
+  - file:*
+  - rl_capture:*
+  reason: Authenticated tenant users retain existing Knowledge, Memory, Workstream, Observer, File
+    Browser, and RL Capture behavior after route-level identity binding. Kernel and skill-level
+    policies continue to enforce the underlying action.
+- id: auditors-can-read-tenant-control-plane
+  effect: allow
+  roles:
+  - auditor
+  actions:
+  - read
+  resources:
+  - knowledge:*
+  - memory:*
+  - workstream:*
+  - observer:*
+  - file:*
+  - rl_capture:*
+  reason: Auditors receive read-only access to tenant control-plane views and exports.
+- id: managers-can-decide-approvals
+  effect: allow
+  roles:
+  - manager
+  actions:
+  - approve
+  resources:
+  - approval:*
+  reason: Managers may approve or reject human-approval requests (HITL gates, held agent
+    actions, queue items) in their own tenant. Admin already holds this via allow-all.
+- id: approver-group-can-decide-approvals
+  effect: allow
+  groups:
+  - approvers
+  actions:
+  - approve
+  resources:
+  - approval:*
+  reason: Members of the `approvers` group may decide human-approval requests. Separate
+    from the roles rule because roles and groups within one policy must BOTH match.
+- id: service-observer-skill-use
+  effect: allow
+  groups:
+  - service:observer
+  actions:
+  - use
+  - call
+  resources:
+  - skill:agentos_guide
+  - skill:ap_ops
+  - skill:notify
+  - skill:collection-chase-agent
+  - skill:ic-mismatch-agent
+  reason: Observers run only the skills their specs declare (observers/spec/*.yaml
+    allowed_skills); each spec narrows this further. Network, tool and context access
+    mirror service:cron.
+- id: managers-can-approve-private-eval-gates
+  effect: allow
+  roles:
+  - manager
+  actions:
+  - approve
+  resources:
+  - eval:*
+  reason: Managers can record manual approve/reject promotion-gate decisions for eval runs.
+- id: finance-groups-can-use-finance-context-and-tools
+  effect: allow
+  groups:
+  - finance
+  - finance-ap
+  - finance-ar
+  - finance-gl
+  actions:
+  - access
+  - use
+  - read
+  - test
+  resources:
+  - context:/shared/contexts/fa_environment.md
+  - context:/shared/contexts/taxonomy/fa_taxonomy.md
+  - context:/shared/contexts/judgment/fa_judgment.md
+  - context:/shared/contexts/itil_mapping/fa_frameworks.md
+  - context:/shared/contexts/exceptions/fa_exceptions.md
+  - context:/shared/contexts/benchmarks/fa_benchmarks.md
+  - context:/shared/contexts/entities/*.md
+  - tool:shell
+  - tool:query_memory
+  - tool:run_sql_query
+  - tool:request_human_approval
+  - external:finance.sap_odata
+  - external:finance.customer_portals
+  - external:finance.ms_graph_mail
+  - external:db.shared_tenant_databases
+  - external:graph
+  reason: Finance groups can use finance reference context and approved runtime tools.
+- id: finance-ap-group-can-use-ap-skill
+  effect: allow
+  groups:
+  - finance-ap
+  actions:
+  - use
+  - read
+  - test
+  resources:
+  - skill:fa_ap
+  - skill:invoice_processing_ap
+  reason: AP specialists can use the AP skill.
+- id: finance-ar-group-can-use-ar-skill
+  effect: allow
+  groups:
+  - finance-ar
+  actions:
+  - use
+  - read
+  - test
+  resources:
+  - skill:fa_ar
+  - tool:shell
+  reason: AR specialists can use the AR skill and its shell-backed lookup flows.
+- id: finance-gl-group-can-use-gl-skill
+  effect: allow
+  groups:
+  - finance-gl
+  actions:
+  - use
+  - read
+  - test
+  resources:
+  - skill:fa_gl
+  reason: GL specialists can use the GL skill.
+- id: it-ops-groups-can-use-ccdops
+  effect: allow
+  groups:
+  - it-ops
+  - sre
+  - platform-ops
+  actions:
+  - access
+  - use
+  - read
+  - test
+  resources:
+  - skill:ccdops
+  - context:/shared/contexts/ccdops_context.md
+  - context:/shared/contexts/taxonomy/it_ops_taxonomy.md
+  - context:/shared/contexts/judgment/k8s_escalation_rules.md
+  - context:/shared/contexts/itil_mapping/it_ops_itil_mapping.md
+  - context:/shared/contexts/exceptions/k8s_*.md
+  - context:/shared/contexts/benchmarks/k8s_health_benchmarks.md
+  - tool:shell
+  - tool:query_memory
+  - tool:request_human_approval
+  - external:it.kubernetes_api
+  - external:it.checkmk
+  - external:db.shared_tenant_databases
+  - external:graph
+  reason: IT operations groups can use CCD Ops and Kubernetes runbook context.
+- id: ai-program-groups-can-use-pod-skill
+  effect: allow
+  roles:
+  - manager
+  groups:
+  - ai-programs
+  - executive
+  - leadership
+  actions:
+  - use
+  - read
+  - test
+  resources:
+  - skill:ai_pursuit_to_deployment_pods
+  - tool:shell
+  - tool:query_memory
+  reason: AI program leaders can use the pursuit-to-deployment POD operating model skill.
+- id: users-can-manage-personal-skill-drafts
+  effect: allow
+  roles:
+  - user
+  - manager
+  - auditor
+  actions:
+  - read
+  - write
+  - delete
+  - submit
+  resources:
+  - skill:personal/*
+  reason: Standard users can work on their own personal skill drafts.
+- id: service-cron-external-access
+  effect: allow
+  groups:
+  - service:cron
+  - service:observer
+  actions:
+  - use
+  - access
+  - read
+  - call
+  resources:
+  - external:finance.sap_odata
+  - external:finance.customer_portals
+  - external:finance.ms_graph_mail
+  - external:it.kubernetes_api
+  - external:it.checkmk
+  - external:db.shared_tenant_databases
+  - external:graph
+  - external:platform.ap_tools_mcp
+  - credential:erp_api
+  - credential:portal_northfield_token
+  - credential:portal_solstice_key
+  - credential:portal_ironvale_creds
+  - credential:portal_petrolux_token
+  - credential:portal_vantar_token
+  - credential:portal_harborview_key
+  - credential:ms365_ar_inbox
+  - credential:ccd_k8s_api
+  - credential:checkmk_api
+  - mcp:ap_tools
+  reason: Cron service access is limited to resources declared in external_access.yaml.
+- id: service-queue-external-access
+  effect: allow
+  groups:
+  - service:queue
+  actions:
+  - use
+  - access
+  - read
+  - write
+  - call
+  resources:
+  - external:finance.sap_odata
+  - external:finance.customer_portals
+  - external:finance.ms_graph_mail
+  - external:it.kubernetes_api
+  - external:it.checkmk
+  - external:db.shared_tenant_databases
+  - external:graph
+  - external:platform.ap_tools_mcp
+  - credential:erp_api
+  - credential:portal_northfield_token
+  - credential:portal_solstice_key
+  - credential:portal_ironvale_creds
+  - credential:portal_petrolux_token
+  - credential:portal_vantar_token
+  - credential:portal_harborview_key
+  - credential:ms365_ar_inbox
+  - credential:ccd_k8s_api
+  - credential:checkmk_api
+  - mcp:ap_tools
+  reason: Queue service access is limited to registered finance and IT operational dependencies.
+- id: vision-allowed-roles
+  effect: allow
+  roles:
+  - user
+  - manager
+  - auditor
+  actions:
+  - access
+  - run
+  - use
+  - read
+  - test
+  resources:
+  - vision:*
+  - skill:object_desk_demo_graph
+  - skill:objdemo_classify
+  - skill:objdemo_verify
+  - skill:objdemo_act
+  - skill:object_desk_fastpath_graph
+  - skill:objdemo_fastpath_record
+  - tool:jev_see
+  - tool:jev_vision_verify
+  reason: 'vision_allowed (roles): authenticated users and the workstream owner
+    (minted as role=user for mission runs) may run the physical-AI vision graph,
+    its node skills, and the vision tools.'
+- id: vision-allowed-service
+  effect: allow
+  groups:
+  - service:queue
+  - service:cron
+  - service:hitl_resume
+  - physical-ai
+  actions:
+  - access
+  - run
+  - use
+  - read
+  - test
+  resources:
+  - vision:*
+  - skill:object_desk_demo_graph
+  - skill:objdemo_classify
+  - skill:objdemo_verify
+  - skill:objdemo_act
+  - skill:object_desk_fastpath_graph
+  - skill:objdemo_fastpath_record
+  - tool:jev_see
+  - tool:jev_vision_verify
+  reason: 'vision_allowed (service/groups): the queue/cron service principals and the
+    physical-ai group may materialize camera events and run the vision graph. Split
+    from the roles policy because the YAML provider ANDs roles+groups within one policy.'
+- id: service-hitl-resume-external-access
+  effect: allow
+  groups:
+  - service:hitl_resume
+  actions:
+  - use
+  - access
+  - read
+  - write
+  - delete
+  - call
+  resources:
+  - external:finance.sap_odata
+  - external:finance.customer_portals
+  - external:finance.ms_graph_mail
+  - external:it.kubernetes_api
+  - external:it.checkmk
+  - external:db.shared_tenant_databases
+  - external:graph
+  - external:platform.ap_tools_mcp
+  - credential:erp_api
+  - credential:portal_northfield_token
+  - credential:portal_solstice_key
+  - credential:portal_ironvale_creds
+  - credential:portal_petrolux_token
+  - credential:portal_vantar_token
+  - credential:portal_harborview_key
+  - credential:ms365_ar_inbox
+  - credential:ccd_k8s_api
+  - credential:checkmk_api
+  - mcp:ap_tools
+  reason: Human approval resumes only against registered operational dependencies.
+- id: service-principals-can-read-context
+  effect: allow
+  groups:
+  - service:cron
+  - service:observer
+  - service:queue
+  - service:hitl_resume
+  actions:
+  - read
+  - access
+  resources:
+  - context:*
+  reason: Cron/queue/HITL-resume agents must read routing + domain context files (ContextOS) the same
+    way interactive users do.
+- id: service-cron-skill-use
+  effect: allow
+  groups:
+  - service:cron
+  actions:
+  - use
+  - call
+  resources:
+  - skill:mission_mode
+  - skill:eval_suite
+  - skill:queue_ingest
+  - skill:trace_value_router
+  - skill:general
+  - skill:ccdops
+  - skill:fa_ap
+  - skill:fa_ar
+  - skill:fa_gl
+  - skill:ar_ops
+  - skill:debit_balance_report
+  - skill:dispute_management
+  - skill:send_email
+  - skill:post_to_sap
+  - skill:ntt_*
+  - skill:fin_*
+  - skill:general
+  - skill:o2c_*
+  - skill:r2r_*
+  - skill:treasury_*
+  reason: Cron may invoke only reconciled platform jobs and tenant workstream skill families.
+- id: service-queue-skill-use
+  effect: allow
+  groups:
+  - service:queue
+  actions:
+  - use
+  - call
+  resources:
+  - skill:general
+  - skill:ccdops
+  - skill:fa_ap
+  - skill:fa_ar
+  - skill:fa_gl
+  - skill:ar_ops
+  - skill:agentos_guide
+  - skill:debit_balance_report
+  - skill:dispute_management
+  - skill:send_email
+  - skill:post_to_sap
+  - skill:ntt_*
+  - skill:fin_*
+  - skill:general
+  - skill:o2c_*
+  - skill:r2r_*
+  - skill:treasury_*
+  reason: Queue routing is constrained to approved tenant operational skill families.
+- id: service-hitl-resume-skill-use
+  effect: allow
+  groups:
+  - service:hitl_resume
+  actions:
+  - use
+  - call
+  resources:
+  - skill:general
+  - skill:ccdops
+  - skill:fa_ap
+  - skill:fa_ar
+  - skill:fa_gl
+  - skill:ar_ops
+  - skill:agentos_guide
+  - skill:debit_balance_report
+  - skill:dispute_management
+  - skill:send_email
+  - skill:post_to_sap
+  - skill:ntt_*
+  - skill:fin_*
+  - skill:general
+  - skill:o2c_*
+  - skill:r2r_*
+  - skill:treasury_*
+  reason: HITL resume retains the approved tenant skill scope without granting every installed skill.
+- id: service-cron-tool-use
+  effect: allow
+  groups:
+  - service:cron
+  - service:observer
+  actions:
+  - use
+  resources:
+  - tool:shell
+  - tool:query_memory
+  - tool:run_sql_query
+  - tool:read_document
+  - tool:fin_ingest_invoice_doc
+  - tool:request_human_approval
+  - tool:mcp
+  reason: Cron tools are limited to current scheduled workflow requirements.
+- id: service-queue-tool-use
+  effect: allow
+  groups:
+  - service:queue
+  actions:
+  - use
+  resources:
+  - tool:shell
+  - tool:query_memory
+  - tool:run_sql_query
+  - tool:read_document
+  - tool:fin_ingest_invoice_doc
+  - tool:request_human_approval
+  - tool:mcp
+  reason: Queue tools are limited to current Command Center workflow requirements.
+- id: service-hitl-resume-tool-use
+  effect: allow
+  groups:
+  - service:hitl_resume
+  actions:
+  - use
+  resources:
+  - tool:shell
+  - tool:query_memory
+  - tool:run_sql_query
+  - tool:read_document
+  - tool:fin_ingest_invoice_doc
+  - tool:request_human_approval
+  - tool:mcp
+  reason: HITL resume can continue only the approved operational tool set.
+# --- Finance demo DB access (paired with external:db.fin_demo_writable) --------------
+# The four finance workstream demo DBs now resolve to their own narrow resource instead
+# of external:db.shared_tenant_databases, so the grants that used to reach them via the
+# catch-all are restated here. Read access mirrors the catch-all exactly (no new human
+# privilege); WRITE is granted ONLY to the service principals that execute workstreams,
+# so post_and_close / gl_coding / payment_proposal can persist their results.
+- id: finance-demo-db-read
+  effect: allow
+  groups:
+  - finance
+  - finance-ap
+  - finance-ar
+  - finance-gl
+  - it-ops
+  - sre
+  - platform-ops
+  actions:
+  - access
+  - use
+  - read
+  - test
+  resources:
+  - external:db.fin_demo_writable
+  reason: Preserves the read access these groups already had on the finance demo databases
+    via external:db.shared_tenant_databases; adds no write privilege.
+- id: service-principals-can-write-finance-demo-db
+  effect: allow
+  groups:
+  - service:cron
+  - service:queue
+  - service:hitl_resume
+  actions:
+  - access
+  - use
+  - read
+  - write
+  - call
+  resources:
+  - external:db.fin_demo_writable
+  reason: Workstream execution must persist case posting/closure, GL coding and payment-release
+    rows. Scoped to the four finance demo databases only - every other shared database
+    stays read-only under external:db.shared_tenant_databases.
+
+
+# ── Context item access (within a tenant) ────────────────────────────────────
+# Posture: ALLOW BY DEFAULT, RESTRICT BY EXCEPTION.
+#
+# This engine is default-deny, so without the broad allow below every context item
+# would be refused for non-admin roles the moment enforcement is switched on. The
+# broad allow keeps day-to-day use frictionless; the deny rule carves out the
+# sensitive folder.
+#
+# Restriction is by FOLDER, not per file: anything under
+# /shared/contexts/restricted/ is protected automatically. That is far more
+# reliable than remembering to tag each new document.
+#
+# Deny beats allow regardless of rule order (see yaml_provider.can), so the
+# carve-out is fail-closed once a document sits in the restricted folder.
+# Caveat: because deny wins, a principal holding BOTH a denied role (user/auditor)
+# and an allowed one (manager) is denied. Keep roles single-valued, or grant
+# access via a dedicated role rather than stacking roles.
+- id: context-default-allow
+  effect: allow
+  roles: [user, manager, auditor]
+  actions: [read, write, delete, access, use]
+  resources:
+    - 'context:*'
+  reason: Context items are readable/editable by default; protect a document by placing
+    it under /shared/contexts/restricted/ (see context-restricted-folder-deny).
+- id: context-restricted-folder-deny
+  effect: deny
+  roles: [user, auditor]
+  actions: ['*']
+  resources:
+    - 'context:/shared/contexts/restricted/*'
+  reason: The restricted context folder is limited to managers and administrators.

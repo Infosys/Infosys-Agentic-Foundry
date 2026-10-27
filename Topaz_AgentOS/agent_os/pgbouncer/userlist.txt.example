@@ -1,0 +1,14 @@
+; PgBouncer auth file — TEMPLATE. Copy to userlist.txt (same dir, or /etc/pgbouncer/),
+; fill the real password, then: chmod 600 userlist.txt  (and keep it OUT of git).
+;
+; Format: "username" "password"
+; Plaintext password is fine — PgBouncer uses it to run the SCRAM handshake with BOTH
+; the connecting client and the Postgres backend. Use the SAME password as agentos_app
+; in agent_os/config.env (the part between ':' and '@' in DATABASE_URL).
+;
+; Generate the real file straight from config.env (no copy-paste of the secret):
+;   PW=$(grep '^DATABASE_URL' agent_os/config.env | sed -E 's#.*://[^:]+:([^@]+)@.*#\1#')
+;   printf '"agentos_app" "%s"\n' "$PW" > agent_os/pgbouncer/userlist.txt
+;   chmod 600 agent_os/pgbouncer/userlist.txt
+
+"agentos_app" "REPLACE_WITH_agentos_app_PASSWORD_FROM_config.env"

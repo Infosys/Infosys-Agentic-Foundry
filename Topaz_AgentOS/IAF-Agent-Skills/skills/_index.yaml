@@ -1,0 +1,16 @@
+version: '1.0'
+default_skill: general
+category_labels:
+  platform: PLATFORM / UTILITIES — agent building, setup, general assistant
+  it_ops: IT OPERATIONS — infrastructure monitoring, incident response, K8s management
+category_order:
+- it_ops
+- platform
+entity_types: []
+skills:
+  ccdops:
+    description: CCD Kubernetes Operations — investigates pod, node, cluster, and network issues on the Infosys KaaS platform (Rancher RKE2)
+    category: it_ops
+  general:
+    description: General-purpose assistant for questions, explanations, and tasks
+    category: platform

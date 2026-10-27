@@ -1,0 +1,88 @@
+{
+  "version": "finance-router-hierarchy-v1",
+  "no_match": {
+    "value": "no-match",
+    "description": "No listed finance domain or skill is an appropriate match; use the full AgentOS router fallback."
+  },
+  "domains": {
+    "reporting-planning": {
+      "description": "Financial reporting, planning, forecasting, performance analysis, management information, and executive finance questions.",
+      "skills": [
+        "actuals-extraction-agent",
+        "variance-analysis-agent",
+        "forecast-accuracy-agent",
+        "cashflow-forecast-agent",
+        "cost-performance-analysis-agent",
+        "management-pack-agent",
+        "mi-quality-agent",
+        "finance-adhoc-analytics-agent",
+        "sts-kpi-agent"
+      ]
+    },
+    "receivables-credit": {
+      "description": "Customer billing, accounts receivable, collections, incoming customer cash, credit exposure, and customer master lifecycle.",
+      "skills": [
+        "aged-item-chase-agent",
+        "collection-chase-agent",
+        "collection-strategy-agent",
+        "cash-allocation-agent",
+        "bad-debt-prediction-agent",
+        "credit-exposure-agent",
+        "customer-master-creation-agent",
+        "customer-data-quality-agent",
+        "customer-deactivation-check-agent",
+        "billing-block-classifier-agent",
+        "billing-output-monitor-agent"
+      ]
+    },
+    "payables-procurement": {
+      "description": "Purchase requisitions, vendors, invoice capture and validation, AP duplicate prevention, memos, and vendor payment preparation.",
+      "skills": [
+        "pr-intake-agent",
+        "pr-validation-agent",
+        "vendor-validation-agent",
+        "ocr-validation-agent",
+        "duplicate-invoice-detection-agent",
+        "credit-debit-memo-agent",
+        "payment-setup-agent",
+        "grir-chase-agent"
+      ]
+    },
+    "record-controls-tax": {
+      "description": "General-ledger lifecycle, posting controls, compliance, fraud, reconciliations, assets, tax, and transfer pricing.",
+      "skills": [
+        "journal-lifecycle-agent",
+        "posting-review-agent",
+        "compliance-monitor-agent",
+        "fraud-pattern-agent",
+        "ic-mismatch-agent",
+        "suspense-reconciliation-agent",
+        "stock-movement-recon-agent",
+        "depreciation-validation-agent",
+        "vat-anomaly-agent",
+        "tp-monitoring-agent"
+      ]
+    },
+    "treasury-settlement": {
+      "description": "Bank charges and mandates, counterparty exposure, settlement cash, settlement instructions, counterparty data, and settlement reconciliation.",
+      "skills": [
+        "bank-fee-analysis-agent",
+        "bank-mandate-agent",
+        "counterparty-exposure-alert-agent",
+        "sts-cash-application-agent",
+        "sts-reconciliation-agent",
+        "sts-settlement-lifecycle-agent",
+        "sts-master-data-agent"
+      ]
+    },
+    "audit-capex": {
+      "description": "Audit evidence and PBC tracking plus capital appropriation requests and permits or licences supporting capital spend.",
+      "skills": [
+        "audit-evidence-agent",
+        "pbc-tracking-agent",
+        "car-management-agent",
+        "permit-tracker-agent"
+      ]
+    }
+  }
+}

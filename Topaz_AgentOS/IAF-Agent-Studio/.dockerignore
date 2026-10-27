@@ -1,0 +1,47 @@
+# Secrets and local config — must never bake into the image
+**/config.env
+**/*.env
+!**/*.env.example
+**/credentials.yaml
+**/credentials.yml
+**/docker.env
+**/docker-compose*.yml
+
+# Runtime databases and user data — large and sensitive
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+**/auth_users.db
+**/enterprise_root/tenants/*/config/
+**/enterprise_root/tenants/*/uploads/
+**/enterprise_root/tenants/*/evidence/
+
+# Dev scripts that embed passwords or start services with auth disabled
+**/dev_start*.sh
+**/start_dev*.sh
+
+# Python cache and virtual environments
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/venv/
+**/.venv/
+**/env/
+
+# Test artifacts and local working notes
+**/tests/fixtures/sensitive/
+**/*.log
+**/graphify-out/
+**/graphify-out-clean/
+
+# Git history (already excluded by Docker, but explicit is safer)
+.git/
+.github/
+
+# Editor and OS noise
+.vscode/
+.idea/
+**/*.bkp
+**/*.bak
+**/.DS_Store
+**/Thumbs.db

@@ -1,0 +1,2149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Operational Digital Twin — IAF AgentOS</title>
+    <!-- Unified Light/Dark theme — FOUC guard must run before first paint -->
+    <script>(function(){try{var m={hybrid:'light',light:'light',dark:'dark'},ls=window.localStorage;var v=m[ls.getItem('iaf_theme')]||m[ls.getItem('iaf_dashboard_theme')]||m[ls.getItem('iaf_workstreams_theme')]||m[ls.getItem('iaf-theme')];if(!v)v=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';var r=document.documentElement;r.setAttribute('data-theme',v);r.classList.add(v==='light'?'light-mode':'dark-mode');r.style.colorScheme=v;}catch(e){}})();</script>
+    <link rel="stylesheet" href="/static/theme.css">
+    <script src="/static/theme.js"></script>
+    <script src="/static/vendor/tailwind.min.js"></script>
+    <script defer src="/static/vendor/alpine.min.js"></script>
+    <script src="/static/vendor/chart.min.js"></script>
+    <script src="/static/vendor/marked.min.js"></script>
+    <style>
+        [x-cloak] { display: none !important; }
+        .scroll-thin::-webkit-scrollbar { width: 6px; }
+        .scroll-thin::-webkit-scrollbar-track { background: transparent; }
+        .scroll-thin::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+        @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.4} }
+        .pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+        @keyframes fade-in { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+        .fade-in { animation: fade-in .3s ease-out; }
+        /* Doughnut chart constraint — heatmaps no longer use canvas */
+        canvas { max-height: 120px !important; }
+        .feed-row:nth-child(even) { background: rgba(30,41,59,.4); }
+
+        /* Clickable card glow */
+        .kpi-card { cursor: pointer; transition: all .15s ease; user-select: none; }
+        .kpi-card:hover { border-color: rgba(56,189,248,.4); box-shadow: 0 0 12px rgba(56,189,248,.08); }
+        .kpi-card.selected { border-color: #22d3ee; box-shadow: 0 0 20px rgba(34,211,238,.15); }
+        .clickable-row { cursor: pointer; transition: background .1s; }
+        .clickable-row:hover { background: rgba(56,189,248,.08) !important; }
+
+        /* Drawer / Chat sidebar */
+        .drawer-overlay { transition: opacity .2s ease; }
+        .drawer-panel { transition: transform .25s cubic-bezier(.4,0,.2,1); }
+        .chat-bubble { max-width: 88%; word-wrap: break-word; }
+        .chat-bubble p { margin: 0 0 .5em; }
+        .chat-bubble p:last-child { margin-bottom: 0; }
+        .chat-bubble pre { background: #0f172a; border-radius: 6px; padding: .5em; overflow-x:auto; font-size: 11px; margin: .4em 0; }
+        .chat-bubble code { font-size: 11px; }
+        .chat-bubble ul, .chat-bubble ol { padding-left: 1.2em; margin: .3em 0; }
+        .chat-bubble table { border-collapse:collapse; width:100%; margin:.5em 0; font-size:11px; }
+        .chat-bubble th, .chat-bubble td { border:1px solid #334155; padding:3px 6px; text-align:left; }
+        .chat-bubble th { background:#1e293b; }
+
+        /* Typing dots */
+        @keyframes blink { 0%,100%{opacity:.2} 50%{opacity:1} }
+        .typing-dot { animation: blink 1.4s infinite both; }
+        .typing-dot:nth-child(2) { animation-delay: .2s; }
+        .typing-dot:nth-child(3) { animation-delay: .4s; }
+
+        /* Resize handle for chat panel */
+        .resize-handle {
+            position: absolute; top: 0; left: 0; width: 6px; height: 100%;
+            cursor: col-resize; z-index: 60;
+            background: transparent; transition: background .15s;
+        }
+        .resize-handle:hover, .resize-handle.active {
+            background: rgba(34,211,238,.35);
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: { extend: { colors: { dark: { 900:'#0f172a', 800:'#1e293b', 700:'#334155', 600:'#475569' } } } }
+        }
+    </script>
+    <!-- Auth: auto-inject Bearer token on all API calls + silent refresh on 401 -->
+    <script>
+    // SEC-6: clean up stale localStorage tokens from before cookie migration
+        localStorage.removeItem('iaf_access_token');
+        localStorage.removeItem('iaf_user');
+        (function() {
+        const _origFetch = window.fetch;
+        window.fetch = async function(input, init = {}) {
+            const url = typeof input === "string" ? input : (input.url || "");
+            const isApiCall = url && (url.startsWith("/") || url.startsWith(location.origin));
+            const isAuthEndpoint = url && (url.includes("/auth/login") || url.includes("/auth/register") ||
+                                           url.includes("/auth/refresh") || url.includes("/auth/policy") ||
+                                           url.includes("/auth/registration-mode"));
+            if (isApiCall && !isAuthEndpoint) {
+                // SEC-6: httponly cookie sent automatically — no manual Authorization header needed, init.headers, { "Authorization": "Bearer " + token });
+            }
+            let response = await _origFetch(input, init);
+            if (response.status === 401 && isApiCall && !isAuthEndpoint) {
+                try {
+                    const refresh = await _origFetch("/auth/refresh", { method: "POST", credentials: "include" });
+                    if (refresh.ok) {
+                        const data = await refresh.json();
+                        // SEC-6: server updated httponly cookie; no localStorage write needed
+                        init.headers = Object.assign({}, init.headers, { "Authorization": "Bearer " + data.access_token });
+                        response = await _origFetch(input, init);
+                    } else {
+                        // SEC-6: stale tokens cleaned up at interceptor init
+                        window.location.href = (window.__BASE_PATH__ || "") + "/login";
+                    }
+                } catch {}
+            }
+            return response;
+        };
+    })();
+    </script>
+</head>
+<body class="bg-dark-900 text-gray-100 min-h-screen" x-data="twinDashboard()" x-init="init()">
+
+    <!-- ========== TOP BAR ========== -->
+    <header class="bg-dark-800 border-b border-dark-700 px-6 py-3 flex items-center justify-between sticky top-0 z-50">
+        <div class="flex items-center gap-3">
+            <span class="text-xl font-bold tracking-tight">
+                <span class="text-cyan-400">🪞</span> Operational Digital Twin
+            </span>
+            <span class="text-xs text-gray-500 bg-dark-700 px-2 py-0.5 rounded">IAF</span>
+        </div>
+        <div class="flex items-center gap-4 text-sm">
+            <div class="flex items-center gap-1.5">
+                <div class="w-2 h-2 rounded-full pulse-dot" :class="loaded ? 'bg-emerald-400' : 'bg-gray-500'"></div>
+                <span class="text-gray-400" x-text="loaded ? ('As of ' + asOf) : 'Loading...'"></span>
+            </div>
+            <select x-model.number="days" @change="refresh()" class="bg-dark-700 border border-dark-600 text-gray-300 text-xs rounded px-2 py-1">
+                <option value="7">7 days</option><option value="14">14 days</option>
+                <option value="30" selected>30 days</option><option value="60">60 days</option>
+            </select>
+            <button @click="refresh()" class="text-gray-400 hover:text-white text-xs">↻ Refresh</button>
+            <!-- Chat toggle -->
+            <button @click="toggleChat()" class="relative text-gray-400 hover:text-cyan-400 text-sm transition-colors">
+                💬 Ask Twin
+                <span x-show="chatMessages.length > 0" class="absolute -top-1 -right-2 w-2 h-2 bg-cyan-400 rounded-full"></span>
+            </button>
+            <a href="/dashboard/v2" class="text-gray-400 hover:text-white text-sm">⚡ Command Center</a>
+            <a href="/" class="text-gray-400 hover:text-white text-sm">← Studio</a>
+            <!-- REV-5: session-controls.js renders identity + Sign Out here. -->
+            <div data-session-controls></div>
+        </div>
+    </header>
+
+    <!-- ========== MAIN CONTENT ========== -->
+    <main class="p-4 space-y-4 mx-auto max-w-[1600px]">
+
+        <!-- ══════ BP SPHERE EXPERIENCE LAYER ══════ -->
+        <section class="rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-dark-800 via-dark-900 to-slate-950 p-5 shadow-xl shadow-cyan-950/10">
+            <div class="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-5">
+                <div class="max-w-3xl">
+                    <div class="text-[10px] uppercase tracking-[0.24em] text-cyan-300 font-semibold mb-2">BP Sphere Experience Layer</div>
+                    <h1 class="text-2xl lg:text-3xl font-bold text-white tracking-tight">Insight, action, and learning in one place</h1>
+                    <p class="text-sm text-gray-400 mt-2 leading-relaxed">
+                        Start with the business signal, move directly into the work queue, and capture the upstream fixes that make the next run more autonomous.
+                    </p>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <template x-for="role in roleViews" :key="role.key">
+                        <button @click="selectedRole = role.key"
+                                class="px-3 py-2 rounded-xl border text-xs font-medium transition"
+                                :class="selectedRole === role.key ? 'bg-cyan-500/15 border-cyan-400/40 text-cyan-200' : 'bg-dark-900/70 border-dark-700 text-gray-400 hover:text-gray-200 hover:border-cyan-500/25'">
+                            <span x-text="role.icon"></span>
+                            <span x-text="role.label"></span>
+                        </button>
+                    </template>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-5">
+                <template x-for="insight in roleInsights" :key="insight.label">
+                    <button @click="askFreeform(insight.prompt)"
+                            class="text-left rounded-xl border border-dark-700 bg-dark-900/70 p-4 hover:border-cyan-500/30 hover:bg-dark-800/80 transition">
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                <div class="text-[10px] uppercase tracking-wider text-gray-500" x-text="insight.label"></div>
+                                <div class="text-xl font-bold text-white mt-1" x-text="insight.value"></div>
+                            </div>
+                            <span class="text-xl" x-text="insight.icon"></span>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-2 line-clamp-2" x-text="insight.story"></p>
+                        <div class="mt-3 text-[10px] text-cyan-400">Ask Twin for drivers →</div>
+                    </button>
+                </template>
+            </div>
+        </section>
+
+        <!-- ══════ ACTION + WORKSTREAM LAYER ══════ -->
+        <section class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+            <div class="xl:col-span-2 bg-dark-800 rounded-2xl border border-dark-700 overflow-hidden">
+                <div class="px-5 py-4 border-b border-dark-700 flex items-center justify-between">
+                    <div>
+                        <h2 class="text-sm font-semibold text-gray-200">Priority Work Queue</h2>
+                        <p class="text-xs text-gray-500 mt-0.5">Human action, agent follow-up, and process exceptions ranked for the selected role.</p>
+                    </div>
+                    <a href="/static/workstreams.html" class="text-[10px] px-2.5 py-1 rounded-lg bg-dark-700 text-gray-400 hover:text-white hover:bg-dark-600 transition">Open Workstreams ↗</a>
+                </div>
+                <div class="divide-y divide-dark-700/60">
+                    <template x-for="item in priorityWorkQueue" :key="item.id">
+                        <button @click="openWorkItem(item)"
+                                class="w-full text-left px-5 py-3 hover:bg-dark-900/70 transition flex items-start gap-3">
+                            <span class="mt-0.5 text-lg" x-text="item.icon"></span>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="text-sm font-semibold text-gray-100" x-text="item.title"></span>
+                                    <span class="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                                          :class="item.severity === 'critical' ? 'bg-red-500/15 text-red-300' : item.severity === 'high' ? 'bg-amber-500/15 text-amber-300' : 'bg-cyan-500/15 text-cyan-300'"
+                                          x-text="item.severity"></span>
+                                    <span class="text-[10px] text-gray-600" x-text="item.source"></span>
+                                </div>
+                                <p class="text-xs text-gray-400 mt-1 line-clamp-2" x-text="item.detail"></p>
+                                <div class="flex flex-wrap gap-2 mt-2">
+                                    <template x-for="chip in item.chips" :key="chip">
+                                        <span class="text-[10px] px-1.5 py-0.5 rounded bg-dark-700 text-gray-400" x-text="chip"></span>
+                                    </template>
+                                </div>
+                            </div>
+                            <div class="text-right shrink-0">
+                                <div class="text-[10px] text-gray-500">Recommended</div>
+                                <div class="text-xs text-cyan-300 font-medium" x-text="item.action"></div>
+                            </div>
+                        </button>
+                    </template>
+                    <div x-show="priorityWorkQueue.length === 0" class="px-5 py-10 text-center text-sm text-gray-500">
+                        No priority actions yet. Refresh after agents, HITL, or exception feeds populate.
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-dark-800 rounded-2xl border border-dark-700 overflow-hidden">
+                <div class="px-5 py-4 border-b border-dark-700">
+                    <h2 class="text-sm font-semibold text-gray-200">Learning & Transformation</h2>
+                    <p class="text-xs text-gray-500 mt-0.5">Upstream fixes that improve the next cycle.</p>
+                </div>
+                <div class="p-4 space-y-3">
+                    <template x-for="rec in transformationCards" :key="rec.title">
+                        <button @click="askFreeform(rec.prompt)"
+                                class="w-full text-left rounded-xl border border-dark-700 bg-dark-900/70 p-3 hover:border-emerald-500/30 transition">
+                            <div class="flex items-start justify-between gap-3">
+                                <div>
+                                    <div class="text-xs font-semibold text-gray-100" x-text="rec.title"></div>
+                                    <p class="text-[11px] text-gray-500 mt-1 line-clamp-3" x-text="rec.detail"></p>
+                                </div>
+                                <span class="text-lg" x-text="rec.icon"></span>
+                            </div>
+                            <div class="mt-2 text-[10px] text-emerald-400" x-text="rec.impact"></div>
+                        </button>
+                    </template>
+                </div>
+            </div>
+        </section>
+
+        <!-- ══════ SECTION 1 — BUSINESS KPI CARDS ══════ -->
+        <section>
+            <div class="flex items-center justify-between mb-2">
+                <h2 class="text-xs text-gray-500 uppercase tracking-wider">Business KPIs</h2>
+                <span class="text-[10px] text-gray-600">Click any card or row to ask the agent</span>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+                <template x-for="card in bizCards" :key="card.label">
+                    <div class="kpi-card bg-dark-800 rounded-lg border border-dark-700 p-3 fade-in"
+                         :class="{'selected': selectedCard?.label === card.label}"
+                         @click="askAboutCard(card)">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-[10px] text-gray-500 uppercase tracking-wide" x-text="card.label"></span>
+                            <span class="text-sm" x-text="card.icon"></span>
+                        </div>
+                        <div class="text-lg font-bold text-white" x-text="card.value"></div>
+                        <div class="text-[10px] mt-0.5" :class="card.deltaClass" x-text="card.delta" x-show="card.delta"></div>
+                    </div>
+                </template>
+            </div>
+        </section>
+
+        <!-- ══════ SECTION 1b — ENTITY CARD GRID ══════ -->
+        <section x-show="(ar.top_overdue?.length > 0) || (ap.top_vendors?.length > 0)" x-transition>
+            <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center gap-3">
+                    <h2 class="text-xs text-gray-500 uppercase tracking-wider">Entity Intelligence</h2>
+                    <div class="flex gap-1">
+                        <button @click="entityCardTab='customers'"
+                                class="text-[10px] px-2.5 py-1 rounded-full transition"
+                                :class="entityCardTab==='customers' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' : 'bg-dark-800 text-gray-500 border border-dark-700 hover:text-gray-300'">
+                            Customers
+                        </button>
+                        <button @click="entityCardTab='vendors'"
+                                class="text-[10px] px-2.5 py-1 rounded-full transition"
+                                :class="entityCardTab==='vendors' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' : 'bg-dark-800 text-gray-500 border border-dark-700 hover:text-gray-300'">
+                            Vendors
+                        </button>
+                    </div>
+                </div>
+                <span class="text-[10px] text-gray-600">Click entity to see agent knowledge + history</span>
+            </div>
+
+            <!-- Customer cards -->
+            <div x-show="entityCardTab==='customers'" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                <template x-for="c in (ar.top_overdue || []).slice(0,10)" :key="c.customer_name">
+                    <div @click="openEntityDrawer(c.customer_name, 'customer')"
+                         class="bg-dark-800 border rounded-lg p-3 cursor-pointer transition hover:shadow-lg hover:shadow-cyan-500/5"
+                         :class="c.risk_rating==='high' ? 'border-red-500/30 hover:border-red-400/50' : c.risk_rating==='medium' ? 'border-amber-500/30 hover:border-amber-400/50' : 'border-dark-700 hover:border-cyan-500/30'">
+                        <div class="flex items-start justify-between mb-2">
+                            <span class="text-[10px] px-1.5 py-0.5 rounded"
+                                  :class="c.risk_rating==='high' ? 'bg-red-500/20 text-red-300' : c.risk_rating==='medium' ? 'bg-amber-500/20 text-amber-300' : 'bg-emerald-500/20 text-emerald-300'"
+                                  x-text="c.risk_rating || 'low'"></span>
+                            <span class="text-gray-600 text-[10px]">→</span>
+                        </div>
+                        <div class="text-xs font-semibold text-gray-200 mb-1 leading-tight" x-text="c.customer_name"></div>
+                        <div class="text-sm font-bold text-amber-400" x-text="fmtCurrency(c.total_overdue || c.total_outstanding)"></div>
+                        <div class="text-[10px] text-gray-500 mt-0.5" x-text="(c.max_days || 0) + 'd aging'"></div>
+                    </div>
+                </template>
+            </div>
+
+            <!-- Vendor cards -->
+            <div x-show="entityCardTab==='vendors'" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                <template x-for="v in (ap.top_vendors || []).slice(0,10)" :key="v.vendor_name">
+                    <div @click="openEntityDrawer(v.vendor_name, 'vendor')"
+                         class="bg-dark-800 border border-dark-700 rounded-lg p-3 cursor-pointer transition hover:border-purple-500/30 hover:shadow-lg hover:shadow-purple-500/5">
+                        <div class="flex items-start justify-between mb-2">
+                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400">vendor</span>
+                            <span class="text-gray-600 text-[10px]">→</span>
+                        </div>
+                        <div class="text-xs font-semibold text-gray-200 mb-1 leading-tight" x-text="v.vendor_name"></div>
+                        <div class="text-sm font-bold text-cyan-400" x-text="fmtCurrency(v.open_amount)"></div>
+                        <div class="text-[10px] text-gray-500 mt-0.5" x-text="(v.invoices || 0) + ' open invoices'"></div>
+                    </div>
+                </template>
+            </div>
+        </section>
+
+        <!-- ══════ SECTION 2 — AR + AP SIDE-BY-SIDE ══════ -->
+        <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <!-- AR Health -->
+            <div class="bg-dark-800 rounded-lg border border-dark-700 p-4">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-semibold text-gray-300">💰 Accounts Receivable</h3>
+                    <span class="text-xs text-gray-500" x-text="'DSO: ' + (ar.dso_days || '—') + ' days'"></span>
+                </div>
+                <div class="grid grid-cols-3 gap-3 mb-2">
+                    <div class="bg-dark-900 rounded p-2 text-center kpi-card" @click="askAboutCard(bizCards[0])">
+                        <div class="text-sm font-bold text-white" x-text="fmtCurrency(ar.total_outstanding)"></div>
+                        <div class="text-[10px] text-gray-500">Outstanding</div>
+                    </div>
+                    <div class="bg-dark-900 rounded p-2 text-center kpi-card" @click="askAboutCard(bizCards[1])">
+                        <div class="text-sm font-bold text-amber-400" x-text="fmtCurrency(ar.total_overdue)"></div>
+                        <div class="text-[10px] text-gray-500">Overdue</div>
+                    </div>
+                    <div class="bg-dark-900 rounded p-2 text-center kpi-card" @click="askAboutCard(bizCards[2])">
+                        <div class="text-sm font-bold text-cyan-400" x-text="ar.dso_days ? ar.dso_days + 'd' : '—'"></div>
+                        <div class="text-[10px] text-gray-500">DSO</div>
+                    </div>
+                </div>
+                <div class="h-24 mb-1" x-show="ar.aging && ar.aging.length > 0" x-transition><canvas id="chartARaging"></canvas></div>
+                <h4 class="text-xs text-gray-500 uppercase mt-2 mb-1.5">Top Overdue Customers</h4>
+                <div class="space-y-1">
+                    <template x-for="c in ar.top_overdue?.slice(0,5) || []" :key="c.customer_name">
+                        <div class="clickable-row flex items-center justify-between text-xs py-1.5 px-1 rounded border-b border-dark-700/50"
+                             @click="askAboutRow('customer', c)">
+                            <div class="flex items-center gap-2">
+                                <span class="text-gray-200" x-text="c.customer_name"></span>
+                                <span class="text-[10px] px-1 py-0.5 rounded" :class="{'bg-red-500/20 text-red-300': c.risk_rating==='high','bg-amber-500/20 text-amber-300': c.risk_rating==='medium','bg-emerald-500/20 text-emerald-300': c.risk_rating==='low'}" x-text="c.risk_rating"></span>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <span class="text-amber-400 font-medium" x-text="fmtCurrency(c.total_overdue)"></span>
+                                <span class="text-gray-500" x-text="c.max_days + 'd'"></span>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- AP Health -->
+            <div class="bg-dark-800 rounded-lg border border-dark-700 p-4">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-semibold text-gray-300">🏦 Accounts Payable</h3>
+                    <span class="text-xs" :class="ap.corrections_pending > 0 ? 'text-red-400' : 'text-gray-500'"
+                          x-text="(ap.corrections_pending || 0) + ' corrections pending'"></span>
+                </div>
+                <div class="grid grid-cols-3 gap-3 mb-2">
+                    <div class="bg-dark-900 rounded p-2 text-center kpi-card" @click="askAboutCard(bizCards[3])">
+                        <div class="text-sm font-bold text-white" x-text="fmtCurrency(ap.open_amount)"></div>
+                        <div class="text-[10px] text-gray-500">Open</div>
+                    </div>
+                    <div class="bg-dark-900 rounded p-2 text-center kpi-card" @click="askAboutCard(bizCards[4])">
+                        <div class="text-sm font-bold text-amber-400" x-text="fmtCurrency(ap.overdue_amount)"></div>
+                        <div class="text-[10px] text-gray-500">Overdue</div>
+                    </div>
+                    <div class="bg-dark-900 rounded p-2 text-center">
+                        <div class="text-sm font-bold text-gray-300" x-text="ap.open_count || 0"></div>
+                        <div class="text-[10px] text-gray-500">Open Invoices</div>
+                    </div>
+                </div>
+                <div class="h-24 mb-1" x-show="ap.aging && ap.aging.length > 0" x-transition><canvas id="chartAPaging"></canvas></div>
+                <h4 class="text-xs text-gray-500 uppercase mt-2 mb-1.5">Top Open Vendors</h4>
+                <div class="space-y-1">
+                    <template x-for="v in ap.top_vendors?.slice(0,5) || []" :key="v.vendor_name">
+                        <div class="clickable-row flex items-center justify-between text-xs py-1.5 px-1 rounded border-b border-dark-700/50"
+                             @click="askAboutRow('vendor', v)">
+                            <span class="text-gray-200" x-text="v.vendor_name"></span>
+                            <div class="flex items-center gap-3">
+                                <span class="text-gray-400" x-text="v.invoices + ' inv'"></span>
+                                <span class="text-cyan-400 font-medium" x-text="fmtCurrency(v.open_amount)"></span>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+                <template x-if="ap.discrepancies?.length > 0">
+                    <div class="mt-3">
+                        <h4 class="text-xs text-red-400 uppercase mb-1.5">⚠️ Account Discrepancies</h4>
+                        <template x-for="d in ap.discrepancies" :key="d.account_code">
+                            <div class="text-xs text-gray-400 py-0.5">
+                                <span class="text-gray-300 font-mono" x-text="d.account_code"></span>
+                                <span x-text="' — ' + d.discrepancy_detail"></span>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+            </div>
+        </section>
+
+        <!-- ══════ SECTION 2b — PROCESS HEALTH BY TOWER ══════ -->
+        <section x-show="towerHealth.length > 0" x-transition>
+            <div class="flex items-center justify-between mb-2">
+                <h2 class="text-xs text-gray-500 uppercase tracking-wider">Process Health by Tower</h2>
+                <span class="text-[10px] text-gray-600">KPI targets vs actuals from enterprise data</span>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <template x-for="tw in towerHealth" :key="tw.tower">
+                    <div class="bg-dark-800 rounded-lg border border-dark-700 p-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-sm font-semibold text-gray-300">
+                                <span x-text="tw.tower === 'Procure-to-Pay' ? '🔗' : tw.tower === 'Order-to-Cash' ? '💸' : '📒'"></span>
+                                <span x-text="tw.tower"></span>
+                            </h3>
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] px-1.5 py-0.5 rounded"
+                                      :class="tw.kpis_total > 0 && tw.kpis_on_target === tw.kpis_total ? 'bg-emerald-500/20 text-emerald-300' : tw.kpis_total > 0 && tw.kpis_on_target >= tw.kpis_total * 0.5 ? 'bg-amber-500/20 text-amber-300' : tw.kpis_total > 0 ? 'bg-red-500/20 text-red-300' : 'bg-gray-500/20 text-gray-400'"
+                                      x-text="tw.kpis_on_target + '/' + tw.kpis_total + ' KPIs on target'"></span>
+                                <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+                                     :class="tw.avg_health >= 80 ? 'bg-emerald-500/20 text-emerald-300' : tw.avg_health >= 50 ? 'bg-amber-500/20 text-amber-300' : 'bg-red-500/20 text-red-300'"
+                                     x-text="tw.avg_health"></div>
+                            </div>
+                        </div>
+                        <!-- Tower summary row -->
+                        <div class="grid grid-cols-3 gap-2 mb-3">
+                            <div class="bg-dark-900 rounded p-2 text-center">
+                                <div class="text-sm font-bold text-white" x-text="tw.skill_count"></div>
+                                <div class="text-[10px] text-gray-500">Skills</div>
+                            </div>
+                            <div class="bg-dark-900 rounded p-2 text-center">
+                                <div class="text-sm font-bold text-cyan-400" x-text="tw.total_invocations"></div>
+                                <div class="text-[10px] text-gray-500">Invocations</div>
+                            </div>
+                            <div class="bg-dark-900 rounded p-2 text-center">
+                                <div class="text-sm font-bold" :class="tw.total_cost_exposure > 0 ? 'text-red-400' : 'text-emerald-400'" x-text="'$' + tw.total_cost_exposure.toLocaleString()"></div>
+                                <div class="text-[10px] text-gray-500">Exception Cost</div>
+                            </div>
+                        </div>
+                        <!-- Per-skill breakdown -->
+                        <div class="space-y-2">
+                            <template x-for="sk in tw.skills" :key="sk.skill">
+                                <div class="bg-dark-900/50 rounded p-2 clickable-row" @click="askAboutRow('process_health', sk)">
+                                    <div class="flex items-center justify-between mb-1">
+                                        <span class="text-xs text-gray-200 font-medium" x-text="sk.subprocess || sk.skill"></span>
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-[10px] px-1.5 py-0.5 rounded"
+                                                  :class="sk.health_score >= 80 ? 'bg-emerald-500/20 text-emerald-300' : sk.health_score >= 50 ? 'bg-amber-500/20 text-amber-300' : 'bg-red-500/20 text-red-300'"
+                                                  x-text="sk.health_score + '/100'"></span>
+                                            <span class="text-[10px] text-gray-500 bg-dark-700 px-1 py-0.5 rounded" x-text="sk.execution_mode"></span>
+                                        </div>
+                                    </div>
+                                    <!-- KPI targets vs actuals -->
+                                    <div class="flex flex-wrap gap-x-3 gap-y-1 mt-1">
+                                        <template x-for="kpi in sk.kpis?.slice(0,4) || []" :key="kpi.name">
+                                            <div class="text-[10px] flex items-center gap-1">
+                                                <span class="w-1.5 h-1.5 rounded-full inline-block"
+                                                      :class="kpi.status === 'green' ? 'bg-emerald-400' : kpi.status === 'amber' ? 'bg-amber-400' : kpi.status === 'red' ? 'bg-red-400' : 'bg-gray-500'"></span>
+                                                <span class="text-gray-400" x-text="kpi.name"></span>:
+                                                <template x-if="kpi.actual !== null && kpi.actual !== undefined">
+                                                    <span>
+                                                        <span class="font-medium"
+                                                              :class="kpi.status === 'green' ? 'text-emerald-300' : kpi.status === 'amber' ? 'text-amber-300' : kpi.status === 'red' ? 'text-red-300' : 'text-gray-300'"
+                                                              x-text="kpi.unit === 'USD' ? '$' + Number(kpi.actual).toLocaleString() : kpi.actual + (kpi.unit === '%' ? '%' : kpi.unit === 'days' ? 'd' : kpi.unit === 'minutes' ? 'm' : '')"></span>
+                                                        <span class="text-gray-500" x-show="kpi.target" x-text="' / ' + kpi.target + (kpi.unit === '%' ? '%' : kpi.unit === 'days' ? 'd' : kpi.unit === 'minutes' ? 'm' : '')"></span>
+                                                    </span>
+                                                </template>
+                                                <template x-if="kpi.actual === null || kpi.actual === undefined">
+                                                    <span class="text-gray-500" x-text="kpi.status === 'na' ? 'N/A' : kpi.target ? ('target ' + kpi.target + (kpi.unit === '%' ? '%' : ' ' + (kpi.unit || ''))) : (kpi.direction === 'lower_is_better' ? '↓ lower' : '↑ higher')"></span>
+                                                </template>
+                                            </div>
+                                        </template>
+                                    </div>
+                                    <!-- Telemetry actuals -->
+                                    <div class="flex gap-3 mt-1.5 text-[10px]">
+                                        <span class="text-gray-500" x-show="sk.invocations > 0">
+                                            <span class="text-cyan-400" x-text="sk.invocations"></span> calls
+                                        </span>
+                                        <span class="text-gray-500" x-show="sk.success_rate !== null">
+                                            <span :class="sk.success_rate >= 95 ? 'text-emerald-400' : sk.success_rate >= 80 ? 'text-amber-400' : 'text-red-400'" x-text="sk.success_rate + '%'"></span> success
+                                        </span>
+                                        <span class="text-gray-500" x-show="sk.avg_latency_ms">
+                                            <span class="text-gray-300" x-text="Math.round(sk.avg_latency_ms) + 'ms'"></span> avg
+                                        </span>
+                                        <span class="text-gray-500" x-show="sk.errors > 0">
+                                            <span class="text-red-400" x-text="sk.errors"></span> errors · $<span class="text-red-400" x-text="(sk.errors * sk.cost_per_exception).toLocaleString()"></span>
+                                        </span>
+                                        <span class="text-gray-500" x-show="sk.invocations === 0">No telemetry yet</span>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </section>
+
+        <!-- ══════ SECTION 3 — TELEMETRY + EXCEPTIONS ══════ -->
+        <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <!-- Process Telemetry Feed -->
+            <div class="bg-dark-800 rounded-lg border border-dark-700 p-4">
+                <h3 class="text-sm font-semibold text-gray-300 mb-3">📡 Process Telemetry Feed</h3>
+                <div class="overflow-auto max-h-[340px] scroll-thin">
+                    <table class="w-full text-[11px]">
+                        <thead class="sticky top-0 bg-dark-800">
+                            <tr class="text-gray-500 border-b border-dark-700">
+                                <th class="text-left py-1.5 pr-2">Time</th><th class="text-left py-1.5 pr-2">Kind</th>
+                                <th class="text-left py-1.5 pr-2">Agent</th><th class="text-left py-1.5 pr-2">Skill</th>
+                                <th class="text-left py-1.5 pr-2">Status</th><th class="text-right py-1.5">Latency</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="(f,i) in feed" :key="i">
+                                <tr class="feed-row clickable-row border-b border-dark-700/30"
+                                    @click="askAboutRow('task', f)">
+                                    <td class="py-1 pr-2 text-gray-500 whitespace-nowrap" x-text="f.ts?.slice(11,19) || '—'"></td>
+                                    <td class="py-1 pr-2">
+                                        <span class="px-1 py-0.5 rounded text-[10px] font-medium"
+                                              :class="f.kind==='task' ? 'bg-cyan-500/20 text-cyan-300' : 'bg-purple-500/20 text-purple-300'"
+                                              x-text="f.kind"></span>
+                                    </td>
+                                    <td class="py-1 pr-2 text-gray-300" x-text="f.agent || '—'"></td>
+                                    <td class="py-1 pr-2 text-gray-400" x-text="f.skill || '—'"></td>
+                                    <td class="py-1 pr-2">
+                                        <span class="text-[10px] px-1 py-0.5 rounded" :class="{
+                                            'bg-emerald-500/20 text-emerald-300': f.status==='completed'||f.status==='approve',
+                                            'bg-red-500/20 text-red-300': f.status==='error'||f.status==='reject',
+                                            'bg-amber-500/20 text-amber-300': f.status==='escalate'||f.status==='running',
+                                            'bg-gray-500/20 text-gray-400': f.status==='timeout'
+                                        }" x-text="f.status"></span>
+                                    </td>
+                                    <td class="py-1 text-right text-gray-400" x-text="f.latency_ms ? Math.round(f.latency_ms)+'ms' : '—'"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                    <div x-show="feed.length===0" class="text-center text-gray-500 text-xs py-8">No telemetry data yet</div>
+                </div>
+            </div>
+
+            <!-- Exception Visibility -->
+            <div class="bg-dark-800 rounded-lg border border-dark-700 p-4">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-semibold text-gray-300">🚨 Exception Visibility</h3>
+                    <div class="flex gap-2 text-[10px]">
+                        <span class="bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded" x-text="'AP Corr: '+(exceptions.summary?.ap_corrections||0)"></span>
+                        <span class="bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded" x-text="'AP Debit: '+(exceptions.summary?.ap_debits||0)"></span>
+                        <span class="bg-purple-500/20 text-purple-300 px-1.5 py-0.5 rounded" x-text="'AR Risk: '+(exceptions.summary?.ar_risks||0)"></span>
+                    </div>
+                </div>
+                <div class="overflow-auto max-h-[300px] scroll-thin">
+                    <table class="w-full text-[11px]">
+                        <thead class="sticky top-0 bg-dark-800">
+                            <tr class="text-gray-500 border-b border-dark-700">
+                                <th class="text-left py-1.5 pr-2">Source</th><th class="text-left py-1.5 pr-2">Type</th>
+                                <th class="text-left py-1.5 pr-2">Entity</th><th class="text-right py-1.5 pr-2">Amount</th>
+                                <th class="text-left py-1.5">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="(exc,i) in exceptions.items?.slice(0,25) || []" :key="i">
+                                <tr class="feed-row clickable-row border-b border-dark-700/30"
+                                    @click="askAboutRow('exception', exc)">
+                                    <td class="py-1 pr-2">
+                                        <span class="px-1 py-0.5 rounded text-[10px] font-medium"
+                                              :class="exc.source==='AP'?'bg-blue-500/20 text-blue-300':'bg-green-500/20 text-green-300'"
+                                              x-text="exc.source"></span>
+                                    </td>
+                                    <td class="py-1 pr-2 text-gray-300" x-text="exc.subtype || exc.type"></td>
+                                    <td class="py-1 pr-2 text-gray-400 truncate max-w-[120px]" x-text="exc.entity || '—'"></td>
+                                    <td class="py-1 pr-2 text-right text-amber-400 font-medium" x-text="fmtCurrency(exc.amount)"></td>
+                                    <td class="py-1">
+                                        <span class="text-[10px] px-1 py-0.5 rounded" :class="{
+                                            'bg-red-500/20 text-red-300': exc.status==='pending'||exc.status==='high',
+                                            'bg-emerald-500/20 text-emerald-300': exc.status==='corrected'||exc.status==='resolved'||exc.status==='low',
+                                            'bg-amber-500/20 text-amber-300': exc.status==='medium'||exc.status==='in_review'
+                                        }" x-text="exc.status"></span>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                    <div x-show="!exceptions.items?.length" class="text-center text-gray-500 text-xs py-8">No exceptions found</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ══════ SECTION 4 — WHAT-IF + OPTIMIZATION ══════ -->
+        <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <!-- What-If Analysis -->
+            <div class="bg-dark-800 rounded-lg border border-dark-700 p-4">
+                <h3 class="text-sm font-semibold text-gray-300 mb-3">🔮 What-If Scenario Analysis</h3>
+                <div class="space-y-4">
+                    <div class="bg-dark-900 rounded-lg p-3 kpi-card" @click="askFreeform('If we reduce DSO by 10 days from '+(ar.dso_days||42)+' to '+Math.max((ar.dso_days||42)-10,15)+', how much cash would be released? What specific actions should we take with each overdue customer?')">
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="text-xs text-cyan-400 font-semibold">Scenario A</span>
+                            <span class="text-[10px] text-gray-500">Reduce DSO by 10 days</span>
+                        </div>
+                        <div class="grid grid-cols-3 gap-2 text-center text-xs">
+                            <div><div class="text-gray-400">Current DSO</div><div class="text-white font-bold" x-text="(ar.dso_days||42)+' days'"></div></div>
+                            <div><div class="text-gray-400">Target DSO</div><div class="text-emerald-400 font-bold" x-text="Math.max((ar.dso_days||42)-10,15)+' days'"></div></div>
+                            <div><div class="text-gray-400">Cash Released</div><div class="text-amber-400 font-bold" x-text="fmtCurrency(((ar.total_outstanding||500000)/((ar.dso_days||42)))*10)"></div></div>
+                        </div>
+                    </div>
+                    <div class="bg-dark-900 rounded-lg p-3 kpi-card" @click="askFreeform('We have '+(exceptions.summary?.ap_corrections||0)+' AP corrections pending. Analyze the root causes, calculate the rework cost, and recommend how to eliminate them.')">
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="text-xs text-purple-400 font-semibold">Scenario B</span>
+                            <span class="text-[10px] text-gray-500">Eliminate AP Corrections</span>
+                        </div>
+                        <div class="grid grid-cols-3 gap-2 text-center text-xs">
+                            <div><div class="text-gray-400">Corrections/Mo</div><div class="text-white font-bold" x-text="exceptions.summary?.ap_corrections||0"></div></div>
+                            <div><div class="text-gray-400">Rework Cost</div><div class="text-red-400 font-bold" x-text="fmtCurrency((exceptions.summary?.ap_corrections||0)*85)"></div></div>
+                            <div><div class="text-gray-400">FTE Saved</div><div class="text-emerald-400 font-bold" x-text="((exceptions.summary?.ap_corrections||0)*0.5/160).toFixed(2)+' FTE'"></div></div>
+                        </div>
+                    </div>
+                    <div class="bg-dark-900 rounded-lg p-3 kpi-card" @click="askFreeform('If we double agent automation from '+(kpis.total_tasks||0)+' to '+((kpis.total_tasks||0)*2)+' tasks, what FTE would be freed? What processes should we target first?')">
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="text-xs text-amber-400 font-semibold">Scenario C</span>
+                            <span class="text-[10px] text-gray-500">Scale Agent Automation 2x</span>
+                        </div>
+                        <div class="grid grid-cols-3 gap-2 text-center text-xs">
+                            <div><div class="text-gray-400">Current Tasks</div><div class="text-white font-bold" x-text="kpis.total_tasks||0"></div></div>
+                            <div><div class="text-gray-400">Projected</div><div class="text-cyan-400 font-bold" x-text="(kpis.total_tasks||0)*2"></div></div>
+                            <div><div class="text-gray-400">FTE Freed</div><div class="text-emerald-400 font-bold" x-text="(((kpis.total_tasks||0)*5)/60/160).toFixed(1)+' FTE'"></div></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Process Optimization (Dynamic ESAA Engine) -->
+            <div class="bg-dark-800 rounded-lg border border-dark-700 p-4">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-semibold text-gray-300">🎯 Process Optimization Recommendations</h3>
+                    <div class="flex items-center gap-2">
+                        <span x-show="esaaLastRun" class="text-[10px] text-gray-600" x-text="'Updated '+esaaLastRun"></span>
+                        <button @click="triggerTier2()" :disabled="esaaAnalyzing"
+                                class="text-[10px] px-2 py-0.5 rounded bg-dark-700 hover:bg-cyan-700 text-gray-400 hover:text-white transition-colors disabled:opacity-40"
+                                :class="esaaAnalyzing ? 'animate-pulse' : ''">
+                            <span x-show="!esaaAnalyzing">🧠 Deep Analyze</span>
+                            <span x-show="esaaAnalyzing">⏳ Analyzing...</span>
+                        </button>
+                        <a href="/twin/optimization" target="_blank" class="text-[10px] px-2 py-0.5 rounded bg-dark-700 hover:bg-dark-600 text-gray-400 hover:text-white transition-colors">
+                            Full View ↗
+                        </a>
+                    </div>
+                </div>
+
+                <!-- ESAA Category Cards -->
+                <div class="space-y-3">
+                    <template x-for="cat in esaaCategories" :key="cat.key">
+                        <div class="bg-dark-900 rounded-lg p-3 kpi-card cursor-pointer"
+                             :class="'border-l-4 border-' + cat.color + '-500'"
+                             @click="openEsaaDrawer(cat.key)">
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs font-bold" :class="'text-' + cat.color + '-400'" x-text="cat.icon + ' ' + cat.label"></span>
+                                <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-dark-800"
+                                      :class="esaaCatRecs(cat.key).length > 0 ? 'text-' + cat.color + '-400' : 'text-gray-600'"
+                                      x-text="esaaCatRecs(cat.key).length + ' findings'"></span>
+                            </div>
+                            <div class="text-xs text-gray-400 space-y-1 mt-1">
+                                <template x-for="rec in esaaCatRecs(cat.key).slice(0, 2)" :key="rec.rule_id">
+                                    <div class="flex items-center gap-2">
+                                        <span class="w-1.5 h-1.5 rounded-full flex-shrink-0" :class="rec.impact === 'high' ? 'bg-' + cat.color + '-400' : 'bg-' + cat.color + '-600'"></span>
+                                        <span x-text="rec.title" class="truncate"></span>
+                                    </div>
+                                </template>
+                                <div x-show="esaaCatRecs(cat.key).length === 0" class="text-gray-600 italic">No findings from current data</div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Tier 2 LLM insights badge -->
+                <div x-show="esaaTier === 'tier1+tier2'" class="mt-2 text-center">
+                    <span class="text-[10px] px-2 py-0.5 rounded-full bg-purple-900/30 text-purple-400 border border-purple-800/30">
+                        🧠 LLM-enriched insights active
+                        <span x-show="esaaTier2Patterns"> · <span x-text="(esaaTier2Patterns?.knowledge_entries||0)+' knowledge'"></span> · <span x-text="(esaaTier2Patterns?.decision_entries||0)+' decisions'"></span> · <span x-text="(esaaTier2Patterns?.feedback_entries||0)+' feedback'"></span></span>
+                    </span>
+                </div>
+            </div>
+
+            <!-- ESAA Detail Drawer (slide-out panel) -->
+            <div x-show="esaaDrawerOpen" x-transition:enter="transition ease-out duration-200"
+                 x-transition:enter-start="translate-x-full" x-transition:enter-end="translate-x-0"
+                 x-transition:leave="transition ease-in duration-150"
+                 x-transition:leave-start="translate-x-0" x-transition:leave-end="translate-x-full"
+                 class="fixed top-0 right-0 h-full w-[480px] bg-dark-800 border-l border-dark-700 z-50 shadow-2xl overflow-y-auto"
+                 @keydown.escape.window="esaaDrawerOpen=false">
+                <div class="p-4">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-sm font-semibold text-gray-200" x-text="esaaDrawerTitle"></h3>
+                        <button @click="esaaDrawerOpen=false" class="text-gray-500 hover:text-white text-lg">✕</button>
+                    </div>
+                    <div class="space-y-3">
+                        <template x-for="rec in esaaDrawerRecs" :key="rec.rule_id + rec.title">
+                            <div class="bg-dark-900 rounded-lg p-3 border border-dark-700">
+                                <div class="flex items-center justify-between mb-1">
+                                    <span class="text-xs font-semibold text-gray-200 truncate pr-2" x-text="rec.title"></span>
+                                    <span class="text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0"
+                                          :class="rec.impact==='high' ? 'bg-red-900/40 text-red-400' : rec.impact==='medium' ? 'bg-amber-900/40 text-amber-400' : 'bg-gray-800 text-gray-500'"
+                                          x-text="rec.impact"></span>
+                                </div>
+                                <p class="text-[11px] text-gray-400 mb-2" x-text="rec.detail"></p>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[10px] text-gray-600" x-text="'💡 ' + (rec.estimated_savings_desc || '')"></span>
+                                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-dark-800 text-gray-500" x-text="rec.source === 'tier2' ? '🧠 LLM' : '📊 Rule'"></span>
+                                </div>
+                                <div x-show="rec.evidence_ids && rec.evidence_ids.length" class="mt-1 text-[10px] text-gray-600">
+                                    <span>Evidence: </span><span x-text="(rec.evidence_ids||[]).join(', ')"></span>
+                                </div>
+                                <div class="mt-2">
+                                    <button @click="askFreeform('Deep-dive into this optimization recommendation: ' + rec.title + '. ' + rec.detail + ' Provide detailed implementation steps, expected ROI, and risk assessment.')"
+                                            class="text-[10px] text-cyan-500 hover:text-cyan-400 transition-colors">
+                                        💬 Ask Twin about this →
+                                    </button>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ══════ SECTION 5 — TRENDS (HEATMAPS) + SKILLS + HITL ══════ -->
+        <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+            <!-- ── Business KPI Trends Heatmap ── -->
+            <div class="bg-dark-800 rounded-lg border border-dark-700 p-4">
+                <h3 class="text-sm font-semibold text-gray-300 mb-3">📊 Business KPI Trends <span class="text-[10px] text-gray-500 font-normal">(30 days — darker = higher)</span></h3>
+                <template x-if="trends.length > 0">
+                    <div class="space-y-3">
+                        <!-- Row: AR Outstanding -->
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-[10px] text-sky-400 font-medium">AR Outstanding ($M)</span>
+                                <span class="text-[10px] text-gray-500" x-text="'$' + (trends[trends.length-1]?.ar_total_outstanding / 1e6).toFixed(1) + 'M'"></span>
+                            </div>
+                            <div class="flex gap-[2px]">
+                                <template x-for="(d, i) in trends" :key="'ar_out_'+i">
+                                    <div class="flex-1 h-5 rounded-sm cursor-pointer transition-all hover:ring-1 hover:ring-sky-400/50"
+                                         :style="'background:' + heatColor(d.ar_total_outstanding, 'ar_total_outstanding', '#38bdf8')"
+                                         :title="d.snapshot_date + ': $' + (d.ar_total_outstanding/1e6).toFixed(2) + 'M'"></div>
+                                </template>
+                            </div>
+                        </div>
+                        <!-- Row: AR Overdue -->
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-[10px] text-amber-400 font-medium">AR Overdue ($M)</span>
+                                <span class="text-[10px] text-gray-500" x-text="'$' + (trends[trends.length-1]?.ar_overdue / 1e6).toFixed(1) + 'M'"></span>
+                            </div>
+                            <div class="flex gap-[2px]">
+                                <template x-for="(d, i) in trends" :key="'ar_ov_'+i">
+                                    <div class="flex-1 h-5 rounded-sm cursor-pointer transition-all hover:ring-1 hover:ring-amber-400/50"
+                                         :style="'background:' + heatColor(d.ar_overdue, 'ar_overdue', '#f59e0b')"
+                                         :title="d.snapshot_date + ': $' + (d.ar_overdue/1e6).toFixed(2) + 'M'"></div>
+                                </template>
+                            </div>
+                        </div>
+                        <!-- Row: AP Open -->
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-[10px] text-violet-400 font-medium">AP Open ($M)</span>
+                                <span class="text-[10px] text-gray-500" x-text="'$' + (trends[trends.length-1]?.ap_open_amount / 1e6).toFixed(1) + 'M'"></span>
+                            </div>
+                            <div class="flex gap-[2px]">
+                                <template x-for="(d, i) in trends" :key="'ap_open_'+i">
+                                    <div class="flex-1 h-5 rounded-sm cursor-pointer transition-all hover:ring-1 hover:ring-violet-400/50"
+                                         :style="'background:' + heatColor(d.ap_open_amount, 'ap_open_amount', '#a78bfa')"
+                                         :title="d.snapshot_date + ': $' + (d.ap_open_amount/1e6).toFixed(2) + 'M'"></div>
+                                </template>
+                            </div>
+                        </div>
+                        <!-- Date scale -->
+                        <div class="flex justify-between text-[9px] text-gray-600 mt-1">
+                            <span x-text="trends[0]?.snapshot_date?.slice(5)"></span>
+                            <span x-text="trends[Math.floor(trends.length/2)]?.snapshot_date?.slice(5)"></span>
+                            <span x-text="trends[trends.length-1]?.snapshot_date?.slice(5)"></span>
+                        </div>
+                    </div>
+                </template>
+                <template x-if="trends.length === 0">
+                    <p class="text-xs text-gray-500 italic">No trend data available</p>
+                </template>
+            </div>
+
+            <!-- ── Task Volume & Latency Heatmap ── -->
+            <div class="bg-dark-800 rounded-lg border border-dark-700 p-4">
+                <h3 class="text-sm font-semibold text-gray-300 mb-3">📈 Task Volume & Latency <span class="text-[10px] text-gray-500 font-normal">(30 days — darker = higher)</span></h3>
+                <template x-if="trends.length > 0">
+                    <div class="space-y-3">
+                        <!-- Row: Completed Tasks -->
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-[10px] text-sky-400 font-medium">Completed Tasks</span>
+                                <span class="text-[10px] text-gray-500" x-text="trends[trends.length-1]?.completed_tasks ?? 0"></span>
+                            </div>
+                            <div class="flex gap-[2px]">
+                                <template x-for="(d, i) in trends" :key="'comp_'+i">
+                                    <div class="flex-1 h-5 rounded-sm cursor-pointer transition-all hover:ring-1 hover:ring-sky-400/50"
+                                         :style="'background:' + heatColor(d.completed_tasks, 'completed_tasks', '#38bdf8')"
+                                         :title="d.snapshot_date + ': ' + d.completed_tasks + ' tasks'"></div>
+                                </template>
+                            </div>
+                        </div>
+                        <!-- Row: Error Tasks -->
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-[10px] text-red-400 font-medium">Error Tasks</span>
+                                <span class="text-[10px] text-gray-500" x-text="trends[trends.length-1]?.error_tasks ?? 0"></span>
+                            </div>
+                            <div class="flex gap-[2px]">
+                                <template x-for="(d, i) in trends" :key="'err_'+i">
+                                    <div class="flex-1 h-5 rounded-sm cursor-pointer transition-all hover:ring-1 hover:ring-red-400/50"
+                                         :style="'background:' + heatColor(d.error_tasks, 'error_tasks', '#f87171')"
+                                         :title="d.snapshot_date + ': ' + d.error_tasks + ' errors'"></div>
+                                </template>
+                            </div>
+                        </div>
+                        <!-- Row: Avg Latency -->
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-[10px] text-emerald-400 font-medium">Avg Latency (ms)</span>
+                                <span class="text-[10px] text-gray-500" x-text="(trends[trends.length-1]?.avg_latency_ms ?? 0).toFixed(0) + 'ms'"></span>
+                            </div>
+                            <div class="flex gap-[2px]">
+                                <template x-for="(d, i) in trends" :key="'lat_'+i">
+                                    <div class="flex-1 h-5 rounded-sm cursor-pointer transition-all hover:ring-1 hover:ring-emerald-400/50"
+                                         :style="'background:' + heatColor(d.avg_latency_ms, 'avg_latency_ms', '#34d399')"
+                                         :title="d.snapshot_date + ': ' + (d.avg_latency_ms||0).toFixed(0) + 'ms'"></div>
+                                </template>
+                            </div>
+                        </div>
+                        <!-- Date scale -->
+                        <div class="flex justify-between text-[9px] text-gray-600 mt-1">
+                            <span x-text="trends[0]?.snapshot_date?.slice(5)"></span>
+                            <span x-text="trends[Math.floor(trends.length/2)]?.snapshot_date?.slice(5)"></span>
+                            <span x-text="trends[trends.length-1]?.snapshot_date?.slice(5)"></span>
+                        </div>
+                    </div>
+                </template>
+                <template x-if="trends.length === 0">
+                    <p class="text-xs text-gray-500 italic">No trend data available</p>
+                </template>
+            </div>
+
+        </section>
+        <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <!-- Skill Heatmap -->
+            <div class="bg-dark-800 rounded-lg border border-dark-700 p-4">
+                <h3 class="text-sm font-semibold text-gray-300 mb-3">🧩 Skill Usage</h3>
+                <div class="overflow-x-auto"><table class="w-full text-xs"><thead>
+                    <tr class="text-gray-500 border-b border-dark-700">
+                        <th class="text-left py-1.5 pr-3">Skill</th><th class="text-right py-1.5 px-2">Calls</th>
+                        <th class="text-right py-1.5 px-2">Success</th><th class="text-right py-1.5 px-2">Avg Lat</th>
+                        <th class="text-left py-1.5 px-2 w-32">Bar</th>
+                    </tr></thead><tbody>
+                    <template x-for="s in skills" :key="s.skill">
+                        <tr class="border-b border-dark-700/50 clickable-row"
+                            @click="askAboutRow('skill', s)">
+                            <td class="py-1.5 pr-3 text-gray-200 font-medium" x-text="s.skill"></td>
+                            <td class="text-right py-1.5 px-2 text-gray-300" x-text="s.invocations"></td>
+                            <td class="text-right py-1.5 px-2" :class="s.success_rate>=95?'text-emerald-400':s.success_rate>=85?'text-amber-400':'text-red-400'" x-text="s.success_rate+'%'"></td>
+                            <td class="text-right py-1.5 px-2 text-gray-400" x-text="Math.round(s.avg_latency_ms)+'ms'"></td>
+                            <td class="py-1.5 px-2"><div class="bg-dark-700 rounded-full h-2 w-full overflow-hidden"><div class="h-full rounded-full bg-cyan-500" :style="'width:'+(s.invocations/(skills[0]?.invocations||1)*100)+'%'"></div></div></td>
+                        </tr>
+                    </template>
+                </tbody></table></div>
+            </div>
+            <!-- HITL Breakdown -->
+            <div class="bg-dark-800 rounded-lg border border-dark-700 p-4">
+                <h3 class="text-sm font-semibold text-gray-300 mb-3">🛡️ HITL Approvals</h3>
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                    <template x-for="h in hitlOverall" :key="h.action_type">
+                        <div class="bg-dark-900 rounded p-2.5 text-center kpi-card" @click="askFreeform('Analyze HITL '+h.action_type+' events. We have '+h.count+' '+h.action_type+' actions with average wait time of '+formatMs(h.avg_wait_ms)+'. What patterns do you see?')">
+                            <div class="text-lg font-bold" :class="{'text-emerald-400':h.action_type==='approve','text-red-400':h.action_type==='reject','text-amber-400':h.action_type==='escalate','text-gray-400':h.action_type==='timeout'}" x-text="h.count"></div>
+                            <div class="text-[10px] text-gray-500 uppercase" x-text="h.action_type"></div>
+                            <div class="text-[10px] text-gray-600" x-text="formatMs(h.avg_wait_ms)+' avg wait'"></div>
+                        </div>
+                    </template>
+                </div>
+                <h4 class="text-xs text-gray-500 uppercase mb-2">By Urgency</h4>
+                <div class="space-y-1.5">
+                    <template x-for="u in hitlByUrgency" :key="u.urgency">
+                        <div class="flex items-center gap-2 text-xs">
+                            <span class="w-16 font-medium" :class="{'text-red-400':u.urgency==='critical','text-orange-400':u.urgency==='high','text-amber-400':u.urgency==='medium','text-gray-400':u.urgency==='low'}" x-text="u.urgency"></span>
+                            <div class="flex-1 bg-dark-700 rounded-full h-2 overflow-hidden"><div class="h-full rounded-full" :class="{'bg-red-500':u.urgency==='critical','bg-orange-500':u.urgency==='high','bg-amber-500':u.urgency==='medium','bg-gray-500':u.urgency==='low'}" :style="'width:'+(u.count/Math.max(...hitlByUrgency.map(x=>x.count),1)*100)+'%'"></div></div>
+                            <span class="text-gray-400 w-8 text-right" x-text="u.count"></span>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </section>
+
+        <!-- ══════ FOOTER ══════ -->
+        <footer class="bg-dark-800 rounded-lg border border-dark-700 p-4 text-center">
+            <div class="text-xs text-gray-500 space-y-1">
+                <div>📚 <span class="text-gray-400">Knowledge Base:</span> AP Regular Schema · AR Receivables Schema · Twin Telemetry Schema · Process Taxonomy · Exception Mining Rules · SLA Definitions</div>
+                <div class="text-gray-600">Operational Digital Twin v3.0 — IAF AgentOS · Click any card/row to ask the agent · Data refreshes every 60s</div>
+            </div>
+        </footer>
+    </main>
+
+    <!-- ════════════════════════════════════════════════════════════
+         ENTITY DETAIL DRAWER  (slides in from right, z-60)
+         ════════════════════════════════════════════════════════════ -->
+    <div x-show="entityDrawerOpen" x-cloak
+         class="fixed top-0 right-0 h-full w-[480px] max-w-full bg-dark-800 border-l border-dark-700 shadow-2xl flex flex-col" style="z-index:60"
+         x-transition:enter="transition ease-out duration-250" x-transition:enter-start="translate-x-full" x-transition:enter-end="translate-x-0"
+         x-transition:leave="transition ease-in duration-200" x-transition:leave-start="translate-x-0" x-transition:leave-end="translate-x-full">
+
+        <!-- Header -->
+        <div class="px-5 py-4 border-b border-dark-700 shrink-0">
+            <div class="flex items-start justify-between">
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="text-base" x-text="entityDrawerType === 'customer' ? '🏦' : '🏭'"></span>
+                        <h2 class="text-sm font-bold text-white truncate" x-text="entityDrawerName"></h2>
+                        <span class="text-[10px] px-1.5 py-0.5 rounded shrink-0"
+                              :class="entityDrawerType==='customer' ? 'bg-cyan-500/15 text-cyan-400' : 'bg-purple-500/15 text-purple-400'"
+                              x-text="entityDrawerType"></span>
+                    </div>
+                    <div class="flex items-center gap-2 text-[10px]">
+                        <span x-show="entityDrawerKey" class="font-mono text-gray-500" x-text="entityDrawerKey"></span>
+                        <span x-show="entityDrawerMatchMethod && entityDrawerMatchMethod !== 'none'"
+                              class="px-1 py-0.5 rounded bg-dark-700 text-gray-600"
+                              x-text="'matched via ' + entityDrawerMatchMethod"></span>
+                        <span x-show="!entityDrawerKey && !entityDrawerLoading" class="text-gray-600 italic">no agent memory yet</span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 ml-3 shrink-0">
+                    <button x-show="entityDrawerKey"
+                            @click="askFreeform('Tell me everything about ' + entityDrawerName + '. Include payment history, risk factors, and any recent agent activity.'); entityDrawerOpen=false"
+                            class="text-[10px] px-2.5 py-1.5 rounded-md bg-cyan-500/15 text-cyan-400 border border-cyan-500/20 hover:bg-cyan-500/25 transition whitespace-nowrap">
+                        Ask Twin
+                    </button>
+                    <button @click="closeEntityDrawer()" class="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-dark-700 text-gray-400 hover:text-white transition text-sm">✕</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading state -->
+        <div x-show="entityDrawerLoading" class="flex-1 flex items-center justify-center">
+            <div class="text-center text-gray-500">
+                <div class="animate-spin text-2xl mb-2">⟳</div>
+                <div class="text-xs">Loading entity data…</div>
+            </div>
+        </div>
+
+        <!-- Content -->
+        <template x-if="!entityDrawerLoading">
+            <div class="flex flex-col flex-1 overflow-hidden">
+
+                <!-- Sub-tabs -->
+                <div class="px-5 pt-3 shrink-0 flex gap-1 border-b border-dark-700">
+                    <button @click="entityDrawerTab='business'"
+                            class="px-3 py-2 text-xs font-medium rounded-t-lg border-b-2 -mb-[1px] transition"
+                            :class="entityDrawerTab==='business' ? 'text-cyan-400 border-cyan-400 bg-dark-700/50' : 'text-gray-400 border-transparent hover:text-gray-200'">
+                        📊 Business
+                    </button>
+                    <button @click="entityDrawerTab='knowledge'"
+                            class="px-3 py-2 text-xs font-medium rounded-t-lg border-b-2 -mb-[1px] transition"
+                            :class="entityDrawerTab==='knowledge' ? 'text-cyan-400 border-cyan-400 bg-dark-700/50' : 'text-gray-400 border-transparent hover:text-gray-200'">
+                        🧠 Agent Knows
+                        <span x-show="(entityDrawerMemory?.knowledge_count || 0) > 0"
+                              class="ml-1 text-[9px] px-1 rounded-full bg-cyan-500/20 text-cyan-400"
+                              x-text="entityDrawerMemory?.knowledge_count"></span>
+                    </button>
+                    <button @click="entityDrawerTab='conversations'"
+                            class="px-3 py-2 text-xs font-medium rounded-t-lg border-b-2 -mb-[1px] transition"
+                            :class="entityDrawerTab==='conversations' ? 'text-cyan-400 border-cyan-400 bg-dark-700/50' : 'text-gray-400 border-transparent hover:text-gray-200'">
+                        💬 Conversations
+                        <span x-show="(entityDrawerMemory?.episode_count || 0) > 0"
+                              class="ml-1 text-[9px] px-1 rounded-full bg-cyan-500/20 text-cyan-400"
+                              x-text="entityDrawerMemory?.episode_count"></span>
+                    </button>
+                </div>
+
+                <!-- BUSINESS TAB -->
+                <div x-show="entityDrawerTab==='business'" class="flex-1 overflow-y-auto scroll-thin">
+                    <template x-if="entityDrawerBusiness?.profile">
+                        <div>
+                            <!-- KPI strip -->
+                            <div class="grid grid-cols-3 gap-0 border-b border-dark-700">
+                                <!-- Customer -->
+                                <template x-if="entityDrawerType === 'customer'">
+                                    <div class="contents">
+                                        <div class="px-4 py-3 text-center border-r border-dark-700">
+                                            <div class="text-sm font-bold text-white" x-text="fmtCurrency(entityDrawerBusiness.profile.total_outstanding)"></div>
+                                            <div class="text-[10px] text-gray-500 mt-0.5">Outstanding</div>
+                                        </div>
+                                        <div class="px-4 py-3 text-center border-r border-dark-700">
+                                            <div class="text-sm font-bold text-amber-400" x-text="fmtCurrency(entityDrawerBusiness.profile.total_overdue)"></div>
+                                            <div class="text-[10px] text-gray-500 mt-0.5">Overdue</div>
+                                        </div>
+                                        <div class="px-4 py-3 text-center">
+                                            <div class="text-sm font-bold text-gray-300" x-text="(entityDrawerBusiness.profile.max_days_overdue || 0) + 'd'"></div>
+                                            <div class="text-[10px] text-gray-500 mt-0.5">Max Aging</div>
+                                        </div>
+                                    </div>
+                                </template>
+                                <!-- Vendor -->
+                                <template x-if="entityDrawerType === 'vendor'">
+                                    <div class="contents">
+                                        <div class="px-4 py-3 text-center border-r border-dark-700">
+                                            <div class="text-sm font-bold text-white" x-text="fmtCurrency(entityDrawerBusiness.profile.open_amount)"></div>
+                                            <div class="text-[10px] text-gray-500 mt-0.5">Open</div>
+                                        </div>
+                                        <div class="px-4 py-3 text-center border-r border-dark-700">
+                                            <div class="text-sm font-bold text-amber-400" x-text="fmtCurrency(entityDrawerBusiness.profile.overdue_amount)"></div>
+                                            <div class="text-[10px] text-gray-500 mt-0.5">Overdue</div>
+                                        </div>
+                                        <div class="px-4 py-3 text-center">
+                                            <div class="text-sm font-bold text-gray-300" x-text="entityDrawerBusiness.profile.open_invoices || 0"></div>
+                                            <div class="text-[10px] text-gray-500 mt-0.5">Invoices</div>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+
+                            <!-- Profile metadata -->
+                            <div class="px-5 py-3 border-b border-dark-700/50 flex flex-wrap gap-3">
+                                <template x-if="entityDrawerBusiness.profile.payment_terms">
+                                    <span class="text-[10px] px-2 py-1 rounded-full bg-dark-700 text-gray-400">
+                                        💳 <span x-text="entityDrawerBusiness.profile.payment_terms"></span>
+                                    </span>
+                                </template>
+                                <template x-if="entityDrawerBusiness.profile.risk_rating">
+                                    <span class="text-[10px] px-2 py-1 rounded-full"
+                                          :class="entityDrawerBusiness.profile.risk_rating==='high' ? 'bg-red-500/20 text-red-300' : entityDrawerBusiness.profile.risk_rating==='medium' ? 'bg-amber-500/20 text-amber-300' : 'bg-emerald-500/20 text-emerald-300'">
+                                        ⚠ Risk: <span x-text="entityDrawerBusiness.profile.risk_rating"></span>
+                                    </span>
+                                </template>
+                                <template x-if="entityDrawerBusiness.profile.credit_limit">
+                                    <span class="text-[10px] px-2 py-1 rounded-full bg-dark-700 text-gray-400">
+                                        📈 Limit: <span x-text="fmtCurrency(entityDrawerBusiness.profile.credit_limit)"></span>
+                                    </span>
+                                </template>
+                                <template x-if="entityDrawerBusiness.profile.vendor_status">
+                                    <span class="text-[10px] px-2 py-1 rounded-full"
+                                          :class="entityDrawerBusiness.profile.vendor_status==='flagged' ? 'bg-red-500/20 text-red-300' : entityDrawerBusiness.profile.vendor_status==='new' ? 'bg-blue-500/20 text-blue-300' : 'bg-emerald-500/20 text-emerald-300'">
+                                        🏷 <span x-text="entityDrawerBusiness.profile.vendor_status"></span>
+                                    </span>
+                                </template>
+                                <template x-if="entityDrawerBusiness.profile.pending_corrections > 0">
+                                    <span class="text-[10px] px-2 py-1 rounded-full bg-red-500/20 text-red-300">
+                                        ⚡ <span x-text="entityDrawerBusiness.profile.pending_corrections"></span> corrections pending
+                                    </span>
+                                </template>
+                            </div>
+
+                            <!-- Invoice list -->
+                            <div class="px-5 pt-3 pb-1">
+                                <div class="text-[10px] uppercase tracking-wider text-gray-500 mb-2">Open Invoices</div>
+                            </div>
+                            <div x-show="entityDrawerBusiness.invoices?.length > 0" class="divide-y divide-dark-700/50">
+                                <template x-for="inv in (entityDrawerBusiness.invoices || [])" :key="inv.invoice_number || inv.transaction_id">
+                                    <div class="px-5 py-2.5 flex items-center justify-between text-xs">
+                                        <div class="min-w-0">
+                                            <div class="font-mono text-gray-300 text-[10px]" x-text="inv.invoice_number"></div>
+                                            <div class="text-gray-500 text-[10px] truncate max-w-[200px]" x-text="inv.description || inv.aging_bucket || ''"></div>
+                                        </div>
+                                        <div class="flex items-center gap-3 shrink-0">
+                                            <span x-show="(inv.days_overdue || 0) > 0"
+                                                  class="text-[10px] px-1.5 py-0.5 rounded"
+                                                  :class="(inv.days_overdue || 0) > 60 ? 'bg-red-500/20 text-red-300' : 'bg-amber-500/20 text-amber-300'"
+                                                  x-text="(inv.days_overdue || 0) + 'd overdue'"></span>
+                                            <span class="font-semibold text-white" x-text="fmtCurrency(inv.amount_usd || inv.amount)"></span>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                            <div x-show="!entityDrawerBusiness.invoices?.length" class="px-5 py-6 text-center text-gray-500 text-xs">
+                                No open invoices
+                            </div>
+                        </div>
+                    </template>
+                    <template x-if="!entityDrawerBusiness?.profile">
+                        <div class="px-5 py-10 text-center text-gray-500 text-sm">No business record found</div>
+                    </template>
+                </div>
+
+                <!-- AGENT KNOWS TAB -->
+                <div x-show="entityDrawerTab==='knowledge'" class="flex-1 overflow-y-auto scroll-thin">
+                    <template x-if="!entityDrawerKey">
+                        <div class="px-5 py-10 text-center text-gray-600 text-sm">
+                            <div class="text-2xl mb-2">🧠</div>
+                            No agent memory linked to this entity yet.
+                            <div class="text-xs text-gray-700 mt-1">The agent will build knowledge as conversations happen.</div>
+                        </div>
+                    </template>
+                    <template x-if="entityDrawerKey && (entityDrawerMemory?.linked_knowledge || []).length === 0">
+                        <div class="px-5 py-10 text-center text-gray-600 text-sm">
+                            <div class="text-2xl mb-2">📭</div>
+                            Entity found in memory but no confirmed knowledge facts yet.
+                        </div>
+                    </template>
+                    <div class="divide-y divide-dark-700/50">
+                        <template x-for="k in (entityDrawerMemory?.linked_knowledge || [])" :key="k.id">
+                            <div class="px-5 py-3">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="text-[10px] px-1.5 py-0.5 rounded"
+                                          :class="k.status==='confirmed' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400'"
+                                          x-text="k.status"></span>
+                                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400" x-text="k.knowledge_type"></span>
+                                    <span x-show="k.skill" class="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400" x-text="k.skill"></span>
+                                </div>
+                                <div class="text-xs text-gray-200 leading-relaxed" x-text="k.summary"></div>
+                                <div x-show="k.ts" class="text-[10px] text-gray-600 mt-1" x-text="k.ts?.slice(0,10)"></div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- CONVERSATIONS TAB -->
+                <div x-show="entityDrawerTab==='conversations'" class="flex-1 overflow-y-auto scroll-thin">
+                    <template x-if="!entityDrawerKey">
+                        <div class="px-5 py-10 text-center text-gray-600 text-sm">
+                            <div class="text-2xl mb-2">💬</div>
+                            No agent conversations linked to this entity.
+                        </div>
+                    </template>
+                    <template x-if="entityDrawerKey && (entityDrawerMemory?.linked_episodes || []).length === 0">
+                        <div class="px-5 py-10 text-center text-gray-600 text-sm">
+                            <div class="text-2xl mb-2">📭</div>
+                            No conversation episodes recorded for this entity yet.
+                        </div>
+                    </template>
+                    <div class="divide-y divide-dark-700/50">
+                        <template x-for="ep in (entityDrawerMemory?.linked_episodes || [])" :key="ep.id">
+                            <div class="px-5 py-3">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span x-show="ep.skill" class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400" x-text="ep.skill"></span>
+                                    <span x-show="ep.ts" class="text-[10px] text-gray-600" x-text="ep.ts?.slice(0,10)"></span>
+                                </div>
+                                <div class="text-xs text-gray-300 leading-relaxed" x-text="(ep.summary || '').substring(0, 200)"></div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+            </div>
+        </template>
+    </div>
+
+    <!-- Drawer removed — agent chat IS the drill-down -->
+
+    <!-- ════════════════════════════════════════════════════════════
+         CHAT SIDEBAR  (persistent right-edge panel)
+         ════════════════════════════════════════════════════════════ -->
+    <div x-show="chatOpen" x-cloak x-ref="chatPanel"
+         class="fixed top-0 right-0 h-full bg-dark-800 border-l border-dark-700 shadow-2xl z-50 flex flex-col"
+         :style="'width:' + chatWidth + 'px'"
+         x-transition:enter="transition ease-out duration-250" x-transition:enter-start="translate-x-full" x-transition:enter-end="translate-x-0"
+         x-transition:leave="transition ease-in duration-200" x-transition:leave-start="translate-x-0" x-transition:leave-end="translate-x-full">
+        <!-- Drag handle to resize -->
+        <div class="resize-handle" :class="isResizing && 'active'"
+             @mousedown.prevent="startResize($event)"></div>
+        <!-- Chat Header -->
+        <div class="flex items-center justify-between px-4 py-3 bg-dark-900 border-b border-dark-700 shrink-0">
+            <div class="flex items-center gap-2">
+                <span class="text-lg">🤖</span>
+                <span class="text-sm font-semibold text-gray-200">Twin Assistant</span>
+                <div class="w-2 h-2 rounded-full" :class="wsConnected ? 'bg-emerald-400 pulse-dot' : 'bg-red-400'"></div>
+            </div>
+            <div class="flex items-center gap-2">
+                <button @click="chatMessages=[]; chatContext=null" class="text-[10px] text-gray-500 hover:text-gray-300">Clear</button>
+                <button @click="chatOpen=false" class="text-gray-500 hover:text-white text-lg">✕</button>
+            </div>
+        </div>
+
+        <!-- Context Chips -->
+        <div x-show="chatContext" class="px-3 py-2 bg-dark-900/50 border-b border-dark-700 shrink-0">
+            <div class="flex flex-wrap gap-1">
+                <template x-for="chip in chatContextChips" :key="chip">
+                    <span class="text-[10px] px-2 py-0.5 bg-cyan-500/10 text-cyan-300 rounded-full" x-text="chip"></span>
+                </template>
+            </div>
+        </div>
+
+        <!-- Chat Messages -->
+        <div class="flex-1 overflow-y-auto scroll-thin p-3 space-y-3" x-ref="chatScroll">
+            <!-- Welcome message -->
+            <div x-show="chatMessages.length===0" class="text-center py-8 space-y-3">
+                <div class="text-3xl">🪞</div>
+                <div class="text-sm text-gray-400">I'm your Digital Twin assistant.</div>
+                <div class="text-xs text-gray-500">Click any KPI card, row, or scenario on the dashboard.<br>I'll analyze the data and give you insights.</div>
+                <div class="grid grid-cols-2 gap-2 mt-4 px-2">
+                    <button @click="askFreeform('Give me an executive summary of our current F&A operations health — AR, AP, exceptions, and agent performance.')" class="text-[10px] text-left p-2 bg-dark-900 rounded border border-dark-700 text-gray-400 hover:text-cyan-300 hover:border-cyan-500/30 transition-colors">📊 Executive Summary</button>
+                    <button @click="askFreeform('Which customers are at highest risk of default? Analyze by overdue amount, aging, and risk rating.')" class="text-[10px] text-left p-2 bg-dark-900 rounded border border-dark-700 text-gray-400 hover:text-cyan-300 hover:border-cyan-500/30 transition-colors">⚠️ High Risk Customers</button>
+                    <button @click="askFreeform('What are the top 3 process improvements we should make this week based on current exception patterns and agent telemetry?')" class="text-[10px] text-left p-2 bg-dark-900 rounded border border-dark-700 text-gray-400 hover:text-cyan-300 hover:border-cyan-500/30 transition-colors">🎯 Top Improvements</button>
+                    <button @click="askFreeform('Draft a weekly F&A operations report for the CFO including AR/AP health, DSO trends, exceptions, and agent automation metrics.')" class="text-[10px] text-left p-2 bg-dark-900 rounded border border-dark-700 text-gray-400 hover:text-cyan-300 hover:border-cyan-500/30 transition-colors">📝 CFO Weekly Report</button>
+                </div>
+            </div>
+
+            <!-- Message list -->
+            <template x-for="(msg, idx) in chatMessages" :key="idx">
+                <div :class="msg.role==='user' ? 'flex justify-end' : 'flex justify-start'">
+                    <div class="chat-bubble rounded-lg px-3 py-2 text-xs"
+                         :class="msg.role==='user' ? 'bg-cyan-500/20 text-gray-100' : 'bg-dark-900 text-gray-300 border border-dark-700'">
+                        <div x-show="msg.role==='assistant'" x-html="renderMarkdown(msg.content)"></div>
+                        <div x-show="msg.role==='user'" x-text="msg.content"></div>
+                        <div x-show="msg.role==='system'" class="text-gray-500 italic" x-text="msg.content"></div>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Typing indicator -->
+            <div x-show="isTyping" class="flex justify-start">
+                <div class="bg-dark-900 border border-dark-700 rounded-lg px-3 py-2 flex items-center gap-2">
+                    <span class="text-[10px] text-gray-500" x-text="typingStatus"></span>
+                    <div class="flex gap-1">
+                        <span class="typing-dot w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                        <span class="typing-dot w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                        <span class="typing-dot w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat Input -->
+        <div class="px-3 py-3 border-t border-dark-700 bg-dark-900 shrink-0">
+            <div class="flex items-center gap-2">
+                <input type="text" x-model="chatInput" @keydown.enter="sendChat()"
+                       placeholder="Ask about your operations..."
+                       class="flex-1 bg-dark-800 border border-dark-700 text-gray-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-cyan-500/50 placeholder-gray-600">
+                <button @click="sendChat()" :disabled="!chatInput.trim() || isTyping"
+                        class="bg-cyan-500 hover:bg-cyan-600 disabled:bg-dark-700 disabled:text-gray-600 text-white text-xs font-medium px-3 py-2 rounded-lg transition-colors">
+                    Send
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════
+         ALPINE.JS APPLICATION
+         ════════════════════════════════════════════════════════════ -->
+    <script>
+    function twinDashboard() {
+        return {
+            // ---- Dashboard data ----
+            loaded: false, days: 30, asOf: '',
+            kpis: {}, snapshots: [], skills: [],
+            hitlOverall: [], hitlByUrgency: [],
+            ar: {}, ap: {}, trends: [],
+            feed: [], exceptions: {},
+            towerHealth: [],
+            _charts: {},
+            selectedRole: 'lead',
+            roleViews: [
+                { key: 'analyst', label: 'Analyst', icon: '👤' },
+                { key: 'lead', label: 'Lead', icon: '🧭' },
+                { key: 'cfo', label: 'CFO / GPO', icon: '🏛️' },
+            ],
+
+            // ---- ESAA Optimization state ----
+            optimizations: [],
+            esaaAnalyzing: false,
+            esaaLastRun: '',
+            esaaTier: 'tier1',
+            esaaTier2Patterns: null,
+            esaaDrawerOpen: false,
+            esaaDrawerCategory: '',
+            esaaCategories: [
+                { key: 'eliminate', label: 'ELIMINATE', icon: '🗑', color: 'red' },
+                { key: 'standardize', label: 'STANDARDIZE', icon: '📐', color: 'amber' },
+                { key: 'augment', label: 'AUGMENT', icon: '🤖', color: 'cyan' },
+                { key: 'automate', label: 'AUTOMATE', icon: '⚡', color: 'emerald' },
+            ],
+
+            // ---- Selection state ----
+            selectedCard: null,
+
+            // ---- Entity drawer state ----
+            entityCardTab: 'customers',
+            entityDrawerOpen: false,
+            entityDrawerLoading: false,
+            entityDrawerTab: 'business',
+            entityDrawerName: '',
+            entityDrawerType: '',
+            entityDrawerKey: null,
+            entityDrawerMatchMethod: '',
+            entityDrawerBusiness: null,
+            entityDrawerMemory: null,
+
+            // ---- Chat state ----
+            chatOpen: false, chatMessages: [], chatInput: '', chatContext: null,
+            ws: null, wsConnected: false, isTyping: false, typingStatus: 'Thinking...',
+            _pendingMsg: '',
+            twinWs: null, twinWsConnected: false,
+            chatWidth: 420, isResizing: false, _resizeStartX: 0, _resizeStartW: 0,
+
+            // ---- Prompt templates ----
+            promptTemplates: {
+                'AR Outstanding': 'Analyze the AR outstanding balance of {value}. Break down by aging bucket, customer risk rating, and trend. What is driving the total and what actions should we take?',
+                'AR Overdue':     'The AR overdue balance is {value} ({delta}). Break down by aging bucket and customer. Which customers are highest risk and what collection actions should we prioritize?',
+                'DSO':            'Current DSO is {value} ({delta}). Analyze the DSO trend, identify which customers are dragging it up, and recommend specific actions to reduce DSO by 10 days.',
+                'AP Open':        'Analyze the AP open balance of {value}. Break down by vendor, aging bucket, and payment terms. Are there any early payment discount opportunities?',
+                'AP Overdue':     'AP overdue is {value}. Which vendors are most overdue? Are there any relationship risks? What should we prioritize for payment this week?',
+                'Exceptions':     'We have {value} active exceptions across AP corrections, debit balances, and AR risks. Summarize by type, identify root causes, and recommend resolution priority.',
+                'Tasks':          'Agent automation processed {value} tasks ({delta}). Break down by skill, success rate, and latency. Which skills need optimization or scaling?',
+                'Error Rate':     'The error rate is {value} ({delta}). What are the most common failure modes? Which agents or skills are failing and what can we do to fix them?',
+            },
+
+            // ============================================================
+            //  INIT
+            // ============================================================
+            async init() {
+                await this.refresh();
+                this.connectWS();
+                this.connectTwinWS();
+                setInterval(() => this.refresh(), 60000);
+            },
+
+            // ============================================================
+            //  DATA FETCHERS
+            // ============================================================
+            async refresh() {
+                await Promise.all([
+                    this.fetchSummary(), this.fetchSkills(), this.fetchHitl(),
+                    this.fetchTrends(), this.fetchAR(), this.fetchAP(),
+                    this.fetchFeed(), this.fetchExceptions(),
+                    this.fetchProcessHealth(), this.fetchOptimization(),
+                ]);
+                this.loaded = true;
+                this.$nextTick(() => this.renderCharts());
+            },
+            async fetchSummary() {
+                try { const r = await fetch(`/api/twin/summary?days=${this.days}`); const d = await r.json();
+                    this.kpis = d.kpis || {}; this.snapshots = d.snapshots || []; this.asOf = d.as_of || '';
+                } catch(e) { console.error('twin/summary', e); }
+            },
+            async fetchSkills() {
+                try { const r = await fetch(`/api/twin/skills?days=${this.days}`); const d = await r.json();
+                    this.skills = d.skills || [];
+                } catch(e) { console.error('twin/skills', e); }
+            },
+            async fetchHitl() {
+                try { const r = await fetch(`/api/twin/hitl?days=${this.days}`); const d = await r.json();
+                    this.hitlOverall = d.overall || []; this.hitlByUrgency = d.by_urgency || [];
+                } catch(e) { console.error('twin/hitl', e); }
+            },
+            async fetchTrends() {
+                try { const r = await fetch(`/api/twin/trends?days=${this.days}`); const d = await r.json();
+                    this.trends = d.series || [];
+                    this._heatRangeCache = {};  // invalidate cached min/max on data refresh
+                } catch(e) { console.error('twin/trends', e); }
+            },
+            async fetchAR() {
+                try { const r = await fetch('/api/twin/ar'); this.ar = await r.json();
+                } catch(e) { console.error('twin/ar', e); }
+            },
+            async fetchAP() {
+                try { const r = await fetch('/api/twin/ap'); this.ap = await r.json();
+                } catch(e) { console.error('twin/ap', e); }
+            },
+            async fetchFeed() {
+                try { const r = await fetch('/api/twin/feed'); const d = await r.json();
+                    this.feed = d.feed || [];
+                } catch(e) { console.error('twin/feed', e); }
+            },
+            async fetchExceptions() {
+                try { const r = await fetch('/api/twin/exceptions'); this.exceptions = await r.json();
+                } catch(e) { console.error('twin/exceptions', e); }
+            },
+
+            // ── Entity drawer ───────────────────────────────────────────
+            async openEntityDrawer(name, type) {
+                this.entityDrawerName  = name;
+                this.entityDrawerType  = type;
+                this.entityDrawerOpen  = true;
+                this.entityDrawerLoading = true;
+                this.entityDrawerBusiness = null;
+                this.entityDrawerMemory   = null;
+                this.entityDrawerKey      = null;
+                this.entityDrawerMatchMethod = '';
+                this.entityDrawerTab = 'business';
+
+                try {
+                    // Parallel: entity-match + business data
+                    const [matchResp, bizResp] = await Promise.all([
+                        fetch(`/api/twin/entity-match?name=${encodeURIComponent(name)}&type=${type}`),
+                        fetch(`/api/twin/entity/${type}/${encodeURIComponent(name)}`),
+                    ]);
+                    const matchData = await matchResp.json();
+                    this.entityDrawerBusiness   = await bizResp.json();
+                    this.entityDrawerKey        = matchData.entity_key || null;
+                    this.entityDrawerMatchMethod = matchData.method || '';
+
+                    // Fetch memory only if we have a resolved entity key
+                    if (this.entityDrawerKey) {
+                        const memResp = await fetch(`/api/memory/entity/${encodeURIComponent(this.entityDrawerKey)}`);
+                        if (memResp.ok) this.entityDrawerMemory = await memResp.json();
+                    }
+                } catch(e) {
+                    console.error('openEntityDrawer', e);
+                } finally {
+                    this.entityDrawerLoading = false;
+                }
+            },
+            closeEntityDrawer() {
+                this.entityDrawerOpen    = false;
+                this.entityDrawerBusiness = null;
+                this.entityDrawerMemory   = null;
+                this.entityDrawerKey      = null;
+            },
+            async fetchProcessHealth() {
+                try { const r = await fetch(`/api/twin/process_health?days=${this.days}`); const d = await r.json();
+                    this.towerHealth = d.towers || [];
+                } catch(e) { console.error('twin/process_health', e); }
+            },
+            async fetchOptimization() {
+                try {
+                    const r = await fetch('/api/twin/optimization');
+                    const d = await r.json();
+                    this.optimizations = d.recommendations || [];
+                    this.esaaTier = d.tier || 'tier1';
+                    this.esaaLastRun = d.computed_at ? new Date(d.computed_at).toLocaleTimeString() : '';
+                    this.esaaTier2Patterns = d.tier2_patterns || null;
+                } catch(e) { console.error('twin/optimization', e); }
+            },
+
+            // ============================================================
+            //  ESAA HELPERS
+            // ============================================================
+            esaaCatRecs(category) {
+                return this.optimizations.filter(r => r.category === category);
+            },
+            get esaaDrawerTitle() {
+                const cat = this.esaaCategories.find(c => c.key === this.esaaDrawerCategory);
+                return cat ? (cat.icon + ' ' + cat.label + ' Recommendations') : 'Recommendations';
+            },
+            get esaaDrawerRecs() {
+                return this.optimizations.filter(r => r.category === this.esaaDrawerCategory);
+            },
+            openEsaaDrawer(category) {
+                this.esaaDrawerCategory = category;
+                this.esaaDrawerOpen = true;
+            },
+            async triggerTier2() {
+                if (this.esaaAnalyzing) return;
+                this.esaaAnalyzing = true;
+                try {
+                    const r = await fetch('/api/twin/optimization/analyze', { method: 'POST' });
+                    const d = await r.json();
+                    const jobId = d.job_id;
+                    // Poll for completion
+                    let attempts = 0;
+                    const poll = setInterval(async () => {
+                        attempts++;
+                        try {
+                            const sr = await fetch(`/api/twin/optimization/status/${jobId}`);
+                            const sd = await sr.json();
+                            if (sd.status === 'completed' || sd.status === 'error' || attempts > 60) {
+                                clearInterval(poll);
+                                this.esaaAnalyzing = false;
+                                await this.fetchOptimization(); // Refresh with new Tier 2 data
+                            }
+                        } catch(e) { clearInterval(poll); this.esaaAnalyzing = false; }
+                    }, 3000);
+                } catch(e) {
+                    console.error('tier2 trigger', e);
+                    this.esaaAnalyzing = false;
+                }
+            },
+
+            // ============================================================
+            //  BUSINESS KPI CARDS
+            // ============================================================
+            get bizCards() {
+                const k = this.kpis;
+                return [
+                    { label: 'AR Outstanding', value: this.fmtCurrency(this.ar.total_outstanding), icon: '💰', delta: '', deltaClass: '', drillType: 'ar', drillMetric: 'outstanding', rawValue: this.ar.total_outstanding },
+                    { label: 'AR Overdue', value: this.fmtCurrency(this.ar.total_overdue), icon: '⏰',
+                      delta: this.fmtDelta(k.ar_overdue_delta, true), deltaClass: this.deltaColor(k.ar_overdue_delta, true), drillType: 'ar', drillMetric: 'overdue', rawValue: this.ar.total_overdue },
+                    { label: 'DSO', value: (this.ar.dso_days || '—') + 'd', icon: '📅',
+                      delta: this.fmtDelta(k.dso_delta, true), deltaClass: this.deltaColor(k.dso_delta, true), drillType: 'ar', drillMetric: 'dso', rawValue: this.ar.dso_days },
+                    { label: 'AP Open', value: this.fmtCurrency(this.ap.open_amount), icon: '🏦', delta: '', deltaClass: '', drillType: 'ap', drillMetric: 'open', rawValue: this.ap.open_amount },
+                    { label: 'AP Overdue', value: this.fmtCurrency(this.ap.overdue_amount), icon: '⚠️', delta: '', deltaClass: '', drillType: 'ap', drillMetric: 'overdue', rawValue: this.ap.overdue_amount },
+                    { label: 'Exceptions', value: this.exceptions.summary?.total || 0, icon: '🚨', delta: '', deltaClass: '', drillType: 'exceptions', drillMetric: 'all', rawValue: this.exceptions.summary?.total },
+                    { label: 'Tasks', value: k.total_tasks || 0, icon: '📋',
+                      delta: this.fmtDelta(k.tasks_delta), deltaClass: this.deltaColor(k.tasks_delta), drillType: 'task', drillMetric: 'all', rawValue: k.total_tasks },
+                    { label: 'Error Rate', value: (k.error_rate || 0) + '%', icon: '❌',
+                      delta: this.fmtDelta(k.error_rate_delta, true), deltaClass: this.deltaColor(k.error_rate_delta, true), drillType: 'task', drillMetric: 'error', rawValue: k.error_rate },
+                ];
+            },
+
+            get roleInsights() {
+                if (this.selectedRole === 'analyst') {
+                    return [
+                        {
+                            label: 'My priority queue',
+                            value: String(this.priorityWorkQueue.length),
+                            icon: '📌',
+                            story: 'Open exceptions, HITL items, and agent follow-ups that need same-day handling.',
+                            prompt: 'Summarize the analyst priority queue. What should I close first and why?',
+                        },
+                        {
+                            label: 'Agent completed',
+                            value: String(this.kpis.total_tasks || 0),
+                            icon: '🤖',
+                            story: 'Automation handled the routine work; analyst focus shifts to exceptions and evidence checks.',
+                            prompt: 'Explain what agent work has completed and what exceptions still need human action.',
+                        },
+                        {
+                            label: 'Evidence focus',
+                            value: String((this.exceptions.items || []).length || 0),
+                            icon: '🧾',
+                            story: 'Cases that require supporting invoice, supplier, PO, customer, or audit context before action.',
+                            prompt: 'Which current cases need evidence review before action? Group them by likely evidence needed.',
+                        },
+                    ];
+                }
+                if (this.selectedRole === 'cfo') {
+                    return [
+                        {
+                            label: 'Cash exposure',
+                            value: this.fmtCurrency((this.ar.total_overdue || 0) + (this.ap.open_amount || 0)),
+                            icon: '💼',
+                            story: 'Combined AR risk and AP payment exposure across the finance operating model.',
+                            prompt: 'Give a CFO view of cash exposure across AR overdue and AP open obligations. What decisions are needed?',
+                        },
+                        {
+                            label: 'Process health',
+                            value: this.towerHealth.length ? Math.round(this.towerHealth.reduce((sum, t) => sum + (t.avg_health || 0), 0) / this.towerHealth.length) + '/100' : '—',
+                            icon: '📈',
+                            story: 'Tower-level health shows where finance operations are stable, stressed, or transformation-ready.',
+                            prompt: 'Give a CFO/GPO process health narrative using tower health, exceptions, and automation metrics.',
+                        },
+                        {
+                            label: 'Transformation backlog',
+                            value: String(this.transformationCards.length),
+                            icon: '🚀',
+                            story: 'Upstream changes and automation opportunities that can reduce manual finance effort.',
+                            prompt: 'Prioritize the transformation backlog. Which recommendations have the strongest business case?',
+                        },
+                    ];
+                }
+                return [
+                    {
+                        label: 'SLA / exception pressure',
+                        value: String(this.exceptions.summary?.total || 0),
+                        icon: '🚨',
+                        story: 'Exceptions, aging, and HITL wait states that can break SLA or payment commitments.',
+                        prompt: 'Summarize current SLA and exception pressure for a P2P/O2C lead. What should be reassigned or escalated?',
+                    },
+                    {
+                        label: 'Team action queue',
+                        value: String(this.priorityWorkQueue.length),
+                        icon: '🧭',
+                        story: 'Work that can be pushed to analysts, agents, or supervisors with recommended next actions.',
+                        prompt: 'Review the team action queue and recommend what should go to analysts, agents, or supervisors.',
+                    },
+                    {
+                        label: 'Automation leverage',
+                        value: String(this.optimizations.length),
+                        icon: '⚡',
+                        story: 'Agentic recommendations to eliminate, standardize, augment, or automate recurring work.',
+                        prompt: 'Which automation or standardization recommendations should the operations lead act on this week?',
+                    },
+                ];
+            },
+
+            get priorityWorkQueue() {
+                const items = [];
+                const exceptions = Array.isArray(this.exceptions.items) ? this.exceptions.items : [];
+                exceptions.slice(0, 6).forEach((exc, index) => {
+                    items.push({
+                        id: `exception-${index}-${exc.id || exc.entity || exc.type || index}`,
+                        icon: '🚨',
+                        title: exc.entity || exc.title || exc.subtype || exc.type || 'Exception requires review',
+                        detail: exc.description || `${exc.subtype || exc.type || 'Exception'} · ${exc.status || 'open'}`,
+                        source: exc.source || 'exception',
+                        severity: exc.severity || (Number(exc.amount || 0) > 100000 ? 'high' : 'medium'),
+                        action: exc.status === 'awaiting_human' ? 'Approve / reject' : 'Review evidence',
+                        chips: [
+                            exc.type || exc.subtype || 'exception',
+                            exc.amount ? this.fmtCurrency(exc.amount) : null,
+                            exc.status || null,
+                        ].filter(Boolean),
+                        prompt: `Analyze this exception and recommend the next action: ${JSON.stringify(exc)}`,
+                    });
+                });
+
+                const hitl = Array.isArray(this.hitlOverall) ? this.hitlOverall : [];
+                hitl.slice(0, 4).forEach((h, index) => {
+                    items.push({
+                        id: `hitl-${index}-${h.action_type || index}`,
+                        icon: '🛡️',
+                        title: `${h.action_type || 'HITL'} approvals need attention`,
+                        detail: `${h.count || 0} human decisions with average wait ${this.formatMs(h.avg_wait_ms)}`,
+                        source: 'human-in-loop',
+                        severity: (h.count || 0) > 5 ? 'high' : 'medium',
+                        action: 'Clear approval queue',
+                        chips: [`${h.count || 0} items`, this.formatMs(h.avg_wait_ms)],
+                        prompt: `Analyze HITL ${h.action_type} items. What should the lead prioritize and what can the agent handle?`,
+                    });
+                });
+
+                const recs = Array.isArray(this.optimizations) ? this.optimizations : [];
+                recs.slice(0, 5).forEach((rec, index) => {
+                    items.push({
+                        id: `optimization-${index}-${rec.rule_id || rec.title}`,
+                        icon: '🎯',
+                        title: rec.title || 'Optimization recommendation',
+                        detail: rec.detail || rec.description || 'Recommended process improvement from ESAA.',
+                        source: rec.category || 'optimization',
+                        severity: rec.severity || 'medium',
+                        action: rec.category === 'automate' ? 'Automate' : rec.category === 'eliminate' ? 'Eliminate root cause' : 'Assess change',
+                        chips: [rec.category, rec.impact, rec.rule_id].filter(Boolean),
+                        prompt: `Deep-dive into this transformation recommendation and implementation path: ${JSON.stringify(rec)}`,
+                    });
+                });
+
+                if (items.length === 0 && Array.isArray(this.feed)) {
+                    this.feed.slice(0, 5).forEach((event, index) => items.push({
+                        id: `feed-${index}-${event.label || index}`,
+                        icon: event.icon || '📋',
+                        title: event.label || event.skill || 'Agent activity',
+                        detail: event.detail || event.status || 'Recent agent execution event.',
+                        source: 'agent feed',
+                        severity: /error|fail/i.test(`${event.label} ${event.status}`) ? 'high' : 'medium',
+                        action: /error|fail/i.test(`${event.label} ${event.status}`) ? 'Investigate' : 'Review outcome',
+                        chips: [event.skill, event.status, event.time || event.ts].filter(Boolean),
+                        prompt: `Review this agent activity and tell me if any follow-up is needed: ${JSON.stringify(event)}`,
+                    }));
+                }
+
+                return items.slice(0, 10);
+            },
+
+            get transformationCards() {
+                const cards = [];
+                const recs = Array.isArray(this.optimizations) ? this.optimizations : [];
+                recs.slice(0, 4).forEach((rec) => cards.push({
+                    icon: rec.category === 'automate' ? '⚡' : rec.category === 'eliminate' ? '🗑️' : rec.category === 'standardize' ? '📐' : '🤖',
+                    title: rec.title || 'Process recommendation',
+                    detail: rec.detail || rec.description || 'Improve upstream process quality and reduce exception handling.',
+                    impact: rec.impact || rec.severity || 'Potential cycle-time and effort reduction',
+                    prompt: `Explain this transformation recommendation for a finance lead and convert it into an implementation plan: ${JSON.stringify(rec)}`,
+                }));
+                if (cards.length < 3) {
+                    cards.push(
+                        {
+                            icon: '🧾',
+                            title: 'Prevent recurring invoice exceptions',
+                            detail: 'Use category and supplier patterns to identify missing PO, duplicate, or master-data issues before processing.',
+                            impact: 'Reduces rework and analyst touch time',
+                            prompt: 'Based on current AP/exception data, suggest upstream controls to prevent recurring invoice exceptions.',
+                        },
+                        {
+                            icon: '📚',
+                            title: 'Promote agent learnings to SOP',
+                            detail: 'Convert repeated agent decisions and evidence patterns into reusable knowledge and approval rules.',
+                            impact: 'Improves autonomous processing rate',
+                            prompt: 'What agent learnings from the current Twin data should be converted into SOP, rules, or knowledge?',
+                        },
+                        {
+                            icon: '💬',
+                            title: 'Route work through one action layer',
+                            detail: 'Let agents choose whether the next step belongs in SAP, Ariba, Outlook, Teams, or another system.',
+                            impact: 'Reduces swivel-chair work for analysts',
+                            prompt: 'How should the action layer route current work across systems without analysts jumping across tools?',
+                        },
+                    );
+                }
+                return cards.slice(0, 5);
+            },
+
+            // ============================================================
+            //  CHAT — ASK ABOUT (single click)
+            // ============================================================
+            openWorkItem(item) {
+                if (!item) return;
+                this.chatContext = this._buildContext();
+                this.askFreeform(
+                    item.prompt || `Analyze this priority work item and recommend the next action: ${item.title}. ${item.detail}`
+                );
+            },
+
+            askAboutCard(card) {
+                if (!card) return;
+                const template = this.promptTemplates[card.label] || 'Tell me about {label}: {value}';
+                const prompt = template
+                    .replace('{value}', card.value)
+                    .replace('{delta}', card.delta || 'no change')
+                    .replace('{label}', card.label);
+
+                // Build context from dashboard data
+                this.chatContext = this._buildContext(card);
+                this.chatInput = prompt;
+                this.chatOpen = true;
+                this.$nextTick(() => this.sendChat());
+            },
+
+            askAboutRow(type, data) {
+                let prompt = '';
+                if (type === 'customer') {
+                    prompt = `Tell me everything about customer "${data.customer_name}". They have ${this.fmtCurrency(data.total_overdue)} overdue (${data.max_days} days, risk: ${data.risk_rating}). What is the full picture and what actions should we take?`;
+                } else if (type === 'vendor') {
+                    prompt = `Analyze vendor "${data.vendor_name}" with ${data.invoices} open invoices totaling ${this.fmtCurrency(data.open_amount)}. What is their payment status and are there any concerns?`;
+                } else if (type === 'task') {
+                    prompt = data.status === 'error'
+                        ? `Agent "${data.agent}" failed on skill "${data.skill}" with error. Analyze the failure pattern and suggest fixes.`
+                        : `Analyze the task executed by agent "${data.agent}" using skill "${data.skill}" (${data.status}, ${data.latency_ms ? Math.round(data.latency_ms)+'ms' : 'no latency'}). Is this normal performance?`;
+                } else if (type === 'exception') {
+                    prompt = `Analyze this ${data.source} exception: type=${data.subtype||data.type}, entity=${data.entity}, amount=${this.fmtCurrency(data.amount)}, status=${data.status}. What caused it and how should we resolve it?`;
+                } else if (type === 'process_health') {
+                    const kpiStr = (data.kpis || []).map(k => {
+                        const actual = k.actual !== null && k.actual !== undefined ? k.actual : 'N/A';
+                        const target = k.target || 'n/a';
+                        const unit = k.unit === '%' ? '%' : k.unit === 'days' ? 'd' : k.unit === 'USD' ? ' USD' : ' ' + (k.unit || '');
+                        const status = k.status || 'na';
+                        return `${k.name}: actual=${actual}${unit} target=${target}${unit} [${status}]`;
+                    }).join(', ');
+                    prompt = `Analyze process health for "${data.subprocess || data.skill}" in ${data.tower} tower. Health score: ${data.health_score}/100 (KPI compliance: ${data.kpi_compliance}%, ${data.kpis_green}/${data.kpis_scorable} KPIs on target). ${data.invocations} invocations, ${data.success_rate ?? 'n/a'}% success rate, ${data.errors} errors (cost $${(data.errors * data.cost_per_exception).toLocaleString()}). KPIs: ${kpiStr || 'none defined'}. SLA: ${data.sla_days} days, cost/exception: $${data.cost_per_exception}. Which KPIs are off-target and what specific actions should we take?`;
+                } else if (type === 'skill') {
+                    prompt = `Analyze skill "${data.skill}" performance: ${data.invocations} calls, ${data.success_rate}% success rate, ${Math.round(data.avg_latency_ms)}ms avg latency. Is this healthy? What can be improved?`;
+                }
+                this.chatContext = this._buildContext();
+                this.chatInput = prompt;
+                this.chatOpen = true;
+                this.$nextTick(() => this.sendChat());
+            },
+
+            askFreeform(prompt) {
+                this.chatContext = this._buildContext();
+                this.chatInput = prompt;
+                this.chatOpen = true;
+                this.$nextTick(() => this.sendChat());
+            },
+
+            toggleChat() {
+                this.chatOpen = !this.chatOpen;
+                if (this.chatOpen && !this.chatContext) {
+                    this.chatContext = this._buildContext();
+                }
+            },
+
+            _buildContext(card) {
+                const ctx = {
+                    ar_outstanding: this.fmtCurrency(this.ar.total_outstanding),
+                    ar_overdue: this.fmtCurrency(this.ar.total_overdue),
+                    dso: (this.ar.dso_days || '—') + ' days',
+                    ap_open: this.fmtCurrency(this.ap.open_amount),
+                    ap_overdue: this.fmtCurrency(this.ap.overdue_amount),
+                    exceptions: this.exceptions.summary?.total || 0,
+                    tasks: this.kpis.total_tasks || 0,
+                    error_rate: (this.kpis.error_rate || 0) + '%',
+                };
+                if (card) ctx.focus = card.label;
+                return ctx;
+            },
+
+            get chatContextChips() {
+                if (!this.chatContext) return [];
+                return [
+                    `AR: ${this.chatContext.ar_outstanding}`,
+                    `Overdue: ${this.chatContext.ar_overdue}`,
+                    `DSO: ${this.chatContext.dso}`,
+                    `AP: ${this.chatContext.ap_open}`,
+                    `Exc: ${this.chatContext.exceptions}`,
+                ];
+            },
+
+            // ============================================================
+            //  WEBSOCKET CHAT
+            // ============================================================
+            connectWS() {
+                try {
+                    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    this.ws = new WebSocket(`${proto}//${location.host}/ws/chat`);
+                    this.ws.onopen = () => { this.wsConnected = true; };
+                    this.ws.onclose = () => {
+                        this.wsConnected = false;
+                        setTimeout(() => this.connectWS(), 3000);
+                    };
+                    this.ws.onerror = () => { this.wsConnected = false; };
+                    this.ws.onmessage = (e) => {
+                        try { this.handleWSMessage(JSON.parse(e.data)); }
+                        catch(err) { console.error('WS parse error', err); }
+                    };
+                } catch(e) {
+                    console.error('WS connect error', e);
+                    this.wsConnected = false;
+                }
+            },
+
+            // ============================================================
+            //  WEBSOCKET TWIN (live event push)
+            // ============================================================
+            connectTwinWS() {
+                try {
+                    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    this.twinWs = new WebSocket(`${proto}//${location.host}/ws/twin`);
+                    this.twinWs.onopen = () => { this.twinWsConnected = true; console.log('⚡ Twin WS connected'); };
+                    this.twinWs.onclose = () => {
+                        this.twinWsConnected = false;
+                        setTimeout(() => this.connectTwinWS(), 5000);
+                    };
+                    this.twinWs.onerror = () => { this.twinWsConnected = false; };
+                    this.twinWs.onmessage = (e) => {
+                        try { this.handleTwinEvent(JSON.parse(e.data)); }
+                        catch(err) { console.error('Twin WS parse error', err); }
+                    };
+                } catch(e) {
+                    console.error('Twin WS connect error', e);
+                    this.twinWsConnected = false;
+                }
+            },
+
+            handleTwinEvent(event) {
+                // Live event from /ws/twin — refresh dashboard data
+                const t = event.type;
+                if (t === 'task_completed' || t === 'task_error' || t === 'hitl_resolved') {
+                    // Debounced refresh: wait 500ms to batch rapid events
+                    if (this._twinRefreshTimer) clearTimeout(this._twinRefreshTimer);
+                    this._twinRefreshTimer = setTimeout(() => this.refresh(), 500);
+                }
+                // Add to live feed
+                if (t === 'task_completed') {
+                    this.feed.unshift({
+                        icon: '✅', label: `${event.skill || 'task'} completed`,
+                        detail: `${event.user_id || ''} · ${Math.round(event.latency_ms || 0)}ms`,
+                        time: new Date().toLocaleTimeString(),
+                    });
+                    if (this.feed.length > 20) this.feed.pop();
+                } else if (t === 'task_error') {
+                    this.feed.unshift({
+                        icon: '❌', label: `${event.skill || 'task'} error`,
+                        detail: event.user_id || '',
+                        time: new Date().toLocaleTimeString(),
+                    });
+                    if (this.feed.length > 20) this.feed.pop();
+                }
+            },
+
+            handleWSMessage(data) {
+                switch(data.type) {
+                    case 'status':
+                        this.typingStatus = data.status || 'Thinking...';
+                        break;
+                    case 'routing':
+                        this.typingStatus = `Routing to ${data.skill}...`;
+                        break;
+                    case 'tool_call':
+                        this.typingStatus = `Running ${data.tool || 'tool'}...`;
+                        break;
+                    case 'tool_result':
+                        this.typingStatus = 'Processing results...';
+                        break;
+                    case 'response':
+                        this.isTyping = false;
+                        this.chatMessages.push({ role: 'assistant', content: data.content || data.response || '' });
+                        this.$nextTick(() => this.scrollChat());
+                        break;
+                    case 'error':
+                        this.isTyping = false;
+                        this.chatMessages.push({ role: 'assistant', content: '❌ ' + (data.message || 'An error occurred') });
+                        this.$nextTick(() => this.scrollChat());
+                        break;
+                    case 'heartbeat':
+                        break;
+                    default:
+                        if (data.content || data.response) {
+                            this.isTyping = false;
+                            this.chatMessages.push({ role: 'assistant', content: data.content || data.response });
+                            this.$nextTick(() => this.scrollChat());
+                        }
+                }
+            },
+
+            async sendChat() {
+                const text = this.chatInput.trim();
+                if (!text || this.isTyping) return;
+
+                this.chatMessages.push({ role: 'user', content: text });
+                this.chatInput = '';
+                this.isTyping = true;
+                this.typingStatus = 'Thinking...';
+                this.$nextTick(() => this.scrollChat());
+
+                // Build context prefix
+                let contextPrefix = '';
+                if (this.chatContext) {
+                    contextPrefix = `[Dashboard Context: AR Outstanding=${this.chatContext.ar_outstanding}, AR Overdue=${this.chatContext.ar_overdue}, DSO=${this.chatContext.dso}, AP Open=${this.chatContext.ap_open}, AP Overdue=${this.chatContext.ap_overdue}, Exceptions=${this.chatContext.exceptions}, Tasks=${this.chatContext.tasks}, Error Rate=${this.chatContext.error_rate}]\n\n`;
+                }
+
+                const payload = {
+                    content: contextPrefix + text,
+                    tenant_id: 'company',
+                    agent_id: 'enterprise_agent',
+                    user_id: 'twin_user',
+                    skill_name: null,
+                    human_approval: false,
+                    render_ui: false,
+                    light_mode: true,
+                };
+
+                // Try WebSocket first, fallback to HTTP
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    try {
+                        this.ws.send(JSON.stringify(payload));
+                        return;
+                    } catch(e) { console.error('WS send error', e); }
+                }
+
+                // HTTP fallback
+                try {
+                    const r = await fetch('/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                    });
+                    const d = await r.json();
+                    this.isTyping = false;
+                    this.chatMessages.push({ role: 'assistant', content: d.response || d.content || 'No response' });
+                    this.$nextTick(() => this.scrollChat());
+                } catch(e) {
+                    this.isTyping = false;
+                    this.chatMessages.push({ role: 'assistant', content: '❌ Failed to reach agent: ' + e.message });
+                    this.$nextTick(() => this.scrollChat());
+                }
+            },
+
+            scrollChat() {
+                const el = this.$refs.chatScroll;
+                if (el) el.scrollTop = el.scrollHeight;
+            },
+
+            renderMarkdown(text) {
+                if (!text) return '';
+                // Strip any ui: blocks that slipped through (render_ui=false but agent may still emit)
+                let cleaned = text.replace(/```ui:\w+\s*[\s\S]*?```/g, '');
+                try { return marked.parse(cleaned); }
+                catch(e) { return cleaned.replace(/\n/g, '<br>'); }
+            },
+
+            // ============================================================
+            //  RESIZE CHAT PANEL
+            // ============================================================
+            startResize(e) {
+                this.isResizing = true;
+                this._resizeStartX = e.clientX;
+                this._resizeStartW = this.chatWidth;
+                const onMove = (ev) => {
+                    const delta = this._resizeStartX - ev.clientX;
+                    this.chatWidth = Math.min(Math.max(this._resizeStartW + delta, 320), window.innerWidth * 0.75);
+                };
+                const onUp = () => {
+                    this.isResizing = false;
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                };
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            },
+
+            // ============================================================
+            //  CHART RENDERING (doughnut charts only — heatmaps are pure Alpine HTML)
+            // ============================================================
+            renderCharts() {
+                this._renderARaging(); this._renderAPaging();
+            },
+            _getOrCreate(canvasId, config) {
+                if (this._charts[canvasId]) this._charts[canvasId].destroy();
+                const ctx = document.getElementById(canvasId);
+                if (!ctx) return null;
+                this._charts[canvasId] = new Chart(ctx, config);
+                return this._charts[canvasId];
+            },
+
+            // ── Heatmap color helper ──
+            // Computes an rgba color string based on where `val` falls in the
+            // min-max range of `field` across `this.trends`. Caches min/max.
+            _heatRangeCache: {},
+            heatColor(val, field, baseHex) {
+                // Compute & cache min/max for each field
+                if (!this._heatRangeCache[field]) {
+                    const vals = this.trends.map(d => d[field] || 0);
+                    this._heatRangeCache[field] = { min: Math.min(...vals), max: Math.max(...vals) };
+                }
+                const { min, max } = this._heatRangeCache[field];
+                const range = max - min || 1;
+                // Normalize to 0.15 – 1.0 so even low values are visible
+                const t = 0.15 + 0.85 * ((val || 0) - min) / range;
+                // Parse hex → rgb
+                const r = parseInt(baseHex.slice(1, 3), 16);
+                const g = parseInt(baseHex.slice(3, 5), 16);
+                const b = parseInt(baseHex.slice(5, 7), 16);
+                return `rgba(${r},${g},${b},${t.toFixed(2)})`;
+            },
+            _renderARaging() {
+                const aging = this.ar.aging || [];
+                this._getOrCreate('chartARaging', { type: 'doughnut', data: { labels: aging.map(a => a.aging_bucket),
+                    datasets: [{ data: aging.map(a => a.total), backgroundColor: ['#38bdf8','#f59e0b','#f97316','#ef4444'], borderWidth: 0 }] },
+                    options: { responsive: true, maintainAspectRatio: false, cutout: '60%',
+                        plugins: { legend: { position: 'right', labels: { color: '#9ca3af', font: { size: 10 }, padding: 8 } } } } });
+            },
+            _renderAPaging() {
+                const aging = this.ap.aging || [];
+                this._getOrCreate('chartAPaging', { type: 'doughnut', data: { labels: aging.map(a => a.aging_bucket),
+                    datasets: [{ data: aging.map(a => a.total), backgroundColor: ['#38bdf8','#f59e0b','#f97316','#ef4444'], borderWidth: 0 }] },
+                    options: { responsive: true, maintainAspectRatio: false, cutout: '60%',
+                        plugins: { legend: { position: 'right', labels: { color: '#9ca3af', font: { size: 10 }, padding: 8 } } } } });
+            },
+
+            // ============================================================
+            //  FORMATTING HELPERS
+            // ============================================================
+            fmtCurrency(val) {
+                if (val == null) return '—';
+                if (Math.abs(val) >= 1e6) return '$' + (val/1e6).toFixed(1) + 'M';
+                if (Math.abs(val) >= 1e3) return '$' + (val/1e3).toFixed(0) + 'K';
+                return '$' + val.toFixed(0);
+            },
+            fmtDelta(val, invertGood) {
+                if (val == null) return '';
+                const sign = val > 0 ? '▲' : val < 0 ? '▼' : '';
+                return sign + ' ' + Math.abs(val).toFixed(1) + '% vs 7d avg';
+            },
+            deltaColor(val, invertGood) {
+                if (val == null) return 'text-gray-500';
+                const good = invertGood ? val < 0 : val > 0;
+                return good ? 'text-emerald-400' : 'text-red-400';
+            },
+            formatMs(ms) {
+                if (!ms) return '—';
+                if (ms < 60000) return Math.round(ms/1000) + 's';
+                return Math.round(ms/60000) + 'm';
+            },
+        };
+    }
+    </script>
+    <script>
+    window.AgentProPageContext = function() {
+        const app = window.Alpine ? Alpine.$data(document.body) : {};
+        const visibleRecords = [];
+
+        if (Array.isArray(app.towerHealth)) {
+            app.towerHealth.slice(0, 12).forEach((tower) => {
+                visibleRecords.push({
+                    row: visibleRecords.length + 1,
+                    source: 'process_health',
+                    id: tower.tower,
+                    title: tower.tower,
+                    health: tower.avg_health,
+                    kpis_on_target: tower.kpis_on_target,
+                    kpis_total: tower.kpis_total,
+                });
+                (tower.skills || []).slice(0, 6).forEach((skill) => visibleRecords.push({
+                    row: visibleRecords.length + 1,
+                    source: 'process_skill',
+                    id: skill.skill,
+                    title: `${tower.tower}: ${skill.skill}`,
+                    health: skill.health_score,
+                    volume: skill.volume,
+                    exception_rate: skill.exception_rate,
+                }));
+            });
+        }
+
+        if (Array.isArray(app.skills)) {
+            app.skills.slice(0, 16).forEach((skill) => visibleRecords.push({
+                row: visibleRecords.length + 1,
+                source: 'skill_performance',
+                id: skill.skill,
+                title: skill.skill,
+                invocations: skill.invocations,
+                success_rate: skill.success_rate,
+                avg_latency_ms: skill.avg_latency_ms,
+            }));
+        }
+
+        const exceptionItems = Array.isArray(app.exceptions?.items) ? app.exceptions.items : [];
+        exceptionItems.slice(0, 16).forEach((item) => visibleRecords.push({
+            row: visibleRecords.length + 1,
+            source: 'exceptions',
+            id: item.id || item.reference || item.vendor || item.customer,
+            title: item.title || item.description || item.type,
+            type: item.type,
+            severity: item.severity,
+            status: item.status,
+            amount: item.amount,
+        }));
+
+        if (Array.isArray(app.optimizations)) {
+            app.optimizations.slice(0, 16).forEach((rec) => visibleRecords.push({
+                row: visibleRecords.length + 1,
+                source: 'optimization',
+                id: rec.rule_id || rec.id || rec.title,
+                title: rec.title,
+                category: rec.category,
+                severity: rec.severity,
+                impact: rec.impact,
+            }));
+        }
+
+        return {
+            source_page: 'twin',
+            page: 'digital_twin',
+            selectedRole: app.selectedRole,
+            days: app.days,
+            asOf: app.asOf,
+            kpis: app.kpis,
+            arSummary: app.ar?.summary || app.ar?.kpis || null,
+            apSummary: app.ap?.summary || app.ap?.kpis || null,
+            exceptionSummary: app.exceptions?.summary || null,
+            hitlOverall: Array.isArray(app.hitlOverall) ? app.hitlOverall.slice(0, 8) : [],
+            priorityWorkQueue: Array.isArray(app.priorityWorkQueue)
+                ? app.priorityWorkQueue.slice(0, 10).map(item => ({
+                    title: item.title,
+                    source: item.source,
+                    severity: item.severity,
+                    action: item.action,
+                    chips: item.chips,
+                }))
+                : [],
+            transformationCards: Array.isArray(app.transformationCards)
+                ? app.transformationCards.slice(0, 5).map(item => ({
+                    title: item.title,
+                    impact: item.impact,
+                    detail: item.detail,
+                }))
+                : [],
+            selectedDrilldown: app.drill || app.selectedMetric || null,
+            chatContext: app.chatContext || null,
+            visibleRecordKeys: visibleRecords.map(record => record.id).filter(Boolean).slice(0, 80).join(', '),
+            visibleRecords,
+        };
+    };
+    </script>
+    <script src="/static/ask-twin.js"></script>
+<script src="/static/session-controls.js"></script>
+    <script src="/static/privacy-gate.js"></script>
+</body>
+</html>

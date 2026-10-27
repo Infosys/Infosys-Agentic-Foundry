@@ -1,0 +1,4 @@
+external_id,title,description,priority,domain,entity_id,source
+ALERT-CSV-001,Memory leak on prod-web-03,Heap usage growing 50MB/min on prod-web-03. JVM old gen at 94%. Service degrading.,P2,itops,prod-web-03,feeder
+ALERT-CSV-002,Replication lag 45s on prod-db-replica,MySQL replica prod-db-replica is 45 seconds behind primary. Reads returning stale data.,P1,itops,prod-db-replica,feeder
+ALERT-CSV-003,Cron job cleanup_logs not run for 7 days,Scheduled cleanup_logs job has not executed since 2026-03-19. Log partition at 78%.,P3,itops,prod-app-01,feeder

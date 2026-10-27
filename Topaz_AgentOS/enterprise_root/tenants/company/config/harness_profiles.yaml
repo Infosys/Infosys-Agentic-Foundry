@@ -1,0 +1,25 @@
+# Harness execution profiles — tenant maintenance surface.
+#
+# Built-in presets (fast-lookup, standard, high-assurance, autonomous, deep-research) always exist;
+# this file OVERRIDES or EXTENDS them. Only list the keys you want to change. Hot-reloads on save.
+# See docs/HARNESS_PROFILES.md.
+
+version: "1.0"
+
+# Org-wide default when a skill/request doesn't specify one (also settable in Admin Settings).
+default_profile: standard
+
+profiles:
+  # Example — tighten a built-in for this tenant:
+  # high-assurance:
+  #   verification:
+  #     threshold: 0.92
+
+  # Example — add a new profile that inherits another and specifies only deltas:
+  fraud-review:
+    extends: high-assurance
+    budget:
+      max_tool_calls: 40
+      deadline_seconds: 1200
+    learning:
+      world_model_learn: true

@@ -1,0 +1,207 @@
+version: "1.0"
+description: External systems, databases, MCP connections, and credentials governed for the sample company tenant.
+resources:
+  - id: external:finance.sap_odata
+    label: SAP OData Finance APIs
+    type: http
+    hosts:
+      - localhost:9091
+    paths:
+      - /sap/opu/odata/sap/API_CUSTOMER_INVOICE_SRV/*
+      - /sap/opu/odata/sap/API_BANKSTATEMENT_SRV/*
+    methods:
+      - GET
+    context_files:
+      - /shared/contexts/fa_environment.md
+    credentials:
+      - erp_api
+    tools:
+      - shell
+    risk: medium
+    owners:
+      - finance-platform
+
+  - id: external:finance.customer_portals
+    label: Finance customer invoice portals
+    type: http
+    hosts:
+      - localhost:9091
+      - service.ariba.com
+    paths:
+      - /Supplier.aw/api/*
+      - /supplier/api/*
+      - /supplier/InvoiceStatus/*
+      - /petrolux/api/*
+      - /vantar/api/*
+      - /harborviewsupplychain/*
+    methods:
+      - GET
+    context_files:
+      - /shared/contexts/fa_environment.md
+      - /shared/contexts/entities/*.md
+    credentials:
+      - portal_northfield_token
+      - portal_solstice_key
+      - portal_ironvale_creds
+      - portal_petrolux_token
+      - portal_vantar_token
+      - portal_harborview_key
+    tools:
+      - shell
+    risk: medium
+    owners:
+      - finance-ar
+
+  - id: external:finance.ms_graph_mail
+    label: Finance Microsoft Graph mailboxes
+    type: http
+    hosts:
+      - graph.microsoft.com
+      - localhost:9091
+    paths:
+      - /v1.0/users/ar.*@company.com/messages*
+    methods:
+      - GET
+    context_files:
+      - /shared/contexts/fa_environment.md
+    credentials:
+      - ms365_ar_inbox
+    tools:
+      - shell
+    risk: medium
+    owners:
+      - finance-ar
+
+  - id: external:it.kubernetes_api
+    label: CCD Kubernetes API
+    type: http
+    hosts:
+      - 10.232.173.106:6443
+    paths:
+      - /api/*
+      - /apis/*
+      - /version
+      - /healthz
+      - /readyz
+      - /livez
+    methods:
+      - GET
+    context_files:
+      - /shared/contexts/ccdops_context.md
+    credentials:
+      - ccd_k8s_api
+    tools:
+      - shell
+    risk: high
+    owners:
+      - it-ops
+
+  - id: external:it.checkmk
+    label: CheckMK monitoring API
+    type: http
+    hosts:
+      - blrhcicmkmas.ad.infosys.com
+    paths:
+      - /BLR_MASTER/check_mk/api/1.0/*
+    methods:
+      - GET
+    context_files:
+      - /shared/contexts/ccdops_context.md
+    credentials:
+      - checkmk_api
+    tools:
+      - shell
+    risk: medium
+    owners:
+      - it-ops
+
+  # Finance workstream demo databases the leaves must PERSIST to (case posting/closure,
+  # GL coding, payment-release rows). Declared BEFORE the shared catch-all below on
+  # purpose: resource_for_database() returns the FIRST matching resource in this list,
+  # so these four files resolve here and pick up the narrow write grant, while EVERY
+  # other shared database keeps the read-only posture of the catch-all.
+  # Both the virtual-path and bare-filename forms are listed because the matcher tests
+  # the full string and the basename.
+  - id: external:db.fin_demo_writable
+    label: Finance workstream demo databases (writable)
+    type: db
+    databases:
+      - /shared/databases/fin_p2p_demo.db
+      - /shared/databases/o2c_demo.db
+      - /shared/databases/r2r_demo.db
+      - /shared/databases/treasury_demo.db
+      - shared/databases/fin_p2p_demo.db
+      - shared/databases/o2c_demo.db
+      - shared/databases/r2r_demo.db
+      - shared/databases/treasury_demo.db
+      - fin_p2p_demo.db
+      - o2c_demo.db
+      - r2r_demo.db
+      - treasury_demo.db
+    tools:
+      - run_sql_query
+      - shell
+    risk: medium
+    owners:
+      - platform
+
+  - id: external:db.shared_tenant_databases
+    label: Shared tenant SQLite databases
+    type: db
+    databases:
+      - /shared/databases/*.db
+      - shared/databases/*.db
+      - "*.db"
+    tools:
+      - run_sql_query
+      - shell
+    risk: medium
+    owners:
+      - platform
+
+  - id: external:platform.ap_tools_mcp
+    label: AP Tools MCP server
+    type: mcp
+    mcp_connections:
+      - ap_tools
+    tools:
+      - mcp
+    risk: low
+    owners:
+      - platform
+
+  # Loopback self-API. Mission Mode reaches the workstream engine by curling this
+  # host (skills/mission_mode/SKILL.md), so it MUST stay registered — otherwise
+  # EXTERNAL_ACCESS_UNKNOWN_MODE=deny silently kills every cron-driven workstream.
+  - id: external:platform.self_api
+    label: AgentOS self API (loopback, Mission Mode iterate)
+    type: http
+    hosts:
+      - localhost:8082
+      - 127.0.0.1:8082
+    paths:
+      - /api/workstreams/*
+    methods:
+      - GET
+      - POST
+    tools:
+      - shell
+    risk: low
+    owners:
+      - platform
+
+  - id: external:graph
+    label: World-model context graph (read-only)
+    type: db
+    backend: postgres
+    name: graph              # run_sql_query(database="graph", ...)
+    schema: self             # the agent's own kn_ knowledge schema
+    allowed_tables:
+      - entity_registry
+      - process_relationships
+    read_only: true          # writes refused; gateway does SET LOCAL ROLE agentos_graph_ro
+    tools:
+      - run_sql_query
+    risk: low
+    owners:
+      - platform

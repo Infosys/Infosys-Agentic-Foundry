@@ -1,0 +1,75 @@
+# Environment
+config.env
+.env
+*.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Logs
+*.log
+logs/
+startup_out.txt
+startup_err.txt
+
+# Data (user files - don't commit)
+enterprise_data/
+data/
+
+# Dead code recycle bin
+_recycle_bin/
+
+# Runtime databases
+*.db
+*.db-shm
+*.db-wal
+
+# Backup files
+*.bak*
+
+# Generated / runtime output
+outputs/
+static/generated/
+dump.rdb
+appendonlydir/
+cc_queue/ccd_tickets.json

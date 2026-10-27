@@ -1,0 +1,1419 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IAF AgentOS - File Mode ASCII Flow</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel-2: #1f2937;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #38bdf8;
+      --accent-2: #22c55e;
+      --border: #334155;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.5;
+    }
+
+    header {
+      padding: 28px 32px 18px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, #111827 0%, #0f172a 100%);
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+      font-weight: 700;
+    }
+
+    .subtitle {
+      max-width: 980px;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 10px;
+      padding: 18px 32px 0;
+      border-bottom: 1px solid var(--border);
+      background: #0b1220;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .tab-button {
+      border: 1px solid var(--border);
+      border-bottom: none;
+      background: var(--panel);
+      color: var(--muted);
+      padding: 12px 16px;
+      border-radius: 10px 10px 0 0;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .tab-button.active {
+      background: var(--panel-2);
+      color: var(--text);
+      border-color: var(--accent);
+    }
+
+    main {
+      padding: 24px 32px 40px;
+    }
+
+    .tab-panel {
+      display: none;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    .note {
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--accent);
+      background: rgba(56, 189, 248, 0.08);
+      padding: 14px 16px;
+      border-radius: 8px;
+      margin-bottom: 18px;
+      color: #dbeafe;
+    }
+
+    .note.simple {
+      border-left-color: var(--accent-2);
+      background: rgba(34, 197, 94, 0.08);
+      color: #dcfce7;
+    }
+
+    pre {
+      margin: 0;
+      padding: 20px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #020617;
+      color: #f8fafc;
+      overflow: auto;
+      white-space: pre;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 13px;
+      line-height: 1.45;
+      tab-size: 2;
+    }
+
+    .footer {
+      margin-top: 20px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>IAF AgentOS - File Mode ASCII Flow</h1>
+    <p class="subtitle">
+      Two views of the same solution: a detailed engineering view and a simple business-friendly flow.
+      File mode means the agent reads enterprise markdown context files at runtime instead of loading the full entity context from tables.
+    </p>
+  </header>
+
+  <nav class="tabs" aria-label="ASCII flow tabs">
+    <button class="tab-button active" data-tab="detailed">Detailed ASCII View</button>
+    <button class="tab-button" data-tab="simple">Simple English Flow</button>
+  </nav>
+
+  <main>
+    <section id="detailed" class="tab-panel active">
+      <div class="note">
+        This view is for engineers and architects. It shows the main runtime paths, features, files read, files written, and accuracy notes for file mode.
+      </div>
+      <pre>IAF AGENTOS - FILE MODE - END TO END VIEW
+=========================================
+
+WHAT FILE MODE MEANS
+--------------------
+
+Agent config:
+  enterprise_root/tenants/company/agents/enterprise_agent/config.yaml
+
+  context_loading_mode: file
+  context_file_path: /shared/Enterprise_Context.md
+
+Meaning:
+  - The router still chooses the best skill.
+  - The router LLM extracts entity_name and entity_type from the user query.
+  - The agent does NOT preload the full entity tree from SQLite.
+  - The agent is instructed to read markdown files:
+      /shared/Enterprise_Context.md
+      linked /shared/contexts/*.md files
+      linked policy/playbook/database notes
+      optional entity notes files
+  - The agent answers from those files and tool results.
+
+
+SYSTEM STARTUP
+--------------
+
+server.py starts FastAPI
+  |
+  +-- Registers routers:
+  |     /api/chat
+  |     /ws/chat
+  |     /api/cron
+  |     /api/queue/*
+  |     /api/skills/*
+  |     /api/approve
+  |     /api/reasoning/*
+  |     /api/twin/*
+  |     /api/finops/*
+  |
+  +-- Adds AuthMiddleware
+  |     If auth is enabled, /api/* requires JWT
+  |
+  +-- Starts cron scheduler
+  |     Redis-backed scheduled jobs
+  |
+  +-- Starts HITL approval store
+  |     Redis-backed approvals
+  |
+  +-- Starts Command Center queue processor
+  |     SQLite queue DB + async worker loop
+  |
+  +-- Starts trace emitter if enabled
+  |     writes traces.db
+  |
+  +-- Starts digital twin emitter if enabled
+        writes twin_telemetry.db
+
+
+ENTRY PATH 1 - USER CALLS REST API
+----------------------------------
+
+User / external frontend / backend service
+  |
+  | POST /api/chat
+  | body:
+  |   content
+  |   tenant_id
+  |   agent_id
+  |   user_id
+  |   optional skill_name
+  |   human_approval
+  |   render_ui
+  |   light_mode
+  |   knowledge_mode
+  |
+  v
+
+routers/chat.py::chat_endpoint()
+  |
+  +-- Get or create SkillAgent for this user
+  |
+  +-- Get SafeKernel for this user
+  |
+  +-- If user typed approve/reject for a pending action:
+  |     execute or cancel the pending action
+  |
+  +-- Set confirmation behavior:
+  |     human_approval=true  -> ask before risky writes
+  |     human_approval=false -> auto-run
+  |
+  +-- FILE MODE BRANCH:
+  |     Skip pre-router entity_registry.collect_context()
+  |     No SQLite entity tree is injected before routing
+  |
+  +-- Still run taxonomy signal lookup if available
+  |     Query embedding -> taxonomy hits -> possible skill/context hints
+  |
+  +-- Route the query
+  |     SkillRouter.match()
+  |       input: query + taxonomy hints
+  |       output:
+  |         skill
+  |         confidence
+  |         entity_name
+  |         entity_type
+  |         search_variants
+  |         complexity_class
+  |         execution_mode
+  |
+  +-- Put request into lane queue
+  |     Same user = serial execution
+  |     Different users = can run in parallel
+  |
+  +-- Call SkillAgent.run()
+  |
+  +-- Return one final JSON response:
+        response
+        skill
+        user_id
+        pending_approval if any
+        reasoning_context if available
+
+
+ENTRY PATH 2 - USER CALLS WEBSOCKET
+-----------------------------------
+
+Browser chat UI / rich frontend
+  |
+  | WS /ws/chat
+  |
+  v
+
+routers/chat.py::websocket_chat()
+  |
+  +-- Accept WebSocket
+  |
+  +-- For every incoming message:
+  |     content
+  |     tenant_id
+  |     agent_id
+  |     user_id
+  |     session_id
+  |     human_approval
+  |     force_plan
+  |     critique_mode
+  |
+  +-- Get agent
+  |     If session_id exists, use per-session agent
+  |     This allows multiple chat sessions for same user
+  |
+  +-- FILE MODE BRANCH:
+  |     Skip pre-router entity_registry.collect_context()
+  |
+  +-- Run taxonomy signal lookup
+  |
+  +-- Route with SkillRouter.match()
+  |
+  +-- Send live event:
+  |     type = routing
+  |
+  +-- Run agent through TaskIntegration
+  |     Adds Redis task visibility
+  |     Uses lane queue for safety
+  |
+  +-- Call SkillAgent.run(... return_tool_calls=True ...)
+  |
+  +-- While running, stream:
+  |     progress events
+  |     status events
+  |     heartbeat events
+  |     tool/reasoning summaries
+  |     HITL approval events
+  |
+  +-- Run optional critique:
+  |     off / sync / async
+  |
+  +-- Broadcast telemetry:
+  |     dashboard events
+  |     digital twin events
+  |
+  +-- Send final event:
+        type = response
+        content
+        skill
+        reasoning_context
+        context_files_used
+        pending_approval
+        critique
+
+
+ENTRY PATH 3 - CRON SCHEDULED JOB
+---------------------------------
+
+Admin/UI/API creates cron job
+  |
+  | POST /api/cron
+  |
+  v
+
+Cron job stored in Redis:
+  iaf:scheduler:job:{id}
+  iaf:scheduler:jobs
+  iaf:scheduler:jobs:enabled
+  iaf:scheduler:jobs:due
+  iaf:scheduler:run:{id}
+  iaf:scheduler:runs:job:{job_id}
+  iaf:scheduler:runs:recent
+
+CronScheduler background thread
+  |
+  +-- Wakes every 60 seconds
+  |
+  +-- Finds due jobs from Redis
+  |
+  +-- Enforces max concurrent cron jobs
+  |
+  +-- Starts job thread
+  |
+  v
+
+shared/state.py::_cron_executor(job)
+  |
+  +-- Creates SafeKernel
+  |     require_confirmation = false
+  |     scheduled jobs run unattended
+  |
+  +-- Creates SkillAgent
+  |
+  +-- Sets agent.auto_run = true
+  |
+  +-- If task == batch_extract_knowledge:
+  |     run memory.batch_extract_knowledge()
+  |
+  +-- Else:
+  |     run agent.run(job.task, skill_name=job.skill_name, skip_memory=True)
+  |
+  +-- FILE MODE still applies
+  |     because the same agent config is loaded
+  |
+  +-- If HITL approval is requested:
+  |     save checkpoint to Redis approval store
+  |     broadcast approval event
+  |
+  +-- Save cron run result in Redis
+  |
+  +-- Also writes a Command Center summary row
+        command_center.db -> queue_items
+        source = cron
+
+
+ENTRY PATH 4 - COMMAND CENTER QUEUE
+-----------------------------------
+
+External system / cron / UI
+  |
+  | POST /api/queue/ingest
+  | or POST /api/queue/items
+  |
+  v
+
+command_center.db
+  |
+  +-- queue_items row inserted
+  |     status = queued
+  |
+  v
+
+QueueProcessor background loop
+  |
+  +-- Poll every QUEUE_POLL_INTERVAL seconds
+  |
+  +-- Claim queued item
+  |     queued -> routing/running
+  |
+  +-- Route item description with SkillRouter.match()
+  |
+  +-- Create job_executions row
+  |
+  +-- Create isolated agent session:
+  |     user_id = queue_{item_id}
+  |
+  +-- Run:
+  |     agent.run(
+  |       query=item.description,
+  |       skill_name=routed_skill,
+  |       skip_memory=True,
+  |       light_mode=True,
+  |       status_callback=step_callback
+  |     )
+  |
+  +-- FILE MODE still applies
+  |     same enterprise_agent config
+  |
+  +-- Capture progress as job_steps
+  |
+  +-- If HITL:
+  |     status = awaiting_human
+  |     checkpoint saved to Redis ApprovalStore
+  |
+  +-- If success:
+  |     status = done
+  |
+  +-- If failure/retry exceeded:
+        status = dlq
+        dlq_items row inserted
+
+
+CORE AGENT FLOW - SkillAgent.run()
+----------------------------------
+
+SkillAgent.run(query)
+  |
+  +-- Register conversation session early
+  |     knowledge_index.db -> conversation_sessions
+  |     skipped when skip_memory=True
+  |
+  +-- Start trace if enabled
+  |     traces.db
+  |
+  +-- Compute query embedding
+  |     reused by taxonomy, memory, plan cache
+  |
+  +-- TaxonomySignalIndex.find_skills()
+  |     finds process/activity/skill hints
+  |
+  +-- FILE MODE Step B
+  |     MdEntityResolver.make_file_context_block()
+  |
+  |     Creates prompt instructions:
+  |       1. Read /shared/Enterprise_Context.md first
+  |       2. Follow linked markdown files
+  |       3. Read taxonomy reference files if found
+  |       4. Read entity notes file if found
+  |       5. Do not answer from memory alone
+  |
+  |     Important correction:
+  |       file mode skips full collect_context()
+  |       but code can still call entity_registry.resolve_entities()
+  |       only to map entity text to a node_id for query_memory xref lookup
+  |
+  +-- Search similar past episodes
+  |     skipped in light_mode
+  |
+  +-- Search plan cache
+  |     skipped in light_mode
+  |     can override skill/execution plan if similar approved plan exists
+  |
+  +-- Load selected SKILL.md
+  |
+  +-- Decide execution mode:
+  |     react
+  |     workflow
+  |     parallel
+  |     supervisor
+  |     orchestrator
+  |     planned
+  |
+  +-- Build system prompt
+  |     skill prompt
+  |     tool rules
+  |     approval rules
+  |     memory/context snippets
+  |     FILE MODE enterprise context instruction block
+  |     search variants
+  |     multi-domain routing context if needed
+  |
+  +-- Create LangGraph ReAct agent if needed
+  |
+  +-- Add user query to short-term memory
+  |
+  +-- Run LLM loop:
+  |     LLM thinks
+  |     LLM calls tool
+  |     tool returns observation
+  |     LLM continues
+  |     final answer produced
+  |
+  +-- Tool calls go through TraceToolCallback
+  |     progress events
+  |     trace spans
+  |     hook execution
+  |
+  +-- Check for pending write approval
+  |     __PENDING__
+  |     __PENDING_APPROVAL__
+  |
+  +-- Check for business HITL approval
+  |     __APPROVAL_CHECKPOINT__
+  |
+  +-- Collect tool calls and tool outputs
+  |
+  +-- Record context files used
+  |
+  +-- Build reasoning_context
+  |
+  +-- Save memory unless skip_memory=True
+  |
+  +-- End trace
+  |
+  v
+
+Final answer returned to REST, WebSocket, cron, or queue
+
+
+FILE MODE CONTEXT READING
+-------------------------
+
+Prompt tells the agent:
+  cat "/shared/Enterprise_Context.md"
+
+SafeKernel maps:
+  /shared/Enterprise_Context.md
+    -> enterprise_root/tenants/company/shared/Enterprise_Context.md
+
+Then agent follows links like:
+  /shared/contexts/*.md
+  /shared/contexts/taxonomy/*.md
+  /shared/contexts/entities/*.md
+  /shared/databases/*.db
+  policy/playbook files listed in context docs
+
+Important:
+  /shared is read-only for the agent.
+  Agent can read shared business context.
+  Agent cannot write to shared context through normal tool paths.
+
+
+SAFEKERNEL TOOL LAYER
+---------------------
+
+LLM tool call
+  |
+  v
+
+SafeKernel.run_shell_command()
+  |
+  +-- Rate limit check
+  |
+  +-- Parse command safely
+  |
+  +-- Block dangerous operators:
+  |     && || ; command substitution etc.
+  |
+  +-- Block dangerous commands:
+  |     rm sudo chmod chown kill docker kubectl npm pip etc.
+  |
+  +-- Resolve virtual paths:
+  |     /shared    -> tenant shared, read-only
+  |     /workspace -> agent workspace, read-write
+  |     /memory    -> agent memory, read-write/indexed
+  |     /me        -> current user area, read-write
+  |     /global    -> global shared, read-only
+  |     /local     -> optional external mount
+  |
+  +-- Require confirmation for risky writes if enabled
+  |
+  +-- Execute internal command handler
+  |
+  +-- Truncate large output
+  |
+  +-- Write audit JSONL
+  |
+  v
+
+Tool observation returned to LLM
+
+
+TOOLS AVAILABLE TO SKILLS
+-------------------------
+
+Configured in enterprise_agent/config.yaml:
+  shell
+  write_file
+  run_sql_query
+  execute_code
+  query_memory
+  invoke_skill
+  invoke_plan
+  create_plan
+
+Also possible depending on SKILL.md:
+  MCP tools
+  request_human_approval
+  skill-local tools
+  workflow/parallel/supervisor child skill calls
+
+
+EXECUTION MODES
+---------------
+
+react
+  Normal LLM + tool loop.
+  Best for open-ended questions.
+
+workflow
+  Fixed ordered steps from SKILL.md.
+  Best for repeatable business procedures.
+
+parallel
+  DAG-style steps run concurrently where possible.
+  Best for independent data gathering.
+
+supervisor
+  One meta-skill delegates to worker skills.
+
+orchestrator
+  Auto-selected when router sees a multi-step request.
+  Sequential skill chaining.
+
+planned
+  Auto-selected when router sees multiple unrelated domains.
+  Creates a plan/DAG and waits for plan approval/execution.
+
+
+HUMAN APPROVAL FEATURES
+-----------------------
+
+Layer 1 - Kernel approval
+  |
+  +-- Triggered by risky writes/deletes or configured paths
+  +-- User can approve/reject in chat
+  +-- Pending action stored on agent
+
+Layer 2 - Business HITL
+  |
+  +-- Skill calls request_human_approval
+  +-- Approval checkpoint stored in Redis ApprovalStore
+  +-- Appears in dashboard/approvals/queue
+  +-- Queue jobs can pause as awaiting_human
+  +-- Cron jobs can pause for approval too
+
+Layer 3 - Hooks as gates
+  |
+  +-- PreToolUse / PreStep hook can block execution
+  +-- Example:
+        orchestrator_circuit_breaker.py
+
+
+HOOK SYSTEM
+-----------
+
+Configured in config.yaml:
+  PreStep
+  PostStep
+  PreToolUse
+  PostToolUse
+  OnExecutionFailure
+
+Used for:
+  audit
+  circuit breaker
+  result validation
+  orchestrator safety
+  failure handling
+
+Hook scripts live under:
+  enterprise_root/tenants/company/shared/hooks/
+
+
+MEMORY AND LEARNING
+-------------------
+
+Normal chat run writes:
+  memory/history/{YYYY-MM-DD}/{session_id}.jsonl
+    Full conversation episode
+
+  memory/learnings/{skill_name}/tool_execution.jsonl
+    Tool usage patterns
+
+  memory/learnings/{skill_name}/agent_error.jsonl
+    Agent execution errors if any
+
+  memory/context_graph/knowledge.jsonl
+    Confirmed or learned knowledge records
+
+  memory/context_graph/knowledge_pending.jsonl
+    Pending review knowledge
+
+  memory/knowledge_index.db
+    conversation_sessions
+    episode_vectors
+    knowledge vectors / FTS
+    plan_cache
+    routing signals
+    reasoning/entity extraction
+
+Cron and queue usually call:
+  skip_memory=True
+
+So cron/queue usually avoid normal conversation memory pollution,
+but they can still write:
+  traces
+  queue rows
+  approval checkpoints
+  audit logs
+  command center execution steps
+
+
+OBSERVABILITY
+-------------
+
+WebSocket chat:
+  streams progress phases:
+    loading_context
+    building_prompt
+    generating
+    executing_tools
+    processing
+    saving
+
+Reasoning panel:
+  routing
+  context_used
+  tool_calls
+  outcome
+  trace_id
+  critique
+
+Trace telemetry:
+  traces.db
+    traces
+    spans
+    token/cost metadata
+
+Digital Twin:
+  twin_telemetry.db
+    task/process telemetry
+    HITL events
+    process health signals
+
+FinOps:
+  token/cost attribution
+  model usage
+  skill/model cost summaries
+
+Dashboard WebSockets:
+  /ws/dashboard
+  /ws/queue
+  /ws/twin
+
+
+FILES AND DATABASES READ
+------------------------
+
+Agent config:
+  enterprise_root/tenants/company/agents/enterprise_agent/config.yaml
+
+Master file-mode context:
+  enterprise_root/tenants/company/shared/Enterprise_Context.md
+
+Domain context:
+  enterprise_root/tenants/company/shared/contexts/*.md
+
+Taxonomy context:
+  enterprise_root/tenants/company/shared/contexts/taxonomy/*.md
+
+Entity notes:
+  enterprise_root/tenants/company/shared/contexts/entities/*.md
+
+Skills:
+  enterprise_root/tenants/company/skills/_index.yaml
+  enterprise_root/tenants/company/skills/{skill_name}/SKILL.md
+
+Business DBs:
+  enterprise_root/tenants/company/shared/databases/*.db
+
+Memory DB:
+  enterprise_root/tenants/company/agents/enterprise_agent/memory/knowledge_index.db
+
+Redis:
+  sessions
+  cron jobs
+  approvals
+  task visibility
+
+
+FILES AND DATABASES WRITTEN
+---------------------------
+
+Interactive chat, when memory is enabled:
+  enterprise_root/tenants/company/agents/enterprise_agent/memory/history/{date}/{session_id}.jsonl
+  enterprise_root/tenants/company/agents/enterprise_agent/memory/learnings/{skill}/tool_execution.jsonl
+  enterprise_root/tenants/company/agents/enterprise_agent/memory/learnings/{skill}/agent_error.jsonl
+  enterprise_root/tenants/company/agents/enterprise_agent/memory/context_graph/knowledge.jsonl
+  enterprise_root/tenants/company/agents/enterprise_agent/memory/context_graph/knowledge_pending.jsonl
+  enterprise_root/tenants/company/agents/enterprise_agent/memory/knowledge_index.db
+
+Kernel/audit:
+  enterprise_root/tenants/company/agents/enterprise_agent/.audit/commands_{date}.jsonl
+
+User or workspace writes, if approved:
+  enterprise_root/tenants/company/agents/enterprise_agent/users/{user_id}/...
+  enterprise_root/tenants/company/agents/enterprise_agent/workspace/...
+  enterprise_root/tenants/company/agents/enterprise_agent/memory/...
+
+Command Center:
+  IAF-Agent-Studio/command_center.db
+    queue_items
+    job_executions
+    job_steps
+    routing_log
+    dlq_items
+
+Cron:
+  Redis iaf:scheduler:* keys
+  command_center.db summary row after run
+
+HITL:
+  Redis ApprovalStore records
+
+Trace:
+  traces.db
+
+Digital Twin:
+  twin_telemetry.db
+
+Server logs:
+  IAF-Agent-Studio/logs/
+
+
+MAJOR FEATURES IN THE SOLUTION
+------------------------------
+
+1. API chat
+   Simple HTTP request/response agent calling.
+
+2. WebSocket chat
+   Streaming chat with progress, reasoning, tools, HITL, and final response.
+
+3. File-mode context loading
+   Enterprise markdown context is read at runtime.
+
+4. Skill router
+   Selects skill, entity, complexity, execution mode.
+
+5. Taxonomy signal index
+   Uses L5 activity taxonomy to improve skill/domain routing.
+
+6. SafeKernel
+   Sandboxed tool execution with virtual paths, audit, rate limits, and approval gates.
+
+7. Skill system
+   Capabilities are defined as SKILL.md files, not hardcoded Python.
+
+8. Multiple execution modes
+   react, workflow, parallel, supervisor, orchestrator, planned.
+
+9. Memory
+   Conversation history, knowledge graph, plan cache, similar episode search.
+
+10. Human-in-the-loop
+    Approval works in chat, queue, and cron paths.
+
+11. Command Center queue
+    Autonomous background job processor with retries, DLQ, step history.
+
+12. Cron scheduler
+    Redis-backed recurring jobs with manual run and run history.
+
+13. Telemetry
+    Trace DB, tool spans, token/cost tracking, Digital Twin events.
+
+14. FinOps
+    Cost/token analytics by model, skill, and purpose.
+
+15. Hooks
+    Declarative pre/post step and tool hooks for audit and circuit breaking.
+
+16. MCP/tool extension
+    Skills can connect to external MCP tools.
+
+17. Multi-tenant layout
+    Platform code is separated from tenant data, skills, context, memory.
+
+18. Skill Builder / Doc-to-Skill
+    UI can author skills and generate SKILL.md packages from documents.
+
+
+ACCURACY CRITIQUE / IMPORTANT CORRECTIONS
+-----------------------------------------
+
+1. The docs say file mode has "no SQLite lookups".
+   More accurate:
+     file mode skips the full entity_registry.collect_context() pre-signal,
+     but agent.py can still call entity_registry.resolve_entities()
+     to map an extracted entity name to a node_id for query_memory.
+
+2. REST /api/chat may have a file-mode bug.
+   In chat.py, _entity_store_http is assigned only inside the table-mode branch,
+   but later referenced during routing signal logging.
+   In file mode that can become an UnboundLocalError, although it is inside a try.
+
+3. Cron does not go through /api/chat or /ws/chat.
+   Cron creates SafeKernel + SkillAgent directly in shared/state.py.
+   File mode still applies because the same agent config is loaded.
+
+4. Queue does not go through /api/chat or /ws/chat either.
+   Queue processor calls SkillAgent.run() directly in a background thread.
+   File mode still applies through the same enterprise_agent config.
+
+5. Direct cron still writes a Command Center summary row.
+   The docs say direct cron does not use the queue monitor for the main run.
+   Code also inserts a summary item into command_center.db after successful cron execution.
+
+6. File mode is easier to set up, but not "no database at all".
+   It avoids database-backed context loading.
+   The system still uses SQLite/Redis for memory, traces, queue, cron, sessions, approvals, and telemetry.
+
+7. /shared is read-only to the agent.
+   File mode is meant for reading enterprise context, not modifying it during normal execution.</pre>
+      <p class="footer">Detailed view: suitable for architecture review, engineering onboarding, and code walkthroughs.</p>
+    </section>
+
+    <section id="simple" class="tab-panel">
+      <div class="note simple">
+        This view avoids most technical terms. It explains what happens conceptually when a user asks a question or a scheduled/background job runs.
+      </div>
+      <pre>IAF AGENTOS - FILE MODE - SIMPLE ENGLISH FLOW
+=============================================
+
+BIG IDEA
+--------
+
+File mode means:
+
+  The agent uses files as its business knowledge base.
+
+  Instead of first loading a big database of business context,
+  the agent opens the main enterprise context file,
+  follows the links inside it,
+  reads the right policy/playbook/data files,
+  and then answers.
+
+
+SIMPLE PICTURE
+--------------
+
+Someone asks a question
+  |
+  v
+System receives it
+  |
+  v
+System decides what type of work this is
+  |
+  v
+System picks the right skill
+  |
+  v
+Agent reads the main enterprise context file
+  |
+  v
+Agent follows the useful links in that file
+  |
+  v
+Agent reads the needed business documents or data
+  |
+  v
+Agent uses tools safely if needed
+  |
+  v
+Agent prepares the answer
+  |
+  v
+System saves history, trace, and audit details
+  |
+  v
+User gets the final answer
+
+
+WHERE QUESTIONS CAN COME FROM
+-----------------------------
+
+1. Chat screen
+   A person types a question in the UI.
+
+2. API call
+   Another app or frontend sends the question to /api/chat.
+
+3. WebSocket chat
+   The UI wants live progress while the answer is being prepared.
+
+4. Cron schedule
+   A job runs automatically at a fixed time.
+
+5. Command Center queue
+   An external system or batch process drops work into a queue.
+
+
+THE SAME CENTER ENGINE RUNS THE WORK
+------------------------------------
+
+Chat
+  |
+API
+  |
+WebSocket
+  |
+Cron
+  |
+Queue
+  |
+  v
+Same agent engine
+  |
+  v
+Same skills
+  |
+  v
+Same file-mode context
+  |
+  v
+Same safe tool layer
+  |
+  v
+Same approval and audit controls
+
+
+WHAT THE ROUTER DOES
+--------------------
+
+User says:
+  "What should we do for this overdue customer invoice?"
+
+Router asks:
+  What skill should handle this?
+  Which business area is this?
+  Is there a customer, vendor, invoice, ticket, or system name?
+  Is this simple, multi-step, or cross-domain?
+
+Router returns:
+  skill = the best skill
+  entity = the customer/vendor/etc. mentioned
+  mode = how the agent should run
+
+
+WHAT THE AGENT DOES NEXT
+------------------------
+
+Agent receives:
+  question
+  selected skill
+  entity name
+  file-mode instruction
+
+Then it follows this rule:
+
+  First read:
+    /shared/Enterprise_Context.md
+
+  Then read:
+    the relevant linked files
+
+  Then use:
+    tools if needed
+
+  Then answer:
+    based on the files and tool results
+
+
+WHY ENTERPRISE_CONTEXT.MD IS IMPORTANT
+--------------------------------------
+
+Think of Enterprise_Context.md as the front desk or map.
+
+It tells the agent:
+  where business knowledge lives
+  which domain files exist
+  which policies matter
+  which playbooks to follow
+  which databases or data files may be useful
+
+The agent starts there first.
+
+
+SAFE TOOL USE
+-------------
+
+The agent cannot freely touch the computer.
+
+Every tool call goes through a safety layer.
+
+Safety layer checks:
+  Is this path allowed?
+  Is this command allowed?
+  Is this trying to delete or modify something risky?
+  Does a human need to approve this first?
+  Should this action be audited?
+
+Only then does the command run.
+
+
+WHAT THE AGENT CAN READ
+-----------------------
+
+In file mode, the agent commonly reads:
+
+  Main context:
+    /shared/Enterprise_Context.md
+
+  Business context:
+    /shared/contexts/*.md
+
+  Taxonomy:
+    /shared/contexts/taxonomy/*.md
+
+  Entity notes:
+    /shared/contexts/entities/*.md
+
+  Databases:
+    /shared/databases/*.db
+
+  Skill instructions:
+    skills/{skill_name}/SKILL.md
+
+
+WHAT THE AGENT CAN WRITE
+------------------------
+
+The agent normally cannot write to /shared.
+
+It may write to:
+
+  User area:
+    /me/...
+
+  Workspace:
+    /workspace/...
+
+  Memory:
+    /memory/...
+
+But risky writes can require approval.
+
+
+WHEN HUMAN APPROVAL HAPPENS
+---------------------------
+
+The system may pause and ask a human when:
+
+  a file write is risky
+  a database change is risky
+  a skill says approval is required
+  a business policy requires review
+  a queue or cron job reaches a human decision point
+
+Flow:
+
+Agent asks for approval
+  |
+  v
+Work pauses
+  |
+  v
+Approval appears in chat/dashboard/queue
+  |
+  v
+Human approves or rejects
+  |
+  v
+Agent continues or stops
+
+
+IF THE USER USES /api/chat
+--------------------------
+
+Best for:
+  another frontend
+  backend service
+  script
+  system-to-agent call
+  request-response use case
+
+Flow:
+
+External app
+  |
+  v
+/api/chat
+  |
+  v
+Agent runs
+  |
+  v
+Final JSON answer returned
+
+
+IF THE USER USES /ws/chat
+-------------------------
+
+Best for:
+  rich chat UI
+  live progress
+  tool visibility
+  reasoning panel
+  approval cards
+  long-running answers
+
+Flow:
+
+Chat UI
+  |
+  v
+/ws/chat
+  |
+  +-- routing event
+  +-- progress events
+  +-- status events
+  +-- approval events if needed
+  +-- final answer event
+
+
+IF A CRON JOB RUNS
+------------------
+
+Best for:
+  scheduled reports
+  daily checks
+  periodic extraction
+  recurring operations
+
+Flow:
+
+Saved cron job
+  |
+  v
+Scheduler wakes up
+  |
+  v
+Finds due job
+  |
+  v
+Creates agent
+  |
+  v
+Runs the skill
+  |
+  v
+Uses file mode context
+  |
+  v
+Stores run result
+  |
+  v
+Writes summary to Command Center
+
+
+IF A QUEUE ITEM RUNS
+--------------------
+
+Best for:
+  background work
+  external system tickets
+  batch jobs
+  retry and DLQ handling
+  monitored autonomous work
+
+Flow:
+
+External system creates queue item
+  |
+  v
+Queue stores it
+  |
+  v
+Processor claims it
+  |
+  v
+Router picks skill
+  |
+  v
+Agent runs
+  |
+  v
+Progress steps are saved
+  |
+  v
+Item becomes:
+    done
+    awaiting_human
+    or dlq
+
+
+WHAT GETS SAVED
+---------------
+
+For normal chat:
+  conversation history
+  tool usage
+  reasoning context
+  learned patterns
+  trace details
+  audit logs
+
+For queue:
+  queue item status
+  execution record
+  step-by-step progress
+  retry or DLQ status
+
+For cron:
+  job definition
+  run history
+  result summary
+  optional approval checkpoint
+
+For all modes:
+  safety/audit records
+  telemetry when enabled
+
+
+SIMPLE MENTAL MODEL
+-------------------
+
+Think of the solution like this:
+
+  User or job asks for work
+        |
+        v
+  Reception desk decides who should handle it
+        |
+        v
+  Specialist agent opens the company playbook
+        |
+        v
+  Agent reads the exact pages it needs
+        |
+        v
+  Agent uses safe tools when needed
+        |
+        v
+  If risky, agent asks for approval
+        |
+        v
+  Agent completes the work
+        |
+        v
+  System records what happened
+        |
+        v
+  Answer/result is returned
+
+
+ONE-LINE SUMMARY
+----------------
+
+In file mode, IAF AgentOS is a safe enterprise agent system where
+questions, API calls, cron jobs, and queue jobs all reach the same
+agent engine, and the agent answers by reading enterprise markdown
+context files plus any linked business data, while approvals, memory,
+audit, queue, cron, and telemetry run around it.</pre>
+      <p class="footer">Simple view: suitable for walkthroughs with business users, managers, and non-engineering stakeholders.</p>
+    </section>
+  </main>
+
+  <script>
+    const buttons = document.querySelectorAll(".tab-button");
+    const panels = document.querySelectorAll(".tab-panel");
+
+    buttons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const tab = button.dataset.tab;
+
+        buttons.forEach((b) => b.classList.remove("active"));
+        panels.forEach((panel) => panel.classList.remove("active"));
+
+        button.classList.add("active");
+        document.getElementById(tab).classList.add("active");
+      });
+    });
+  </script>
+</body>
+</html>

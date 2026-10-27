@@ -1,0 +1,27 @@
+kind: knowledge_bundle
+bundle_id: finance_ap
+domain: Finance & Accounting
+description: Accounts Payable invoice, vendor, PO, payment, and three-way-match knowledge bundle.
+skills:
+  - invoice_processing_ap
+  - fa_ap
+tags:
+  - finance
+  - ap
+  - accounts-payable
+  - invoice
+  - vendor
+  - payment
+  - purchase-order
+  - goods-receipt
+  - three-way-match
+write_targets:
+  rule: policies/
+  exception: policies/
+  workaround: runbooks/
+  pattern: runbooks/
+  correction: runbooks/
+  fact: notes/
+  metric: metrics/
+  table: tables/
+  default: notes/

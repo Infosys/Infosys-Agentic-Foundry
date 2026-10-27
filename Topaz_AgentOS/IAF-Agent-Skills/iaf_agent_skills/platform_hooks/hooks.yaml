@@ -1,0 +1,98 @@
+# Platform-owned (built-in) governance hooks.
+#
+# These are FRAMEWORK-OWNED and merged into every applicable agent's effective hook
+# set at load time (see iaf_agent_skills/platform_hooks/__init__.py:resolve_effective_hooks,
+# wired at agent.py HookRunner construction). They are NOT stored in any tenant's
+# config.yaml and are therefore structurally non-editable / non-deletable from the
+# tenant UI/API.
+#
+# Schema (flat list; each entry carries its own `event`):
+#   hook_id      required, unique, [A-Za-z0-9_.:-]
+#   event        required, in ALLOWED_HOOK_EVENTS
+#   command      "<interpreter> <script> [args]" run as argv, no shell;
+#                reference scripts via $IAF_PLATFORM_HOOKS_DIR
+#   owner        forced to "platform" by the loader
+#   applies_to   { scope: all | tenants:[...] | agents:[...] }
+#   priority     lower runs first; clamped to <=99 so platform always precedes tenant (>=100)
+#   matcher/block_on_nonzero/timeout_seconds  — runtime fields (same meaning as config.yaml hooks)
+#
+# Scripts live in this package's scripts/ dir, referenced via $IAF_PLATFORM_HOOKS_DIR
+# (set at hook execution time). They still read $IAF_AGENT_ROOT for per-tenant output
+# (e.g. the audit DB), so relocating the files here does not change their behaviour.
+
+- hook_id: platform.orchestrator.circuit_breaker.prestep
+  event: PreStep
+  command: python3 $IAF_PLATFORM_HOOKS_DIR/orchestrator_circuit_breaker.py
+  owner: platform
+  applies_to: { scope: all }
+  priority: 50
+  block_on_nonzero: true
+  timeout_seconds: 5
+
+- hook_id: platform.orchestrator.circuit_updater.poststep
+  event: PostStep
+  command: python3 $IAF_PLATFORM_HOOKS_DIR/orchestrator_circuit_updater.py
+  owner: platform
+  applies_to: { scope: all }
+  priority: 50
+  block_on_nonzero: false
+  timeout_seconds: 5
+
+- hook_id: platform.orchestrator.result_validator.poststep
+  event: PostStep
+  command: python3 $IAF_PLATFORM_HOOKS_DIR/orchestrator_result_validator.py
+  owner: platform
+  applies_to: { scope: all }
+  priority: 50
+  block_on_nonzero: false
+  timeout_seconds: 5
+
+- hook_id: platform.orchestrator.audit_log.poststep
+  event: PostStep
+  command: python3 $IAF_PLATFORM_HOOKS_DIR/orchestrator_audit_log.py
+  owner: platform
+  applies_to: { scope: all }
+  priority: 50
+  block_on_nonzero: false
+  timeout_seconds: 5
+
+- hook_id: platform.orchestrator.on_failure.onexecutionfailure
+  event: OnExecutionFailure
+  command: python3 $IAF_PLATFORM_HOOKS_DIR/orchestrator_on_failure.py
+  owner: platform
+  applies_to: { scope: all }
+  priority: 50
+  block_on_nonzero: false
+  timeout_seconds: 10
+
+- hook_id: platform.orchestrator.audit_log.posttool
+  event: PostToolUse
+  command: python3 $IAF_PLATFORM_HOOKS_DIR/orchestrator_audit_log.py
+  owner: platform
+  applies_to: { scope: all }
+  priority: 50
+  matcher: invoke_skill
+  timeout_seconds: 5
+
+- hook_id: platform.orchestrator.circuit_updater.posttool
+  event: PostToolUse
+  command: python3 $IAF_PLATFORM_HOOKS_DIR/orchestrator_circuit_updater.py
+  owner: platform
+  applies_to: { scope: all }
+  priority: 50
+  matcher: invoke_skill
+  timeout_seconds: 5
+
+- hook_id: platform.orchestrator.circuit_breaker.pretool
+  event: PreToolUse
+  command: python3 $IAF_PLATFORM_HOOKS_DIR/orchestrator_circuit_breaker.py
+  owner: platform
+  applies_to: { scope: all }
+  priority: 50
+  matcher: invoke_skill
+  block_on_nonzero: true
+  # A tripped breaker must hard-deny the call, not route to human approval. Without
+  # this, PreToolUse defaults on_block to "hitl" (hook_runner), so an open circuit
+  # would prompt for approval on every gated invoke_skill instead of stopping it.
+  on_block: deny
+  timeout_seconds: 5

@@ -1,0 +1,28 @@
+<div class="skill-card" data-skill-component="example_skill">
+  <div class="skill-card-head">
+    <div>
+      <div class="skill-card-kicker">Approval Required</div>
+      <h4>{{request_title}}</h4>
+    </div>
+    <span class="skill-status" data-status>Pending</span>
+  </div>
+  <div class="skill-form-grid">
+    <label>
+      <span>Requester</span>
+      <input data-field="requester" value="{{requester}}" readonly>
+    </label>
+    <label>
+      <span>Amount</span>
+      <input data-field="amount" value="{{amount}}" readonly>
+    </label>
+    <label class="wide">
+      <span>Decision note</span>
+      <textarea data-field="decision_note" rows="4" placeholder="Add approval or rejection note">{{decision_note}}</textarea>
+    </label>
+  </div>
+  <div class="skill-card-actions">
+    <button type="button" class="btn secondary" data-action="reject-request">Reject</button>
+    <button type="button" class="btn" data-action="approve-request">Approve</button>
+  </div>
+  <div class="skill-card-note" data-message>Approvals are governed and audited.</div>
+</div>

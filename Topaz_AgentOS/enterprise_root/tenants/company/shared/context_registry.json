@@ -1,0 +1,44 @@
+{
+  "version": "1.0",
+  "items": [
+    {
+      "id": "Enterprise_Context",
+      "name": "Enterprise Context",
+      "type": "root",
+      "description": "Master routing index for IT Operations ContextOS",
+      "path": "/shared/Enterprise_Context.md",
+      "source": null,
+      "source_url": null,
+      "skills": [
+        "ccdops",
+        "general"
+      ],
+      "linked_assets": [],
+      "status": "active",
+      "auto_refresh": null,
+      "created_at": "2026-04-20T08:53:42.026250+00:00",
+      "updated_at": "2026-04-20T08:53:42.026250+00:00",
+      "word_count": 1770,
+      "exists": true
+    },
+    {
+      "id": "ccdops_context",
+      "name": "CCD Ops Environment Context",
+      "type": "document",
+      "description": "CCD Kubernetes cluster environment configuration, API access, and operational baselines",
+      "path": "/shared/contexts/ccdops_context.md",
+      "source": null,
+      "source_url": null,
+      "skills": [
+        "ccdops"
+      ],
+      "linked_assets": [],
+      "status": "active",
+      "auto_refresh": null,
+      "created_at": "2026-04-20T05:26:38.314916+00:00",
+      "updated_at": "2026-04-20T05:26:38.314916+00:00",
+      "word_count": 1492,
+      "exists": true
+    }
+  ]
+}

@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Building Skill-Based Agents — A Practical Guide</title>
+<!--
+  Self-contained, scrollable GUIDE (not a slide deck) for engineers / architects.
+  No external dependencies — works offline. Sticky table of contents + scrollspy.
+  Reading order is concrete-first: what is a skill → its contract → context →
+  the harness → its capabilities → how it all runs → how to apply it.
+-->
+<style>
+  :root{
+    --accent:#2563eb;--ink:#0f172a;--muted:#5b6677;--soft:#f1f5f9;--soft-2:#eff6ff;
+    --line:#e5e9f0;--warn:#b45309;--good:#16a34a;--bg:#ffffff;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --tocw:260px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:17px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  /* layout */
+  .layout{display:flex;align-items:flex-start;max-width:1180px;margin:0 auto;}
+  .toc{position:sticky;top:0;height:100vh;width:var(--tocw);flex:0 0 var(--tocw);
+    overflow:auto;padding:30px 18px 40px 26px;border-right:1px solid var(--line);}
+  .toc .brand{font-weight:800;font-size:15px;letter-spacing:-.01em;margin-bottom:4px;}
+  .toc .sub{font-size:12.5px;color:var(--muted);margin-bottom:18px;line-height:1.4;}
+  .toc ol{list-style:none;margin:0;padding:0;counter-reset:s;}
+  .toc li{counter-increment:s;margin:2px 0;}
+  .toc a{display:block;padding:7px 10px;border-radius:8px;color:var(--muted);font-size:14px;line-height:1.3;}
+  .toc a::before{content:counter(s)". ";color:#aab4c2;font-variant-numeric:tabular-nums;}
+  .toc a:hover{background:var(--soft);text-decoration:none;color:var(--ink);}
+  .toc a.active{background:var(--soft-2);color:var(--accent);font-weight:600;}
+
+  main{flex:1 1 auto;min-width:0;padding:46px clamp(20px,5vw,72px) 120px;max-width:860px;}
+  .hero h1{font-size:clamp(28px,4vw,40px);line-height:1.12;letter-spacing:-.02em;margin:0 0 8px;}
+  .hero p.lede{font-size:clamp(16px,1.8vw,20px);color:var(--muted);margin:0 0 6px;}
+  .hero .who{font-size:14px;color:var(--muted);background:var(--soft);border-radius:8px;
+    padding:8px 14px;display:inline-block;margin-top:10px;}
+
+  section{padding-top:34px;margin-top:14px;border-top:1px solid var(--line);}
+  section:first-of-type{border-top:none;}
+  h2{font-size:clamp(22px,2.6vw,28px);letter-spacing:-.01em;margin:22px 0 6px;}
+  h2 .num{color:#aab4c2;font-weight:700;margin-right:8px;font-variant-numeric:tabular-nums;}
+  h3{font-size:16px;margin:22px 0 4px;}
+  p{margin:12px 0;}
+  ul,ol.list{margin:12px 0;padding-left:22px;}
+  li{margin:5px 0;}
+  code{font-family:var(--mono);font-size:.88em;background:var(--soft);padding:1px 6px;border-radius:5px;}
+  pre{font-family:var(--mono);font-size:13.5px;line-height:1.6;background:#0f172a;color:#e2e8f0;
+    border-radius:10px;padding:16px 18px;overflow:auto;margin:14px 0;}
+  pre .c{color:#7c8aa0;} pre .k{color:#7dd3fc;} pre .s{color:#bef264;}
+
+  .note{border:1px solid var(--line);border-left:4px solid var(--accent);background:var(--soft-2);
+    border-radius:0 10px 10px 0;padding:12px 16px;margin:16px 0;font-size:15px;}
+  .note.warn{border-left-color:var(--warn);background:#fff7ed;}
+  .note b{color:var(--ink);}
+
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:14.5px;}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top;}
+  th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em;}
+  td b{color:var(--ink);} .yes{color:var(--good);font-weight:600;} .no{color:var(--muted);}
+
+  .tree{font-family:var(--mono);font-size:13.5px;line-height:1.7;background:var(--soft);
+    border:1px solid var(--line);border-radius:10px;padding:14px 16px;white-space:pre;overflow:auto;color:#334155;}
+  .tree b{color:var(--accent);}
+  .chip{display:inline-block;border:1px solid var(--line);background:var(--soft);border-radius:999px;
+    padding:4px 11px;margin:3px 5px 3px 0;font-size:13px;}
+  .chip.req{border-color:#bfdbfe;background:var(--soft-2);color:#1d4ed8;font-weight:600;}
+
+  .layers{display:flex;flex-direction:column;gap:8px;margin:14px 0;max-width:600px;}
+  .lyr{border:1px solid var(--line);border-radius:10px;padding:11px 15px;background:#fff;}
+  .lyr b{font-size:15px;} .lyr span{color:var(--muted);font-size:13px;display:block;}
+  .lyr.core{background:var(--soft-2);border-color:#bfdbfe;}
+  .lyr.gate{background:#fff7ed;border-color:#fed7aa;} .lyr.gate b{color:var(--warn);}
+  .ar{color:#aab4c2;text-align:center;font-size:12px;}
+
+  ol.steps{counter-reset:p;list-style:none;padding:0;margin:14px 0;}
+  ol.steps li{counter-increment:p;position:relative;padding:9px 0 9px 42px;border-bottom:1px solid var(--line);}
+  ol.steps li::before{content:counter(p);position:absolute;left:0;top:9px;width:26px;height:26px;border-radius:50%;
+    background:var(--accent);color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;}
+  ol.steps li b{color:var(--ink);} ol.steps li span{color:var(--muted);}
+
+  .foot{color:var(--muted);font-size:13px;margin-top:50px;padding-top:18px;border-top:1px solid var(--line);}
+
+  @media (max-width:840px){
+    .toc{display:none}
+    main{padding:30px 22px 80px}
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- TABLE OF CONTENTS -->
+  <nav class="toc">
+    <div class="brand">Skill-Based Agents</div>
+    <div class="sub">A practical guide for engineers &amp; architects</div>
+    <ol>
+      <li><a href="#start" class="tl">The idea in one minute</a></li>
+      <li><a href="#skill" class="tl">What is a Skill?</a></li>
+      <li><a href="#contract" class="tl">Definition &amp; manifest</a></li>
+      <li><a href="#context" class="tl">Context files &amp; the hierarchy</a></li>
+      <li><a href="#harness" class="tl">What is the harness?</a></li>
+      <li><a href="#capabilities" class="tl">Harness capabilities</a></li>
+      <li><a href="#together" class="tl">How it all runs</a></li>
+      <li><a href="#apply" class="tl">Apply it</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <h1>Building Skill-Based Agents</h1>
+      <p class="lede">A practical guide: what a skill is, how to author it, what the platform underneath must provide, and how it all runs together.</p>
+      <span class="who">For engineers &amp; architects · vendor-neutral · read top to bottom or jump around</span>
+    </div>
+
+    <!-- 1 -->
+    <section id="start">
+      <h2><span class="num">1</span>The idea in one minute</h2>
+      <p>Instead of building one large agent that tries to do everything — with its prompt, its logic, its security, and its knowledge all tangled together — you build small, focused units called <b>skills</b>, and you run them on a shared platform called a <b>harness</b>.</p>
+      <p>The split is simple:</p>
+      <ul>
+        <li>A <b>skill</b> is the thing <i>you author</i> — it describes a job, the knowledge to do it, the tools it may use, and the rules it must follow.</li>
+        <li>The <b>harness</b> is the thing <i>that runs it</i> — it routes a request to the right skill, drives the reasoning loop, provides shared capabilities (tools, models, memory…), and enforces security.</li>
+      </ul>
+      <p>The payoff is reuse (write a skill once, use it everywhere), governance (security and audit live in one place), portability (a well-packaged skill can move between platforms), and speed (new behaviour is a new skill, not a rewrite).</p>
+      <p class="note">The rest of this guide goes concrete-first: <b>the skill you build</b> → its contract → the knowledge it reads → the harness that runs it → what that harness must provide → how a single request flows through all of it.</p>
+    </section>
+
+    <!-- 2 -->
+    <section id="skill">
+      <h2><span class="num">2</span>What is a Skill?</h2>
+      <p>A skill is a <b>self-contained unit of capability, knowledge, and governance</b> for one class of tasks — not just a system prompt. You ship it as a folder:</p>
+      <div class="tree"><b>my_skill/</b>
+  manifest.(yaml|json)   <span style="color:#94a3b8"># the host contract (how to install it)</span>
+  DEFINITION.(md|yaml)   <span style="color:#94a3b8"># the agent definition (persona + instructions)</span>
+  README.md              <span style="color:#94a3b8"># what it does, how to use it</span>
+  contexts/              <span style="color:#94a3b8"># knowledge it reasons over</span>
+  tools/                 <span style="color:#94a3b8"># custom capabilities (small programs)</span>
+  hooks/                 <span style="color:#94a3b8"># governance handlers, scoped to this skill</span>
+  viewers/               <span style="color:#94a3b8"># HTML result cards / pages</span>
+  fixtures/  tests/      <span style="color:#94a3b8"># demo data + smoke tests</span></div>
+      <p>Only three things are mandatory — a <b>manifest</b>, a <b>definition</b>, and at least one source of knowledge or capability. Everything else is opt-in:</p>
+      <div><span class="chip req">manifest</span><span class="chip req">definition</span><span class="chip">contexts</span><span class="chip">tools</span><span class="chip">hooks</span><span class="chip">viewers</span><span class="chip">fixtures</span><span class="chip">tests</span></div>
+      <p>Most skills grow through three tiers — start minimal and add as the use case demands:</p>
+      <table>
+        <tr><th>Tier</th><th>Contains</th><th>Use when</th></tr>
+        <tr><td><b>Minimal</b></td><td>manifest + definition + (contexts <i>or</i> tools)</td><td>an advisor / knowledge-plus-prompt skill</td></tr>
+        <tr><td><b>Typical</b></td><td>+ contexts + tools + README</td><td>most real skills</td></tr>
+        <tr><td><b>Full</b></td><td>+ hooks + viewers + fixtures + tests</td><td>regulated, human-in-the-loop, or customer-facing</td></tr>
+      </table>
+      <p class="note"><b>Mindset shift:</b> if you're writing one enormous prompt that does ten jobs, that's the signal to split it into several skills with a routing or orchestrator skill on top.</p>
+    </section>
+
+    <!-- 3 -->
+    <section id="contract">
+      <h2><span class="num">3</span>The definition &amp; the manifest</h2>
+      <p>A skill carries <b>two descriptions</b> of itself, for two different readers:</p>
+      <ul>
+        <li>The <b>definition</b> is read by the <i>agent runtime</i> — it shapes the prompt. It holds the persona/instructions plus frontmatter: the execution mode, the tools it may bind, its approval rules, what it's entitled to touch, and pointers to its context files.</li>
+        <li>The <b>manifest</b> is read by the <i>host installer</i> — it decides whether the platform can run this skill at all. It declares <i>what the skill needs</i>, never <i>how the host provides it</i>.</li>
+      </ul>
+      <h3>Example — a manifest</h3>
+      <pre><span class="k">spec_version</span>: <span class="s">"1.0"</span>
+<span class="k">name</span>: ap_invoice_triage
+<span class="k">agent_type</span>: react              <span class="c"># react | workflow | orchestrator …</span>
+<span class="k">recommended_model</span>:             <span class="c"># by TIER, never a vendor/model ID</span>
+  primary: { tier: frontier }
+  light:   { tier: fast }
+<span class="k">requires</span>:                       <span class="c"># the host must provide these</span>
+  tools:   [run_sql_query, request_human_approval]
+  network: [outbound_http]
+  hooks:   [pre_tool, post_tool]
+<span class="k">inputs</span>:  [{ name: finance_api_key, type: secret }]
+<span class="k">outputs</span>: [{ name: triage_result,  type: json   }]</pre>
+      <p class="note warn"><b>The portability rule:</b> recommend models by <b>tier</b> (frontier / fast / fallback), never by a hardcoded model ID. The host maps the tier to a concrete model it actually has. The same rule applies to hosts, ports, and credentials — declare, don't hardcode.</p>
+    </section>
+
+    <!-- 4 -->
+    <section id="context">
+      <h2><span class="num">4</span>Context files &amp; the knowledge hierarchy</h2>
+      <p>A <b>context file</b> is authored markdown that a skill reasons over — a policy, a playbook, a schema, a glossary. It is curated knowledge, owned by domain experts, versioned like source. One context file can be referenced by many skills (author once, reuse everywhere).</p>
+      <p>The mistake to avoid is dumping every policy into the prompt — it blows the token budget and buries the signal. Instead, structure knowledge as a <b>hierarchy</b> and inject <b>only the matching slice</b> per request. The typical structure is a <b>root index</b> (a routing map of domains → skills → pointers) on top of an <b>L1–L5 taxonomy</b>:</p>
+      <table>
+        <tr><th>Level</th><th>Meaning</th><th>Holds</th></tr>
+        <tr><td><b>L1 — Domain</b></td><td>broadest business area</td><td>name, scope, the skills that serve it, pointers</td></tr>
+        <tr><td><b>L2 — Process group</b></td><td>a major area within the domain</td><td>a heading that groups related processes</td></tr>
+        <tr><td><b>L3 — Process</b></td><td><b>maps to exactly one skill</b></td><td>the smallest <i>routable</i> unit</td></tr>
+        <tr><td><b>L4 — Sub-process</b> <span class="muted">(optional)</span></td><td>grouping of activities</td><td>used only when an L3 is large</td></tr>
+        <tr><td><b>L5 — Activity</b></td><td>atomic task (verb + noun)</td><td>the <b>leaf</b> a request is matched against + a 1–2 line description</td></tr>
+      </table>
+      <h3>Example — one branch</h3>
+      <div class="tree"><b>L1</b> Domain        Widget Operations
+  <b>L2</b> Group       Widget Lifecycle
+    <b>L3</b> Process    Widget Provisioning   <span style="color:#94a3b8">→ skill: widget_ops</span>
+      <b>L5</b> Activity  Allocate widget pool  — reserve widgets for a team
+      <b>L5</b> Activity  Rotate credentials    — refresh integration keys</div>
+      <p>Each leaf carries its full path, so a vague request — <i>"how do I get widgets for my project?"</i> — matches <code>Allocate widget pool</code>, routes to <code>widget_ops</code>, and the harness injects <b>only</b> that branch.</p>
+      <h3>How to author it well</h3>
+      <ul>
+        <li>Write the <b>root index</b> first; keep it a routing table, not a knowledge dump.</li>
+        <li>Bind each <b>L3 to exactly one skill</b> — that binding is what makes it routable.</li>
+        <li>Write <b>descriptive L5 leaves</b> (verb-noun + a sentence) so informal language still matches.</li>
+        <li><b>Reuse</b> a context file across skills instead of copying it.</li>
+      </ul>
+      <p class="note warn"><b>Keep context and memory distinct.</b> Context is <i>authored</i> and versioned; <b>memory</b> is <i>learned</i> from past runs. Letting stale learned facts override authored policy is a classic source of an agent "going off-script."</p>
+    </section>
+
+    <!-- 5 -->
+    <section id="harness">
+      <h2><span class="num">5</span>What is the agent harness?</h2>
+      <p>The harness is the runtime that actually runs your skills. Given a request, it does six things:</p>
+      <ol class="list">
+        <li><b>Routes &amp; loads</b> — picks the right skill and loads its package + the matching context slice.</li>
+        <li><b>Runs</b> — drives the reason → act loop (the planner).</li>
+        <li><b>Provides capabilities</b> — tools, models, credentials, memory, etc., each behind a stable interface so it can be swapped.</li>
+        <li><b>Fires hooks</b> — at every lifecycle point, so governance can observe or gate.</li>
+        <li><b>Enforces hard gates</b> — sandbox, entitlement, approval — that nothing can bypass.</li>
+        <li><b>Records</b> — evidence and audit under a single trace.</li>
+      </ol>
+      <p>A useful way to picture how the harness arranges all this is as four layers. Trust <i>decreases</i> upward, so the lower layers are the ones that must never be skipped:</p>
+      <div class="layers">
+        <div class="lyr core"><b>Planner / reasoning core</b><span>decides <i>what</i> to do — flexible, general</span></div>
+        <div class="ar">▼</div>
+        <div class="lyr"><b>Capability boundaries</b><span>replaceable modules that <i>do</i> the work</span></div>
+        <div class="ar">▼</div>
+        <div class="lyr"><b>Lifecycle hooks</b><span>observe · gate · enrich · route</span></div>
+        <div class="ar">▼</div>
+        <div class="lyr gate"><b>Hard security gates</b><span>always enforced — cannot be bypassed</span></div>
+      </div>
+      <p>Two rules keep this honest: <b>business logic never lives in hooks</b>, and <b>security never lives in the LLM</b>. And crucially, the harness runs a skill the <b>same way</b> whether the request came from a chat, a schedule, or a queue — there is no second, less-governed path.</p>
+    </section>
+
+    <!-- 6 -->
+    <section id="capabilities">
+      <h2><span class="num">6</span>What capabilities must the harness have?</h2>
+      <p>This is the contract a harness owes your skills. Treat it as a checklist when evaluating or building a platform.</p>
+      <h3>Capability catalogue</h3>
+      <ul>
+        <li><b>Tool execution</b> — one uniform, logged, sandboxed path for every tool.</li>
+        <li><b>Model provider</b> — resolves a requested <i>tier</i> to a concrete model; swappable centrally.</li>
+        <li><b>Credential resolver + vault</b> — secrets supplied by name, never shown to the model or logs.</li>
+        <li><b>Policy / entitlement engine</b> — decides who may do what to which resource.</li>
+        <li><b>Evidence / audit</b> — records actions under a trace ID; one store for every entry point.</li>
+        <li><b>Memory &amp; learning</b> — durable recall; every write observable and prunable.</li>
+        <li><b>Approval / HITL</b> — pause for a human, resume with the decision in context.</li>
+        <li><b>Skill router / loader</b> — picks the skill and loads its full package, scoped correctly.</li>
+        <li><b>Scheduler &amp; queue</b> — autonomous runs that use the <i>same</i> capabilities and gates as chat.</li>
+        <li><b>Observability / diagnostics</b> — read-only views to prove the runtime matches its design.</li>
+      </ul>
+      <h3>Lifecycle hooks</h3>
+      <p>Hooks are how governance is added without editing the core. A capable harness exposes (at least) these events, and lets a hook be <b>scoped</b> to a specific skill and/or tool:</p>
+      <table>
+        <tr><th>Event</th><th>Fires</th><th>Can block?</th></tr>
+        <tr><td><b>before / after tool</b></td><td>around any tool call</td><td><span class="yes">before: yes</span> · <span class="no">after: no</span></td></tr>
+        <tr><td><b>before / after model</b></td><td>around an LLM call</td><td><span class="yes">before: yes</span></td></tr>
+        <tr><td><b>before / after step</b></td><td>around a workflow step</td><td><span class="yes">before: yes</span></td></tr>
+        <tr><td><b>on error</b></td><td>a tool/step throws</td><td><span class="no">compensation</span></td></tr>
+        <tr><td><b>approval resume</b></td><td>resuming a human-gated run</td><td><span class="yes">yes</span></td></tr>
+        <tr><td><b>schedule fire</b></td><td>a scheduled run</td><td><span class="yes">yes</span></td></tr>
+      </table>
+      <pre><span class="c"># a post-tool audit hook that fires ONLY for one tool, in ONE skill</span>
+post_tool:
+  - matcher: run_sql_query     <span class="c"># this tool…</span>
+    <span class="k">skills</span>: [fa_ap]            <span class="c"># …and only when fa_ap is active</span></pre>
+      <p>Each gating hook declares a <b>fail policy</b> — <code>closed</code> (a failure denies the action) or <code>open</code> (proceed with a warning). Security-relevant hooks should fail closed.</p>
+      <h3>Hard gates — the non-negotiables</h3>
+      <p>These run in the runtime regardless of what the planner or a hook decides: <b>sandbox</b> for code/shell, <b>path safety</b> on file writes, a <b>credential vault</b> that redacts secrets everywhere, <b>entitlement</b> as the upper bound on what a skill may touch, and <b>mandatory approval</b> where policy requires it. Hooks <i>augment</i> these; they never replace them.</p>
+      <p class="note"><b>Maturity model.</b> You don't need everything perfect on day one. Each capability matures through three stages: <b>Observe</b> (it runs and is logged) → <b>Gate</b> (hooks/policy can block it) → <b>Swap</b> (it sits behind an interface and can be replaced). A pragmatic order: make everything observable, gate the risky paths (tools, credentials, approvals), then make the high-value capabilities swappable.</p>
+    </section>
+
+    <!-- 7 -->
+    <section id="together">
+      <h2><span class="num">7</span>How it all runs — one request, end to end</h2>
+      <p>Here is a single request flowing through everything above. The same pipeline applies whether it arrived from a chat box, a cron schedule, or a work queue:</p>
+      <ol class="steps">
+        <li><b>Route</b> <span>— an identity signal (who/what) + a process signal (scoring the request against L5 leaves) pick the skill.</span></li>
+        <li><b>Load</b> <span>— the harness loads the skill package and injects only the matching context slice.</span></li>
+        <li><b>Plan</b> <span>— the reason→act loop decides which capability to call next.</span></li>
+        <li><b>Hook (pre)</b> <span>— scoped hooks may gate the action before it happens.</span></li>
+        <li><b>Hard gate</b> <span>— sandbox / entitlement / approval are enforced by the runtime.</span></li>
+        <li><b>Execute → Hook (post) → Evidence</b> <span>— the capability runs; post-hooks observe; the action is recorded.</span></li>
+        <li><b>HITL if needed → Respond</b> <span>— pause for a human on consequential actions, resume, then answer.</span></li>
+      </ol>
+      <p class="note"><b>One thread ties it together:</b> a single <code>trace_id</code> is created at the entry point and <b>inherited</b> through every step — route, plan, tool, hook, approval — so the whole run is one auditable story. A scheduled or queued run enters at step 1 with a service identity and flows through the exact same capabilities, hooks, and gates.</p>
+    </section>
+
+    <!-- 8 -->
+    <section id="apply">
+      <h2><span class="num">8</span>Apply it</h2>
+      <h3>Authoring a skill — the workflow</h3>
+      <ol class="list">
+        <li><b>Decompose</b> — state the job in one sentence; if it needs an "and," split it.</li>
+        <li><b>Define</b> — persona, execution mode, and the tools it may use (least privilege).</li>
+        <li><b>Add knowledge</b> — put policies/playbooks/schemas in <code>contexts/</code>; reference them.</li>
+        <li><b>Wire tools</b> — only what it genuinely needs; declare them in definition + manifest.</li>
+        <li><b>Govern</b> — encode approval thresholds; add scoped hooks for audit/gating.</li>
+        <li><b>Test &amp; package</b> — a happy-path and a "must refuse" smoke test; add the manifest + README.</li>
+      </ol>
+      <h3>Evaluating a harness — what to verify</h3>
+      <ul>
+        <li>A single <code>trace_id</code> <b>inherits</b> across chat → schedule → tool (never minted mid-run).</li>
+        <li>Secrets never appear in previews, logs, or the prompt.</li>
+        <li>Credential-bearing actions <b>fail closed</b> when required context is missing.</li>
+        <li>Turning hooks off restores identical baseline behaviour (they're additive).</li>
+        <li>Declared capabilities match the live runtime (no drift).</li>
+        <li>Scheduled / queued runs use the <b>same</b> gates and hooks as chat.</li>
+      </ul>
+      <p class="note"><b>In one line:</b> keep the reasoning core small and general; push <i>what an agent knows, can do, is allowed to do, and how it shows results</i> into portable <b>skills</b>; and run them on a <b>harness</b> that makes every capability observable, gateable, and swappable on top of security gates that can never be skipped.</p>
+      <div class="foot">Vendor-neutral reference guide · read alongside the longer playbook (<code>README.md</code>) in this folder.</div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+  // scrollspy: highlight the TOC entry for the section in view
+  const links=[...document.querySelectorAll('.toc a.tl')];
+  const map=new Map(links.map(a=>[a.getAttribute('href').slice(1),a]));
+  const obs=new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting){
+        links.forEach(l=>l.classList.remove('active'));
+        const a=map.get(e.target.id); if(a)a.classList.add('active');
+      }
+    });
+  },{rootMargin:"-45% 0px -50% 0px",threshold:0});
+  document.querySelectorAll('main section').forEach(s=>obs.observe(s));
+</script>
+</body>
+</html>

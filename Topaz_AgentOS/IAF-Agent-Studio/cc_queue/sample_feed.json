@@ -1,0 +1,29 @@
+[
+  {
+    "external_id": "FEED-ITOPS-0042",
+    "domain": "itops",
+    "entity_id": "prod-app-08",
+    "title": "Disk usage 88% on prod-app-08",
+    "description": "Mount /var/log reached 88% capacity on prod-app-08. Log rotation disabled. Growing at 2GB/hour. Action required before disk fills.",
+    "priority": "P2",
+    "source": "feeder"
+  },
+  {
+    "external_id": "FEED-ITOPS-0052",
+    "domain": "itops",
+    "entity_id": "prod-order-01",
+    "title": "High response time on prod-order-01 (avg 4.2s)",
+    "description": "Order service p99 latency spiked to 4200ms. Normal baseline is 180ms. Started at 14:05 UTC. DB connection pool exhaustion suspected.",
+    "priority": "P1",
+    "source": "feeder"
+  },
+  {
+    "external_id": "FEED-ITOPS-00612",
+    "domain": "itops",
+    "entity_id": "prod-batch-01",
+    "title": "Nightly ETL batch job failed — prod-batch-01",
+    "description": "Batch job etl_orders_daily failed at step 3/7 (transform_orders). Error: java.lang.OutOfMemoryError: GC overhead limit exceeded. 0/45000 records processed.",
+    "priority": "P2",
+    "source": "feeder"
+  }
+]

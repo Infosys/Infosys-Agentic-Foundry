@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI FinOps — IAF Agent Studio</title>
+    <!-- Unified Light/Dark theme — FOUC guard must run before first paint -->
+    <script>(function(){try{var m={hybrid:'light',light:'light',dark:'dark'},ls=window.localStorage;var v=m[ls.getItem('iaf_theme')]||m[ls.getItem('iaf_dashboard_theme')]||m[ls.getItem('iaf_workstreams_theme')]||m[ls.getItem('iaf-theme')];if(!v)v=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';var r=document.documentElement;r.setAttribute('data-theme',v);r.classList.add(v==='light'?'light-mode':'dark-mode');r.style.colorScheme=v;}catch(e){}})();</script>
+    <link rel="stylesheet" href="/static/theme.css">
+    <script src="/static/theme.js"></script>
+    <script src="/static/vendor/tailwind.min.js"></script>
+    <script defer src="/static/vendor/alpine.min.js"></script>
+    <script src="/static/vendor/chart.min.js"></script>
+    <style>
+        [x-cloak] { display: none !important; }
+        body.finops-page { background: var(--iaf-bg); color: var(--iaf-text); }
+        .finops-header {
+            border-bottom: 1px solid var(--iaf-border);
+            background: color-mix(in srgb, var(--iaf-bg) 92%, transparent);
+            backdrop-filter: blur(8px);
+        }
+        .finops-title { color: var(--iaf-text); }
+        .finops-muted { color: var(--iaf-text-muted); }
+        .finops-link { color: var(--iaf-text-muted); }
+        .finops-link:hover { color: var(--iaf-text); }
+        .finops-divider { color: var(--iaf-border); }
+        .card {
+            background: var(--iaf-surface-3);
+            border: 1px solid var(--iaf-border-soft);
+            border-radius: 12px;
+        }
+        .finops-control {
+            background: var(--iaf-surface-3);
+            border: 1px solid var(--iaf-border-soft);
+            color: var(--iaf-text);
+        }
+        .finops-control-muted { color: var(--iaf-text-muted); }
+        .finops-control-muted:hover { color: var(--iaf-text); }
+        .finops-period-group {
+            display: flex;
+            border: 1px solid var(--iaf-border-soft);
+            border-radius: 0.5rem;
+            background: var(--iaf-surface-3);
+            font-size: 12px;
+            overflow: visible;
+        }
+        .finops-period-group button {
+            position: relative;
+            z-index: 0;
+        }
+        .finops-period-btn { background: transparent; color: var(--iaf-text-muted); }
+        .finops-period-btn:hover { color: var(--iaf-text); }
+        .finops-period-active {
+            background: var(--iaf-accent) !important;
+            color: var(--iaf-accent-contrast) !important;
+        }
+        /* Period bar — :focus needed for Tab; parent must not clip rings (no overflow:hidden) */
+        .finops-period-group button:focus,
+        .finops-period-group button:focus-visible {
+            outline: 2px solid var(--iaf-accent-light);
+            outline-offset: 2px;
+            z-index: 2;
+            box-shadow: 0 0 0 4px color-mix(in srgb, var(--iaf-accent-light) 40%, transparent);
+        }
+        .finops-period-group .finops-period-active:focus,
+        .finops-period-group .finops-period-active:focus-visible {
+            outline-color: var(--iaf-accent-contrast);
+            box-shadow: 0 0 0 2px var(--iaf-accent),
+                        0 0 0 4px color-mix(in srgb, var(--iaf-accent-light) 50%, transparent);
+        }
+        /* Keyboard focus — native <select> uses :focus on Tab, not always :focus-visible */
+        .finops-page a:focus-visible {
+            outline: 2px solid var(--iaf-accent-light);
+            outline-offset: 2px;
+            border-radius: 4px;
+        }
+        .finops-page .finops-btn:focus,
+        .finops-page .finops-btn:focus-visible {
+            outline: none;
+            border-color: var(--iaf-accent-light) !important;
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--iaf-accent-light) 45%, transparent);
+        }
+        .finops-page select:focus,
+        .finops-page select:focus-visible {
+            outline: none;
+            border-color: var(--iaf-accent-light) !important;
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--iaf-accent-light) 45%, transparent);
+        }
+        .finops-filter-wrap { position: relative; }
+        .finops-filter-panel {
+            position: absolute;
+            right: 0;
+            top: calc(100% + 8px);
+            z-index: 40;
+            width: min(360px, 80vw);
+            padding: 14px;
+            border-radius: 12px;
+            background: var(--iaf-surface);
+            border: 1px solid var(--iaf-border);
+            box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+        }
+        .finops-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            border-radius: 999px;
+            border: 1px solid var(--iaf-border-soft);
+            background: var(--iaf-surface);
+            color: var(--iaf-text);
+            font-size: 12px;
+            padding: 4px 8px 4px 10px;
+        }
+        .finops-chip button {
+            border: 0;
+            background: transparent;
+            color: var(--iaf-text-muted);
+            cursor: pointer;
+            line-height: 1;
+            padding: 0 2px;
+        }
+        .finops-metric {
+            text-align: left;
+            border: 0;
+            background: transparent;
+            cursor: pointer;
+            border-radius: 10px;
+            padding: 8px 10px;
+        }
+        .finops-metric:hover { background: color-mix(in srgb, var(--iaf-surface-2) 70%, transparent); }
+        .finops-icon-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+            border: 1px solid var(--iaf-border-soft);
+            background: var(--iaf-surface-3);
+            color: var(--iaf-text);
+            cursor: pointer;
+        }
+        .finops-icon-btn svg { width: 16px; height: 16px; }
+        .finops-icon-btn:disabled { opacity: 0.4; cursor: default; }
+        .finops-live-on { border-color: color-mix(in srgb, #34d399 55%, var(--iaf-border)); }
+        .finops-row {
+            background: var(--iaf-surface);
+            border-radius: 0.5rem;
+        }
+        .finops-row:hover { background: color-mix(in srgb, var(--iaf-surface-2) 35%, var(--iaf-surface)); }
+        .finops-bar-track { background: var(--iaf-surface-2); }
+        .finops-table-head { color: var(--iaf-text-muted); border-color: var(--iaf-border-soft); }
+        .finops-table-row { border-color: color-mix(in srgb, var(--iaf-border-soft) 50%, transparent); }
+        .finops-table-row:hover td { background: color-mix(in srgb, var(--iaf-surface-2) 35%, transparent); }
+        html[data-theme="light"] .skeleton {
+            background: linear-gradient(90deg, #e8eefc 25%, #dbe4f5 50%, #e8eefc 75%);
+        }
+        .scroll-thin::-webkit-scrollbar { width: 4px; height: 4px; }
+        .scroll-thin::-webkit-scrollbar-track { background: transparent; }
+        .scroll-thin::-webkit-scrollbar-thumb { background: var(--iaf-scroll-thumb); border-radius: 3px; }
+        @keyframes fade-in { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
+        .fade-in { animation: fade-in .2s ease-out; }
+        @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.35} }
+        .pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+        @keyframes shimmer {
+            0%   { background-position: -200% 0 }
+            100% { background-position:  200% 0 }
+        }
+        .skeleton {
+            background: linear-gradient(90deg, var(--iaf-surface-2) 25%, var(--iaf-border) 50%, var(--iaf-surface-2) 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            border-radius: 6px;
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        dark: { 950:'#080c14', 900:'#0f172a', 800:'#1e293b', 700:'#334155' },
+                        accent: { DEFAULT:'#6366f1', light:'#818cf8' },
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Auth: auto-inject Bearer token on all API calls -->
+    <script>
+    (function() {
+        // SEC-6: httponly iaf_access_token cookie sent automatically; clean up stale localStorage
+        localStorage.removeItem('iaf_access_token');
+        localStorage.removeItem('iaf_user');
+        const _orig = window.fetch;
+        window.fetch = async function(input, init = {}) {
+            const url = typeof input === 'string' ? input : input?.url;
+            const isApi = url && (url.startsWith('/') || url.startsWith(location.origin));
+            const isAuth = url && (url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/refresh'));
+            if (isApi) init.credentials = init.credentials || 'include';
+            const resp = await _orig.call(this, input, init);
+            if (resp.status === 401 && !isAuth) {
+                // Refresh is an httpOnly COOKIE scoped to /auth/refresh — not a token in
+                // localStorage, and not under /api. This previously POSTed a
+                // localStorage refresh token (which login never sets) to the
+                // non-existent api-prefixed refresh route, so refresh silently never worked
+                // here. Mirrors the working implementation in index.html.
+                try {
+                    const r = await _orig('/auth/refresh', { method: 'POST', credentials: 'include' });
+                    if (r.ok) { return _orig.call(this, input, init); }
+                    else { window.location.href = '/login'; }
+                } catch {}
+            }
+            return resp;
+        };
+    })();
+    </script>
+</head>
+<body class="min-h-screen font-sans finops-page" x-data="finops()" x-init="init()">
+
+<!-- ── Top bar ─────────────────────────────────────────────────────────── -->
+<header class="finops-header sticky top-0 z-30 px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+        <a href="/dashboard/v2" class="finops-link transition text-sm">← Dashboard</a>
+        <span class="finops-divider">|</span>
+        <h1 class="finops-title font-semibold text-lg tracking-tight">AI FinOps</h1>
+        <span class="text-[11px] px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 font-medium">Cost Intelligence</span>
+    </div>
+    <div class="flex items-center gap-3">
+        <!-- Theme switcher -->
+        <button type="button" data-theme-toggle class="iaf-theme-toggle" aria-label="Toggle light/dark theme">
+            <svg class="iaf-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+            <svg class="iaf-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>
+        </button>
+        <!-- Filters, export, live refresh -->
+        <div class="finops-filter-wrap" @click.outside="filterOpen = false">
+            <button type="button" class="finops-btn px-3 py-1.5 rounded-lg finops-control text-[12px] inline-flex items-center gap-1.5"
+                    @click="openFilters()"
+                    :aria-expanded="filterOpen ? 'true' : 'false'"
+                    aria-label="Open filters">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 5h16l-6 7v6l-4 2v-8L4 5z"/></svg>
+                Filters
+                <span class="text-[10px] px-1.5 rounded-full bg-accent/20 text-accent" x-show="filterCount()" x-text="filterCount()"></span>
+            </button>
+            <div class="finops-filter-panel" x-show="filterOpen" x-cloak>
+                <div class="text-[11px] uppercase tracking-wide finops-muted mb-2">Date range</div>
+                <div class="flex flex-wrap gap-1.5 mb-3">
+                    <template x-for="opt in periodOptions" :key="opt.days">
+                        <button type="button"
+                                @click="draftRange = 'preset'; draftPeriod = opt.days"
+                                :class="draftRange === 'preset' && draftPeriod === opt.days ? 'finops-period-active' : 'finops-period-btn'"
+                                class="px-2.5 py-1 rounded-md border border-[var(--iaf-border-soft)] text-[12px]"
+                                x-text="opt.label"></button>
+                    </template>
+                    <button type="button"
+                            @click="draftRange = 'custom'"
+                            :class="draftRange === 'custom' ? 'finops-period-active' : 'finops-period-btn'"
+                            class="px-2.5 py-1 rounded-md border border-[var(--iaf-border-soft)] text-[12px]">Custom</button>
+                </div>
+                <div class="grid grid-cols-2 gap-2 mb-3" x-show="draftRange === 'custom'">
+                    <label class="text-[11px] finops-muted">From
+                        <input type="date" x-model="draftStart" class="mt-1 w-full finops-control rounded-md px-2 py-1 text-[12px]">
+                    </label>
+                    <label class="text-[11px] finops-muted">To
+                        <input type="date" x-model="draftEnd" class="mt-1 w-full finops-control rounded-md px-2 py-1 text-[12px]">
+                    </label>
+                </div>
+                <label class="block text-[11px] uppercase tracking-wide finops-muted mb-1">Tenant</label>
+                <select x-model="draftTenant" aria-label="Filter by tenant" title="Filter by tenant"
+                        class="text-[12px] finops-control rounded-lg px-3 py-1.5 w-full mb-3">
+                    <option value="">All tenants</option>
+                    <template x-for="t in tenants" :key="t">
+                        <option :value="t" x-text="t"></option>
+                    </template>
+                </select>
+                <div class="flex justify-end gap-2">
+                    <button type="button" class="finops-btn text-[12px] px-3 py-1.5 finops-muted" @click="filterOpen = false">Cancel</button>
+                    <button type="button" class="finops-btn text-[12px] px-3 py-1.5 rounded-lg bg-accent text-white" @click="applyFilters()">Apply</button>
+                </div>
+            </div>
+        </div>
+        <button type="button" class="finops-btn px-3 py-1.5 rounded-lg finops-control text-[12px]"
+                @click="exportCsv()" aria-label="Export CSV">Export CSV</button>
+        <button type="button"
+                class="finops-btn px-2.5 py-1.5 rounded-lg finops-control text-[12px] inline-flex items-center gap-1.5"
+                :class="autoRefresh ? 'finops-live-on' : ''"
+                @click="toggleAutoRefresh()"
+                :aria-pressed="autoRefresh ? 'true' : 'false'"
+                title="Auto-refresh every 60 seconds"
+                aria-label="Auto-refresh every 60 seconds">
+            <span class="w-2 h-2 rounded-full" :class="autoRefresh ? 'bg-emerald-400 pulse-dot' : 'bg-gray-500'"></span>
+            <span x-text="autoRefresh ? '60s' : 'Live'"></span>
+        </button>
+        <button type="button" @click="refresh()" :disabled="loading"
+                class="finops-icon-btn" title="Refresh" aria-label="Refresh">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :class="loading ? 'animate-spin' : ''">
+                <path d="M21 12a9 9 0 1 1-2.2-5.9"/>
+                <path d="M21 3v6h-6"/>
+            </svg>
+        </button>
+        <div data-session-controls></div>
+    </div>
+</header>
+
+<main class="max-w-[1400px] mx-auto px-6 py-6 space-y-6">
+
+    <div class="flex flex-wrap gap-2" x-show="activeChips().length" x-cloak>
+        <template x-for="chip in activeChips()" :key="chip.id">
+            <span class="finops-chip">
+                <span x-text="chip.label"></span>
+                <button type="button" @click="clearChip(chip)" :aria-label="'Remove ' + chip.label">×</button>
+            </span>
+        </template>
+    </div>
+
+    <!-- ── Summary ─────────────────────────────────────────────────────── -->
+    <section class="card p-5 fade-in" aria-label="Cost summary">
+        <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
+            <button type="button" class="finops-metric" @click="scrollTo('finops-trend')" title="View daily cost trend">
+                <div class="text-[11px] uppercase tracking-wide finops-muted mb-1">Total cost</div>
+                <div class="text-3xl font-bold font-mono"
+                     :class="(summary?.total_cost_usd||0) > 20 ? 'text-red-400' : (summary?.total_cost_usd||0) > 5 ? 'text-yellow-400' : 'text-emerald-400'">
+                    <span x-show="loading" class="skeleton inline-block w-28 h-8"></span>
+                    <span x-show="!loading" x-text="summary ? '$' + Number(summary.total_cost_usd).toFixed(4) : '—'"></span>
+                </div>
+                <div class="text-[11px] finops-muted mt-1" x-text="periodLabel() + ' · view trend'"></div>
+            </button>
+            <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2 flex-1">
+                <button type="button" class="finops-metric" @click="scrollTo('finops-purpose')" title="View token attribution">
+                    <div class="text-[10px] uppercase tracking-wide finops-muted">Prompt tokens</div>
+                    <div class="text-lg font-semibold font-mono text-blue-400" x-text="tokenLabel(summary?.total_prompt_tokens)"></div>
+                </button>
+                <button type="button" class="finops-metric" @click="scrollTo('finops-purpose')" title="View token attribution">
+                    <div class="text-[10px] uppercase tracking-wide finops-muted">Completion tokens</div>
+                    <div class="text-lg font-semibold font-mono text-blue-400" x-text="tokenLabel(summary?.total_completion_tokens)"></div>
+                </button>
+                <button type="button" class="finops-metric" @click="scrollTo('finops-skills')" title="View cost by skill">
+                    <div class="text-[10px] uppercase tracking-wide finops-muted">Requests</div>
+                    <div class="text-lg font-semibold font-mono finops-title" x-text="summary ? Number(summary.total_requests||0).toLocaleString() : '—'"></div>
+                </button>
+                <button type="button" class="finops-metric" @click="scrollTo('finops-models')" title="View cost by model">
+                    <div class="text-[10px] uppercase tracking-wide finops-muted">Avg / request</div>
+                    <div class="text-lg font-semibold font-mono"
+                         :class="(summary?.avg_cost_per_request||0) > 0.05 ? 'text-red-400' : (summary?.avg_cost_per_request||0) > 0.01 ? 'text-yellow-400' : 'text-emerald-400'"
+                         x-text="summary ? '$' + Number(summary.avg_cost_per_request).toFixed(5) : '—'"></div>
+                </button>
+                <div class="finops-metric" style="cursor:default">
+                    <div class="text-[10px] uppercase tracking-wide finops-muted">Period</div>
+                    <div class="text-lg font-semibold font-mono finops-title" x-text="summary ? (summary.period_days + 'd') : periodLabel()"></div>
+                    <div class="text-[10px] finops-muted">period_days</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ── Daily cost trend ─────────────────────────────────────────────── -->
+    <div class="card p-5 fade-in" id="finops-trend">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-sm font-semibold finops-title">Daily Cost Trend</h2>
+            <span class="text-[11px] finops-muted" x-text="periodLabel()"></span>
+        </div>
+        <div x-show="loading" class="skeleton h-48 rounded"></div>
+        <div x-show="!loading && (!trends?.days?.length)" class="text-center py-12 finops-muted text-sm">No data for this period</div>
+        <div x-show="!loading && trends?.days?.length" class="relative h-48">
+            <canvas id="trendChart"></canvas>
+        </div>
+    </div>
+
+    <!-- ── By Purpose + By Model ────────────────────────────────────────── -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 fade-in">
+
+        <!-- By Purpose -->
+        <div class="card p-5" id="finops-purpose">
+            <h2 class="text-sm font-semibold finops-title mb-4">Token Attribution by Purpose</h2>
+            <div x-show="loading" class="space-y-2">
+                <template x-for="i in [1,2,3,4]" :key="i"><div class="skeleton h-6 rounded"></div></template>
+            </div>
+            <div x-show="!loading && !byPurpose?.purposes?.length" class="text-center py-8 finops-muted text-sm">No purpose data yet</div>
+            <div x-show="!loading && byPurpose?.purposes?.length" class="space-y-2">
+                <!-- Stacked bar -->
+                <div class="flex h-4 rounded overflow-hidden gap-px mb-3">
+                    <template x-for="p in byPurpose?.purposes || []" :key="p.purpose">
+                        <div :style="`width:${p.pct_cost}%;background:${purposeColor(p.purpose)}`"
+                             :title="`${p.purpose}: ${p.pct_cost}%`"
+                             class="h-full min-w-[2px]"></div>
+                    </template>
+                </div>
+                <template x-for="p in byPurpose?.purposes || []" :key="p.purpose">
+                    <div class="flex items-center gap-2 text-[12px]">
+                        <span class="w-2.5 h-2.5 rounded-sm flex-shrink-0" :style="`background:${purposeColor(p.purpose)}`"></span>
+                        <span class="finops-title w-32 truncate" x-text="p.purpose.replace(/_/g,' ')"></span>
+                        <div class="flex-1 h-1.5 finops-bar-track rounded overflow-hidden">
+                            <div class="h-full rounded" :style="`width:${p.pct_cost}%;background:${purposeColor(p.purpose)}80`"></div>
+                        </div>
+                        <span class="finops-muted w-8 text-right" x-text="p.pct_cost+'%'"></span>
+                        <span class="text-emerald-400 w-16 text-right font-mono" x-text="'$'+Number(p.cost_usd).toFixed(4)"></span>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- By Model -->
+        <div class="card p-5" id="finops-models">
+            <h2 class="text-sm font-semibold finops-title mb-4">Cost by Model</h2>
+            <div x-show="loading" class="space-y-2">
+                <template x-for="i in [1,2,3]" :key="i"><div class="skeleton h-8 rounded"></div></template>
+            </div>
+            <div x-show="!loading && !byModel?.models?.length" class="text-center py-8 finops-muted text-sm">No model data yet</div>
+            <div x-show="!loading && byModel?.models?.length" class="space-y-2">
+                <template x-for="m in byModel?.models || []" :key="m.model">
+                    <div class="flex items-center gap-3 text-[12px] finops-row px-3 py-2">
+                        <div class="flex-1">
+                            <div class="finops-title font-mono text-[11px]" x-text="m.model"></div>
+                            <div class="finops-muted text-[10px]" x-text="(m.calls||0).toLocaleString() + ' calls  ·  ' + (((m.prompt_tokens||0)+(m.completion_tokens||0))/1000).toFixed(1) + 'K tokens'"></div>
+                        </div>
+                        <div class="text-right">
+                            <div class="font-mono font-semibold text-emerald-400" x-text="'$'+Number(m.cost_usd).toFixed(4)"></div>
+                            <div class="finops-muted text-[10px]" x-text="m.pct_cost+'%'"></div>
+                        </div>
+                        <div class="w-16 h-1.5 finops-bar-track rounded overflow-hidden">
+                            <div class="h-full bg-emerald-500/40 rounded" :style="`width:${m.pct_cost}%`"></div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── By Skill + Top Users ─────────────────────────────────────────── -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 fade-in">
+
+        <!-- By Skill -->
+        <div class="card p-5" id="finops-skills">
+            <h2 class="text-sm font-semibold finops-title mb-4">Cost by Skill</h2>
+            <div x-show="loading" class="space-y-2">
+                <template x-for="i in [1,2,3,4]" :key="i"><div class="skeleton h-8 rounded"></div></template>
+            </div>
+            <div x-show="!loading && !bySkill?.skills?.length" class="text-center py-8 finops-muted text-sm">No skill data yet</div>
+            <div x-show="!loading && bySkill?.skills?.length" class="overflow-x-auto scroll-thin">
+                <table class="w-full text-[12px]">
+                    <thead>
+                        <tr class="text-left finops-table-head border-b">
+                            <th class="pb-2 font-normal">Skill</th>
+                            <th class="pb-2 font-normal text-right">Requests</th>
+                            <th class="pb-2 font-normal text-right">Cost</th>
+                            <th class="pb-2 font-normal text-right">Avg/Req</th>
+                            <th class="pb-2 font-normal text-right">Share</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="s in bySkill?.skills || []" :key="s.skill">
+                            <tr class="border-b finops-table-row transition">
+                                <td class="py-2 finops-title truncate max-w-[140px]" x-text="skillLabel(s.skill)"></td>
+                                <td class="py-2 text-right finops-muted font-mono" x-text="(s.requests||0).toLocaleString()"></td>
+                                <td class="py-2 text-right font-mono text-emerald-400" x-text="'$'+Number(s.cost_usd).toFixed(4)"></td>
+                                <td class="py-2 text-right font-mono finops-muted" x-text="'$'+Number(s.avg_cost||0).toFixed(5)"></td>
+                                <td class="py-2 text-right finops-muted" x-text="(s.pct_cost||0)+'%'"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Top Users -->
+        <div class="card p-5">
+            <h2 class="text-sm font-semibold finops-title mb-4">Top Users by Cost</h2>
+            <div x-show="loading" class="space-y-2">
+                <template x-for="i in [1,2,3,4]" :key="i"><div class="skeleton h-8 rounded"></div></template>
+            </div>
+            <div x-show="!loading && !byUser?.users?.length" class="text-center py-8 finops-muted text-sm">No user data yet</div>
+            <div x-show="!loading && byUser?.users?.length" class="space-y-1.5">
+                <template x-for="(u, idx) in byUser?.users || []" :key="u.user_id">
+                    <div class="flex items-center gap-3 text-[12px] finops-row px-3 py-2">
+                        <span class="finops-muted w-5 text-center font-mono text-[10px]" x-text="idx+1"></span>
+                        <div class="flex-1 min-w-0">
+                            <div class="finops-title truncate" x-text="u.user_id"></div>
+                            <div class="finops-muted text-[10px]" x-text="(u.requests||0).toLocaleString() + ' requests'"></div>
+                        </div>
+                        <div class="text-right">
+                            <div class="font-mono font-semibold"
+                                 :class="(u.cost_usd||0) > 5 ? 'text-red-400' : (u.cost_usd||0) > 1 ? 'text-yellow-400' : 'text-emerald-400'"
+                                 x-text="'$'+Number(u.cost_usd).toFixed(4)"></div>
+                            <div class="finops-muted text-[10px]"
+                                 x-text="(((u.prompt_tokens||0)+(u.completion_tokens||0))/1000).toFixed(1) + 'K tokens'"></div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Optimization Insights ────────────────────────────────────────── -->
+    <div class="card p-5 fade-in">
+        <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-2">
+                <h2 class="text-sm font-semibold finops-title">Optimization Insights</h2>
+                <span class="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400"
+                      x-show="insights && !insightsLoading"
+                      x-text="insights?.insights?.length ? insights.insights.length + ' finding' + (insights.insights.length > 1 ? 's' : '') : 'All good'"></span>
+            </div>
+            <button @click="fetchAll()"
+                    :disabled="insightsLoading"
+                    class="finops-btn text-[12px] px-3 py-1.5 rounded-lg finops-control finops-control-muted hover:text-[var(--iaf-text)] transition disabled:opacity-40">
+                <span x-show="!insightsLoading">↻ Re-analyse</span>
+                <span x-show="insightsLoading" class="animate-pulse">Analysing…</span>
+            </button>
+        </div>
+
+        <!-- Loading -->
+        <div x-show="insightsLoading" class="space-y-3">
+            <template x-for="i in [1,2]" :key="i"><div class="skeleton h-16 rounded-lg"></div></template>
+        </div>
+
+        <!-- All good -->
+        <div x-show="!insightsLoading && insights && !insights.insights?.length"
+             class="flex items-center gap-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-4 py-3">
+            <span class="text-emerald-400 text-xl">✓</span>
+            <div>
+                <div class="text-emerald-300 font-medium text-sm">No optimization opportunities detected</div>
+                <div class="text-emerald-700 text-[11px] mt-0.5">All thresholds are within normal range for this period.</div>
+            </div>
+        </div>
+
+        <!-- Insight cards -->
+        <div x-show="!insightsLoading && insights?.insights?.length" class="space-y-3">
+            <template x-for="insight in insights?.insights || []" :key="insight.rule">
+                <div class="rounded-lg border px-4 py-3 flex gap-4"
+                     :class="insight.severity === 'warning' ? 'border-yellow-500/25 bg-yellow-500/5' : 'border-blue-500/25 bg-blue-500/5'">
+                    <div class="text-lg mt-0.5 flex-shrink-0"
+                         :class="insight.severity === 'warning' ? 'text-yellow-400' : 'text-blue-400'"
+                         x-text="insight.severity === 'warning' ? '⚠' : 'ℹ'"></div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="font-medium text-sm"
+                                 :class="insight.severity === 'warning' ? 'text-yellow-200' : 'text-blue-200'"
+                                 x-text="insight.title"></div>
+                            <div x-show="insight.saving_usd_per_week > 0"
+                                 class="flex-shrink-0 text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 font-medium whitespace-nowrap"
+                                 x-text="'Save ~$' + Number(insight.saving_usd_per_week).toFixed(3) + '/wk'"></div>
+                        </div>
+                        <div class="finops-muted text-[12px] mt-1" x-text="insight.detail"></div>
+                        <div class="flex items-center gap-1.5 mt-2 text-[11px]">
+                            <span class="finops-muted">Recommendation:</span>
+                            <span class="finops-title" x-text="insight.recommendation"></span>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Total potential saving -->
+            <div class="flex justify-end pt-1">
+                <div class="text-[12px] finops-muted">
+                    Total potential saving:
+                    <span class="text-emerald-400 font-semibold font-mono ml-1"
+                          x-text="'$' + (insights?.insights || []).reduce((s,i) => s + (i.saving_usd_per_week||0), 0).toFixed(3) + ' / week'"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</main>
+
+<script>
+function finops() {
+    return {
+        period: 7,
+        rangeMode: 'preset',
+        dateStart: '',
+        dateEnd: '',
+        tenantFilter: '',
+        draftPeriod: 7,
+        draftRange: 'preset',
+        draftStart: '',
+        draftEnd: '',
+        draftTenant: '',
+        filterOpen: false,
+        autoRefresh: false,
+        periodOptions: [
+            { days: 1, label: 'Today' },
+            { days: 7, label: '7d' },
+            { days: 30, label: '30d' },
+            { days: 90, label: '90d' },
+        ],
+        tenants: [],
+        loading: false,
+        insightsLoading: false,
+        summary: null,
+        trends: null,
+        byPurpose: null,
+        bySkill: null,
+        byModel: null,
+        byUser: null,
+        insights: null,
+        _chart: null,
+        _fetching: false,
+        _autoTimer: null,
+
+        async init() {
+            window.addEventListener('iaf:themechange', () => this.renderChart());
+            await this.fetchTenants();
+            await this.fetchAll();
+        },
+
+        _isLightTheme() {
+            return (window.IAFTheme && window.IAFTheme.get() === 'light') ||
+                document.documentElement.getAttribute('data-theme') === 'light';
+        },
+
+        _chartTheme() {
+            const light = this._isLightTheme();
+            return {
+                text: light ? '#475569' : '#94a3b8',
+                title: light ? '#172033' : '#e2e8f0',
+                grid: light ? 'rgba(100,116,139,0.16)' : 'rgba(255,255,255,0.04)',
+                tooltipBg: light ? '#ffffff' : '#1e293b',
+                tooltipBorder: light ? '#d5deeb' : '#334155',
+            };
+        },
+
+        async fetchTenants() {
+            try {
+                const r = await fetch('/api/finops/tenants');
+                if (r.ok) {
+                    const d = await r.json();
+                    this.tenants = Array.isArray(d.tenants) ? d.tenants : [];
+                }
+            } catch (e) { console.error('FinOps tenants fetch error', e); }
+        },
+
+        setPeriod(p) {
+            if (this.rangeMode === 'preset' && this.period === p) return;
+            this.rangeMode = 'preset';
+            this.period = p;
+            this.dateStart = '';
+            this.dateEnd = '';
+            this.fetchAll();
+        },
+
+        refresh() {
+            this.tenantFilter = '';
+            this.draftTenant = '';
+            this.fetchAll();
+        },
+
+        openFilters() {
+            if (!this.filterOpen) {
+                this.draftPeriod = this.period;
+                this.draftRange = this.rangeMode;
+                this.draftStart = this.dateStart;
+                this.draftEnd = this.dateEnd;
+                this.draftTenant = this.tenantFilter;
+            }
+            this.filterOpen = !this.filterOpen;
+        },
+
+        queryParams() {
+            const params = new URLSearchParams();
+            if (this.rangeMode === 'custom' && this.dateStart && this.dateEnd) {
+                params.set('start', this.dateStart);
+                params.set('end', this.dateEnd);
+            } else {
+                params.set('period', String(this.period || 7));
+            }
+            if (this.tenantFilter) params.set('tenant_id', this.tenantFilter);
+            return params.toString();
+        },
+
+        periodLabel() {
+            if (this.rangeMode === 'custom' && this.dateStart && this.dateEnd) {
+                return this.dateStart + ' – ' + this.dateEnd;
+            }
+            const opt = this.periodOptions.find(o => o.days === this.period);
+            return opt ? opt.label : (this.period + 'd');
+        },
+
+        filterCount() {
+            let n = 1;
+            if (this.tenantFilter) n += 1;
+            return n;
+        },
+
+        activeChips() {
+            const chips = [{ id: 'range', label: this.periodLabel() }];
+            if (this.tenantFilter) chips.push({ id: 'tenant', label: 'Tenant: ' + this.tenantFilter });
+            return chips;
+        },
+
+        clearChip(chip) {
+            if (chip.id === 'tenant') {
+                this.tenantFilter = '';
+                this.draftTenant = '';
+                this.fetchAll();
+                return;
+            }
+            this.setPeriod(7);
+        },
+
+        applyFilters() {
+            if (this.draftRange === 'custom') {
+                if (!this.draftStart || !this.draftEnd) return;
+                this.rangeMode = 'custom';
+                this.dateStart = this.draftStart;
+                this.dateEnd = this.draftEnd;
+            } else {
+                this.rangeMode = 'preset';
+                this.period = this.draftPeriod || 7;
+                this.dateStart = '';
+                this.dateEnd = '';
+            }
+            this.tenantFilter = this.draftTenant || '';
+            this.filterOpen = false;
+            this.fetchAll();
+        },
+
+        toggleAutoRefresh() {
+            this.autoRefresh = !this.autoRefresh;
+            if (this._autoTimer) {
+                clearInterval(this._autoTimer);
+                this._autoTimer = null;
+            }
+            if (this.autoRefresh) {
+                this._autoTimer = setInterval(() => {
+                    if (!this.loading) this.fetchAll();
+                }, 60000);
+            }
+        },
+
+        skillLabel(name) {
+            const label = String(name || '').trim();
+            return label || 'Unattributed';
+        },
+
+        tokenLabel(value) {
+            if (value == null || !this.summary) return '—';
+            const n = Number(value) || 0;
+            if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+            return n.toLocaleString();
+        },
+
+        scrollTo(id) {
+            const el = document.getElementById(id);
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        },
+
+        exportCsv() {
+            const s = this.summary || {};
+            const rows = [
+                ['section', 'name', 'requests', 'cost_usd', 'avg_cost', 'share_pct', 'prompt_tokens', 'completion_tokens'],
+                ['summary', 'total', s.total_requests || 0, s.total_cost_usd || 0, s.avg_cost_per_request || 0, '', s.total_prompt_tokens || 0, s.total_completion_tokens || 0],
+            ];
+            (this.bySkill?.skills || []).forEach(sk => {
+                rows.push(['skill', this.skillLabel(sk.skill), sk.requests || 0, sk.cost_usd || 0, sk.avg_cost || 0, sk.pct_cost || 0, '', '']);
+            });
+            (this.byModel?.models || []).forEach(m => {
+                rows.push(['model', m.model, m.calls || 0, m.cost_usd || 0, '', m.pct_cost || 0, m.prompt_tokens || 0, m.completion_tokens || 0]);
+            });
+            (this.byUser?.users || []).forEach(u => {
+                rows.push(['user', u.user_id, u.requests || 0, u.cost_usd || 0, '', '', u.prompt_tokens || 0, u.completion_tokens || 0]);
+            });
+            (this.trends?.days || []).forEach(d => {
+                rows.push(['day', d.date, d.requests || 0, d.cost_usd || 0, '', '', d.prompt_tokens || 0, d.completion_tokens || 0]);
+            });
+            const csv = rows.map(r => r.map(cell => {
+                const raw = String(cell ?? '');
+                const safe = typeof cell === 'string' && /^[\t\r=+\-@]/.test(raw) ? "'" + raw : raw;
+                return /[",\n]/.test(safe) ? '"' + safe.replace(/"/g, '""') + '"' : safe;
+            }).join(',')).join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'finops-report.csv';
+            a.click();
+            URL.revokeObjectURL(a.href);
+        },
+
+        async fetchAll() {
+            if (this._fetching) return;
+            this._fetching = true;
+            this.loading = true;
+            this.insightsLoading = true;
+            if (this._chart) { this._chart.destroy(); this._chart = null; }
+            try {
+                const res = await fetch('/api/finops/dashboard?' + this.queryParams());
+                const data = await res.json();
+                this.summary = data.summary || null;
+                this.trends = data.trends || { days: [] };
+                this.byPurpose = { purposes: data.purposes || [] };
+                this.byModel = { models: data.models || [] };
+                this.bySkill = { skills: data.skills || [] };
+                this.byUser = { users: data.users || [] };
+                this.insights = { insights: data.insights || [] };
+            } catch (e) { console.error('FinOps fetch error', e); }
+            finally {
+                this.loading = false;
+                this.insightsLoading = false;
+                this._fetching = false;
+            }
+            await this.$nextTick();
+            this.renderChart();
+        },
+
+        renderChart(attempt) {
+            const days = this.trends?.days || [];
+            const canvas = document.getElementById('trendChart');
+            if (!canvas || !days.length) return;
+
+            // Poll until the canvas container has layout dimensions.
+            // x-show uses display:none which gives 0×0 — keep retrying with rAF.
+            const n = attempt || 0;
+            if (!canvas.offsetWidth || !canvas.offsetHeight) {
+                if (n < 20) requestAnimationFrame(() => this.renderChart(n + 1));
+                return;
+            }
+
+            if (this._chart) { this._chart.destroy(); this._chart = null; }
+
+            const theme = this._chartTheme();
+            this._chart = new Chart(canvas, {
+                type: 'bar',
+                data: {
+                    labels: days.map(d => d.date),
+                    datasets: [{
+                        label: 'Cost (USD)',
+                        data: days.map(d => d.cost_usd),
+                        backgroundColor: days.map(d =>
+                            d.cost_usd > 5 ? 'rgba(248,113,113,0.7)' :
+                            d.cost_usd > 1 ? 'rgba(251,191,36,0.7)' : 'rgba(52,211,153,0.7)'
+                        ),
+                        borderRadius: 4,
+                        borderSkipped: false,
+                    }]
+                },
+                options: {
+                    animation: false,
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    color: theme.text,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                title: (items) => items[0].label,
+                                label: (item) => {
+                                    const d = days[item.dataIndex];
+                                    return [
+                                        ` Cost: $${Number(d.cost_usd).toFixed(4)}`,
+                                        ` Requests: ${d.requests}`,
+                                        ` Tokens: ${((d.prompt_tokens+d.completion_tokens)/1000).toFixed(1)}K`,
+                                    ];
+                                }
+                            },
+                            backgroundColor: theme.tooltipBg,
+                            borderColor: theme.tooltipBorder,
+                            borderWidth: 1,
+                            titleColor: theme.title,
+                            bodyColor: theme.text,
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: theme.grid },
+                            ticks: { color: theme.text, font: { size: 10 } },
+                        },
+                        y: {
+                            grid: { color: theme.grid },
+                            ticks: {
+                                color: theme.text,
+                                font: { size: 10 },
+                                callback: v => '$' + Number(v).toFixed(3)
+                            },
+                        }
+                    }
+                }
+            });
+        },
+
+        purposeColor(purpose) {
+            const palette = {
+                agent: '#3b82f6', router: '#8b5cf6',
+                memory: '#10b981', memory_summary: '#10b981', memory_analysis: '#059669',
+                planner: '#f59e0b', knowledge: '#06b6d4', knowledge_query: '#0891b2',
+                evolution: '#ef4444', context_manager: '#6366f1', memory_search: '#14b8a6',
+            };
+            return palette[purpose] || '#6b7280';
+        },
+    };
+}
+</script>
+<script>
+window.AgentProPageContext = function() {
+    const app = window.Alpine ? Alpine.$data(document.body) : {};
+    return {
+        source_page: 'finops',
+        page: 'finops',
+        period: app.period,
+        tenantFilter: app.tenantFilter,
+        loading: app.loading,
+        summary: app.summary,
+        byPurpose: app.byPurpose,
+        topModels: Array.isArray(app.byModel?.models) ? app.byModel.models.slice(0, 8) : [],
+        topSkills: Array.isArray(app.bySkill?.skills) ? app.bySkill.skills.slice(0, 8) : [],
+        topUsers: Array.isArray(app.byUser?.users) ? app.byUser.users.slice(0, 8) : [],
+        opportunities: Array.isArray(app.opportunities) ? app.opportunities.slice(0, 8) : [],
+    };
+};
+</script>
+<script src="/static/ask-twin.js"></script>
+<!-- SEC-7: shared idle-session timeout + user menu. -->
+<script src="/static/session-controls.js"></script>
+<script src="/static/privacy-gate.js"></script>
+</body>
+</html>

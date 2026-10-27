@@ -1,0 +1,61 @@
+agent:
+  name: enterprise_agent
+  description: CCD Operations Agents
+  version: '1.0'
+skills:
+  mode: all
+tools:
+  allowed:
+  - fs
+  - shell
+  - write_file
+  - run_sql_query
+  - query_memory
+  - invoke_skill
+  - invoke_plan
+  - create_plan
+audit:
+  log_queries: true
+  log_responses: true
+  log_tool_calls: true
+hooks:
+  PreToolUse:
+  - command: python3 $IAF_AGENT_ROOT/../../shared/hooks/l3_payment_url_guard.py
+    matcher: shell
+    mode: blocking
+    fail_policy: closed
+    block_on_nonzero: true
+    skills:
+    - fa_ap
+    - invoice_processing_ap
+    hook_id: tenant_fa_ap_payment_release_hitl
+  - hook_id: policy.ap_high_value_payment_approval.v1
+    command: python3 $IAF_AGENT_ROOT/../../shared/hooks/policy_engine.py --policy-id
+      ap_high_value_payment_approval
+    matcher: shell
+    mode: blocking
+    fail_policy: closed
+    block_on_nonzero: true
+    on_block: hitl
+    timeout_seconds: 10
+    priority: 150
+    approval:
+      reason: Require HITL approval before releasing high-value AP payments.
+      urgency: high
+      sla_minutes: 30
+      options:
+      - Approve
+      - Reject
+      rule_type: policy_control
+      context:
+        policy_id: ap_high_value_payment_approval
+        policy_name: AP High Value Payment Approval
+        approver_role: finance_manager
+        on_timeout: escalate
+        risk_tier: L3
+    skills:
+    - fa_ap
+    - invoice_processing_ap
+context:
+  context_loading_mode: file
+  context_file_path: /shared/Enterprise_Context.md

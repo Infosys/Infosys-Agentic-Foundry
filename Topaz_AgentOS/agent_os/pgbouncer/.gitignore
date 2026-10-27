@@ -1,0 +1,2 @@
+# The real auth file holds the DB password — never commit it. Only the .example template is tracked.
+userlist.txt

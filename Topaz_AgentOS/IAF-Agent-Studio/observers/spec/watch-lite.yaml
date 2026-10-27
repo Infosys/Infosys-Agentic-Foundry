@@ -1,0 +1,21 @@
+name: watch-lite
+tenant_id: company
+agent_id: enterprise_agent
+user_id: observer
+focus: Low-trust watcher — may only notify, never act.
+vibe: quiet, alerts only
+trust_tier: observe_only
+allowed_skills:
+  - notify
+watch:
+  - type: folder
+    path: /var/log/app
+    access: ro
+triggers:
+  - name: error-spike
+    pattern: "(?i)error|exception"
+    skill: notify
+    task_template: "Error signal in app log: {matched}"
+    approval: auto
+    cooldown_seconds: 600
+runtime_mode: dev

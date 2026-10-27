@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentos-contracts"
+version = "0.1.0"
+description = "Dependency-free AgentOS extension contracts and descriptor types"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    {name = "Infosys Generative AI", email = "genai@infosys.com"}
+]
+keywords = ["agentos", "contracts", "providers", "skills"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+[tool.setuptools]
+packages = ["agentos_contracts"]
+
+[tool.setuptools.package-dir]
+agentos_contracts = "."

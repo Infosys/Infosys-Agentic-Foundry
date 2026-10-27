@@ -1,0 +1,28 @@
+<div class="skill-card" data-skill-component="example_skill">
+  <div class="skill-card-head">
+    <div>
+      <div class="skill-card-kicker">Data Review</div>
+      <h4>{{record_title}}</h4>
+    </div>
+    <span class="skill-status" data-status>{{status}}</span>
+  </div>
+  <div class="skill-form-grid">
+    <label>
+      <span>Record ID</span>
+      <input data-field="record_id" value="{{record_id}}" readonly>
+    </label>
+    <label>
+      <span>Owner</span>
+      <input data-field="owner" value="{{owner}}">
+    </label>
+    <label class="wide">
+      <span>Findings</span>
+      <textarea data-field="findings" rows="5" placeholder="Review findings">{{findings}}</textarea>
+    </label>
+  </div>
+  <div class="skill-card-actions">
+    <button type="button" class="btn secondary" data-action="skill-reset">Reset Draft</button>
+    <button type="button" class="btn" data-action="mark-reviewed">Mark Reviewed</button>
+  </div>
+  <div class="skill-card-note" data-message>Confirm the reviewed values before marking complete.</div>
+</div>

@@ -1,0 +1,336 @@
+{
+  "version": "finance-router-contrastive-v1",
+  "description": "Minimal finance-routing pairs. Each pair changes the operative fact while keeping wording and surrounding context similar.",
+  "pairs": [
+    {
+      "id": "actuals-vs-variance",
+      "left_skill": "actuals-extraction-agent",
+      "right_skill": "variance-analysis-agent",
+      "variants": [
+        ["Pull August actuals from the GL by cost centre.", "Compare August actuals with budget by cost centre and explain the differences."],
+        ["Retrieve booked expenditure for the current reporting period.", "Compare booked expenditure with the current-period target and identify drivers."],
+        ["Extract year-to-date actual revenue from the ledger.", "Analyze year-to-date actual revenue against plan and attribute the variance."]
+      ]
+    },
+    {
+      "id": "variance-vs-forecast-accuracy",
+      "left_skill": "variance-analysis-agent",
+      "right_skill": "forecast-accuracy-agent",
+      "variants": [
+        ["Explain the actual-versus-budget variance for operating expense.", "Measure how accurate the operating-expense forecast was against actuals."],
+        ["Attribute this month's revenue difference from target.", "Calculate this month's revenue forecast error and bias."],
+        ["Find the drivers of the unfavorable budget variance.", "Find the drivers of repeated forecast inaccuracy."]
+      ]
+    },
+    {
+      "id": "cost-performance-vs-variance",
+      "left_skill": "cost-performance-analysis-agent",
+      "right_skill": "variance-analysis-agent",
+      "variants": [
+        ["Assess cost performance across plants and flag target breaches.", "Explain the actual-versus-budget cost variance across plants."],
+        ["Review supplier spend performance against targets and prior periods.", "Attribute the supplier spend difference from budget."],
+        ["Show cost trends, performance drivers, and breached thresholds.", "Show the drivers of the current-period budget variance."]
+      ]
+    },
+    {
+      "id": "management-pack-vs-mi-quality",
+      "left_skill": "management-pack-agent",
+      "right_skill": "mi-quality-agent",
+      "variants": [
+        ["Assemble the monthly management pack with KPI commentary.", "Check whether the monthly management pack KPIs are complete, consistent, and timely."],
+        ["Prepare the board finance pack for September.", "Assess the data quality of the September board finance pack."],
+        ["Produce the monthly MI pack from canonical metrics.", "Identify missing or inconsistent metrics in the monthly MI pack."]
+      ]
+    },
+    {
+      "id": "adhoc-vs-management-pack",
+      "left_skill": "finance-adhoc-analytics-agent",
+      "right_skill": "management-pack-agent",
+      "variants": [
+        ["Answer the CFO's one-off question about margin decline in Germany.", "Assemble the recurring monthly management pack including margin commentary."],
+        ["Investigate why working capital changed yesterday for an executive query.", "Prepare the standard board pack with working-capital KPIs."],
+        ["Run a one-time analysis of the largest journal movements.", "Build the scheduled monthly management report from approved KPIs."]
+      ]
+    },
+    {
+      "id": "cash-allocation-vs-sts-cash",
+      "left_skill": "cash-allocation-agent",
+      "right_skill": "sts-cash-application-agent",
+      "variants": [
+        ["Apply the customer's remittance to its open AR invoices.", "Apply the counterparty's settlement cash to its open settlement obligations."],
+        ["Match this incoming customer receipt against unpaid sales invoices.", "Match this incoming counterparty settlement against outstanding obligations."],
+        ["Resolve unapplied customer cash in accounts receivable.", "Resolve unapplied settlement cash in the STS book."]
+      ]
+    },
+    {
+      "id": "aged-items-vs-collection-chase",
+      "left_skill": "aged-item-chase-agent",
+      "right_skill": "collection-chase-agent",
+      "variants": [
+        ["Identify and prioritize the overdue AR items collectors should chase.", "Contact customers about the prioritized overdue AR items using the correct dunning step."],
+        ["List the oldest unpaid invoices for follow-up.", "Execute follow-up outreach on the oldest unpaid invoices."],
+        ["Rank aged receivables by collection priority.", "Send the next collection reminders for aged receivables."]
+      ]
+    },
+    {
+      "id": "collection-strategy-vs-chase",
+      "left_skill": "collection-strategy-agent",
+      "right_skill": "collection-chase-agent",
+      "variants": [
+        ["Recommend a collection strategy for this high-risk customer.", "Execute the next collection contact for this high-risk customer."],
+        ["Decide how we should collect these overdue balances.", "Perform the approved dunning actions for these overdue balances."],
+        ["Create a customer-specific collection plan from aging and credit risk.", "Use the customer-specific plan to chase payment now."]
+      ]
+    },
+    {
+      "id": "credit-vs-counterparty-exposure",
+      "left_skill": "credit-exposure-agent",
+      "right_skill": "counterparty-exposure-alert-agent",
+      "variants": [
+        ["Check this customer's receivables exposure against its credit limit.", "Check this settlement counterparty's exposure against its concentration limit."],
+        ["Flag customers whose AR exposure exceeds approved credit limits.", "Alert on counterparties whose settlement exposure breaches limits."],
+        ["Assess customer credit risk from open invoices and limits.", "Monitor counterparty concentration risk from settlement positions."]
+      ]
+    },
+    {
+      "id": "billing-block-vs-output",
+      "left_skill": "billing-block-classifier-agent",
+      "right_skill": "billing-output-monitor-agent",
+      "variants": [
+        ["Classify why this invoice is blocked and route it for release.", "Find invoices that failed to generate or were not delivered."],
+        ["Determine the reason for the billing hold.", "Monitor today's billing run for missing outputs."],
+        ["Route blocked billing documents by block reason.", "Report failed and late invoice outputs from billing."]
+      ]
+    },
+    {
+      "id": "customer-create-vs-quality",
+      "left_skill": "customer-master-creation-agent",
+      "right_skill": "customer-data-quality-agent",
+      "variants": [
+        ["Validate and prepare this new customer for master-data creation.", "Audit existing customer master records for incomplete or inconsistent data."],
+        ["Onboard a new customer after checking the required fields.", "Check the quality of already-created customer records."],
+        ["Prepare customer ACME for initial master setup.", "Review customer ACME's current master-data completeness."]
+      ]
+    },
+    {
+      "id": "customer-quality-vs-deactivation",
+      "left_skill": "customer-data-quality-agent",
+      "right_skill": "customer-deactivation-check-agent",
+      "variants": [
+        ["Check this customer's master record for missing and inconsistent fields.", "Check whether this customer can be deactivated with no open items or activity."],
+        ["Audit inactive customer records for data-quality defects.", "Determine whether inactive customer records are safe to close."],
+        ["Report completeness problems in the customer master.", "Verify there are no balances or transactions preventing customer deactivation."]
+      ]
+    },
+    {
+      "id": "pr-intake-vs-validation",
+      "left_skill": "pr-intake-agent",
+      "right_skill": "pr-validation-agent",
+      "variants": [
+        ["Capture this new purchase requisition and check that required fields are present.", "Validate this purchase requisition against budget, policy, vendor status, and authority."],
+        ["Intake the request to buy laptops and prepare it for approval.", "Check whether the laptop requisition complies with approval thresholds and budget."],
+        ["Raise a complete PR from the submitted request.", "Approve or reject the submitted PR after policy validation."]
+      ]
+    },
+    {
+      "id": "vendor-validation-vs-payment-setup",
+      "left_skill": "vendor-validation-agent",
+      "right_skill": "payment-setup-agent",
+      "variants": [
+        ["Validate the supplier master for completeness and compliance.", "Set up the supplier payment after validating open invoices and vendor status."],
+        ["Check whether this vendor record has valid tax and bank details.", "Prepare this vendor's approved invoices for the payment run."],
+        ["Audit vendor master-data quality before it is used.", "Create and validate the vendor payment instruction before execution."]
+      ]
+    },
+    {
+      "id": "ocr-vs-duplicate",
+      "left_skill": "ocr-validation-agent",
+      "right_skill": "duplicate-invoice-detection-agent",
+      "variants": [
+        ["Validate the fields extracted by OCR from this scanned invoice.", "Check whether this invoice duplicates one already recorded in AP history."],
+        ["Compare the scanned invoice extraction with the PO and vendor record.", "Compare this invoice with historical invoices to prevent double payment."],
+        ["Flag low-confidence or inconsistent OCR invoice fields.", "Flag invoices with duplicate number, amount, vendor, or date patterns."]
+      ]
+    },
+    {
+      "id": "memo-vs-duplicate",
+      "left_skill": "credit-debit-memo-agent",
+      "right_skill": "duplicate-invoice-detection-agent",
+      "variants": [
+        ["Validate this supplier credit memo against its original invoice.", "Determine whether this supplier invoice is a duplicate of an earlier invoice."],
+        ["Process the debit memo linked to the originating invoice.", "Check AP history for a possible repeated invoice."],
+        ["Review this credit note and apply the invoice adjustment.", "Review this invoice for double-payment risk."]
+      ]
+    },
+    {
+      "id": "payment-setup-vs-bank-mandate",
+      "left_skill": "payment-setup-agent",
+      "right_skill": "bank-mandate-agent",
+      "variants": [
+        ["Prepare approved vendor invoices for the next payment run.", "Validate the bank mandate and authorized signatories for recurring payments."],
+        ["Set up this vendor payment after checking open invoices.", "Check whether this standing bank instruction is complete and authorized."],
+        ["Validate vendor status before creating the payment.", "Validate mandate authority before accepting the standing instruction."]
+      ]
+    },
+    {
+      "id": "grir-vs-stock-recon",
+      "left_skill": "grir-chase-agent",
+      "right_skill": "stock-movement-recon-agent",
+      "variants": [
+        ["Find goods receipts without invoices and invoices without receipts for clearing.", "Reconcile inventory movement postings against the general ledger."],
+        ["Chase aged GR/IR mismatches with procurement and AP.", "Investigate breaks between stock movements and GL postings."],
+        ["Clear received-not-invoiced items in GR/IR.", "Clear reconciliation differences between warehouse movements and inventory GL."]
+      ]
+    },
+    {
+      "id": "ic-vs-sts-recon",
+      "left_skill": "ic-mismatch-agent",
+      "right_skill": "sts-reconciliation-agent",
+      "variants": [
+        ["Find mismatches between paired intercompany entity postings.", "Reconcile settlement and GL positions against counterparty records and netting sets."],
+        ["Investigate why the two group entities recorded different intercompany amounts.", "Investigate why our settlement position differs from the counterparty record."],
+        ["Reconcile reciprocal postings between company codes.", "Reconcile counterparty settlements and aged netting breaks."]
+      ]
+    },
+    {
+      "id": "suspense-vs-sts-recon",
+      "left_skill": "suspense-reconciliation-agent",
+      "right_skill": "sts-reconciliation-agent",
+      "variants": [
+        ["Reconcile the suspense account and flag aged unresolved entries.", "Reconcile settlement positions with counterparty records and flag aged breaks."],
+        ["Clear old items from the general clearing account.", "Resolve old breaks in counterparty settlement reconciliation."],
+        ["Explain the remaining suspense-account balance.", "Explain the remaining difference between our settlement ledger and counterparty statement."]
+      ]
+    },
+    {
+      "id": "posting-review-vs-compliance",
+      "left_skill": "posting-review-agent",
+      "right_skill": "compliance-monitor-agent",
+      "variants": [
+        ["Review this journal's account coding, duplication, and segregation of duties before posting.", "Monitor posted journals for policy thresholds, missing approvals, and prohibited accounts."],
+        ["Perform a pre-posting quality review of these AP entries.", "Detect policy violations across already-posted AP and GL entries."],
+        ["Check whether this posting is correctly coded before release.", "Check the posting population for compliance breaches."]
+      ]
+    },
+    {
+      "id": "fraud-vs-compliance",
+      "left_skill": "fraud-pattern-agent",
+      "right_skill": "compliance-monitor-agent",
+      "variants": [
+        ["Detect statistically unusual journal patterns that may indicate fraud.", "Detect postings that breach explicit approval and account policies."],
+        ["Find anomalous journals with suspicious timing and amounts.", "Find journals exceeding policy thresholds or using prohibited accounts."],
+        ["Score unusual posting behavior for fraud risk.", "Report deterministic compliance-rule violations in postings."]
+      ]
+    },
+    {
+      "id": "journal-lifecycle-vs-review",
+      "left_skill": "journal-lifecycle-agent",
+      "right_skill": "posting-review-agent",
+      "variants": [
+        ["Route this journal for approval, trigger posting, and archive it.", "Review this journal's coding and segregation of duties before it posts."],
+        ["Manage the journal from extraction through approval and posting.", "Perform a pre-post review of the journal for duplicates and coding errors."],
+        ["Track and execute the full GL journal lifecycle.", "Check this GL journal's quality before releasing it."]
+      ]
+    },
+    {
+      "id": "vat-vs-transfer-pricing",
+      "left_skill": "vat-anomaly-agent",
+      "right_skill": "tp-monitoring-agent",
+      "variants": [
+        ["Find invoices with wrong VAT rates or missing tax codes.", "Monitor intercompany postings for transfer-pricing margin deviations."],
+        ["Check journals for VAT and tax-code anomalies.", "Check intercompany charges against the approved transfer-pricing policy."],
+        ["Flag incorrect indirect-tax treatment on transactions.", "Flag group-company pricing outside policy margins."]
+      ]
+    },
+    {
+      "id": "audit-evidence-vs-pbc",
+      "left_skill": "audit-evidence-agent",
+      "right_skill": "pbc-tracking-agent",
+      "variants": [
+        ["Assemble transaction evidence for the auditor and flag missing artifacts.", "Track which prepared-by-client audit deliverables are overdue or missing."],
+        ["Build the evidence pack for this selected payment.", "Update the status of every item on the auditor's PBC request list."],
+        ["Gather supporting documents and an audit trail for these journals.", "Monitor audit-request owners and due dates for PBC items."]
+      ]
+    },
+    {
+      "id": "car-vs-permit",
+      "left_skill": "car-management-agent",
+      "right_skill": "permit-tracker-agent",
+      "variants": [
+        ["Define the capital appropriation request scope and gather approval evidence.", "Track permits and licences required for the approved capital project."],
+        ["Prepare the CAR for a new manufacturing line.", "Identify expiring permits for the manufacturing-line capital project."],
+        ["Collect business-case support for capital-spend approval.", "Monitor licence renewals and permit gaps tied to capital spend."]
+      ]
+    },
+    {
+      "id": "settlement-lifecycle-vs-recon",
+      "left_skill": "sts-settlement-lifecycle-agent",
+      "right_skill": "sts-reconciliation-agent",
+      "variants": [
+        ["Generate, match, and validate the settlement instruction.", "Reconcile completed settlement positions against counterparty records."],
+        ["Manage this settlement instruction from creation through attribution.", "Investigate the aged break between our settlement ledger and the counterparty."],
+        ["Validate settlement details before execution.", "Validate netting sets and reconcile settlement balances after execution."]
+      ]
+    },
+    {
+      "id": "sts-master-vs-bank-mandate",
+      "left_skill": "sts-master-data-agent",
+      "right_skill": "bank-mandate-agent",
+      "variants": [
+        ["Validate settlement counterparty master data and standing instructions.", "Validate a bank mandate's completeness and authorized signatories."],
+        ["Check counterparty records and settlement instructions for missing data.", "Check whether the recurring-payment bank instruction has proper authority."],
+        ["Audit STS counterparty documents and record completeness.", "Audit this mandate document and its approval authority."]
+      ]
+    },
+    {
+      "id": "sts-kpi-vs-management-pack",
+      "left_skill": "sts-kpi-agent",
+      "right_skill": "management-pack-agent",
+      "variants": [
+        ["Produce the settlement KPI report with executive commentary.", "Assemble the enterprise monthly management pack from canonical KPIs."],
+        ["Extract STS performance metrics and explain them.", "Prepare the board finance pack across all finance processes."],
+        ["Generate the counterparty-settlement KPI report.", "Generate the recurring company management report."]
+      ]
+    },
+    {
+      "id": "bank-fee-vs-payment",
+      "left_skill": "bank-fee-analysis-agent",
+      "right_skill": "payment-setup-agent",
+      "variants": [
+        ["Compare charged bank fees with contracted rates and flag overcharges.", "Prepare approved vendor invoices for payment after validating vendor status."],
+        ["Analyze unexpected transaction and account-maintenance bank charges.", "Set up the vendor payment for the next run."],
+        ["Find fee anomalies on bank statements.", "Validate and create payment instructions for open supplier invoices."]
+      ]
+    },
+    {
+      "id": "bad-debt-vs-credit-exposure",
+      "left_skill": "bad-debt-prediction-agent",
+      "right_skill": "credit-exposure-agent",
+      "variants": [
+        ["Predict which customers are likely to become bad debt from aging signals.", "Measure current customer exposure against approved credit limits."],
+        ["Estimate future write-off risk for the AR portfolio.", "Flag customers currently over their credit limit."],
+        ["Identify accounts likely to require a doubtful-debt provision.", "Calculate each customer's present credit-limit utilization."]
+      ]
+    },
+    {
+      "id": "cashflow-forecast-vs-actuals",
+      "left_skill": "cashflow-forecast-agent",
+      "right_skill": "actuals-extraction-agent",
+      "variants": [
+        ["Forecast next quarter's cash inflows, outflows, and liquidity shortfalls.", "Extract last quarter's actual cash inflows and outflows from the ledger."],
+        ["Predict the daily cash position for the next six weeks.", "Retrieve the booked daily cash movements for the previous six weeks."],
+        ["Estimate future liquidity using historical payment patterns.", "Pull the historical cash actuals used for liquidity reporting."]
+      ]
+    },
+    {
+      "id": "depreciation-vs-stock-recon",
+      "left_skill": "depreciation-validation-agent",
+      "right_skill": "stock-movement-recon-agent",
+      "variants": [
+        ["Validate fixed-asset depreciation against useful life and depreciation method.", "Reconcile inventory movement postings against the general ledger."],
+        ["Check whether monthly asset depreciation was calculated correctly.", "Check whether warehouse stock movements agree with inventory GL postings."],
+        ["Find assets with an incorrect depreciation charge.", "Find breaks between physical stock movements and booked inventory movements."]
+      ]
+    }
+  ]
+}

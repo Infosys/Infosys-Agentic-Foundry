@@ -1,0 +1,62 @@
+# IAF-Agent-Skills Dependencies
+
+# Core
+pyyaml>=6.0
+
+# LangChain / LangGraph
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-openai>=0.2.0
+langchain-anthropic>=0.3.0
+langgraph>=0.2.0
+
+# IAF-Agent-OS — install locally from the bundled agent_os/ folder:
+#   pip install -e ../agent_os
+
+# Data / storage
+redis>=4.0.0              # Session store + queue backend
+numpy>=1.24.0             # Embeddings + vector ops
+
+# ── Storage backend (DB_BACKEND) ─────────────────────────────────────────────
+# Default backend is SQLite (Python stdlib — no install needed).
+# For the PostgreSQL / multi-node backend (DB_BACKEND=postgres) install:
+#   pip install 'psycopg[binary]>=3.1' pgvector>=0.2.5 psycopg-pool>=3.2
+# These are intentionally NOT hard requirements so the SQLite default stays
+# dependency-free (see docs/STORAGE_BACKENDS.md).
+openpyxl>=3.1.0           # Excel read/write
+python-pptx>=0.6.21       # PowerPoint parsing
+pillow>=9.0.0             # Image handling
+tiktoken>=0.4.0           # Token counting
+
+# Auth
+python-jose[cryptography]>=3.3.0
+bcrypt>=4.0.0
+
+# Web / docs
+python-docx>=1.1.0
+beautifulsoup4>=4.12.0
+requests>=2.31.0
+
+# File parsing (PDF, DOCX, PPTX, XLSX) — used by agent shell via python3 -c
+markitdown>=0.0.1
+pdfminer.six>=20221105   # PDF text extraction (markitdown PDF converter)
+pdfplumber>=0.10.0       # PDF table extraction (markitdown primary PDF engine)
+pytesseract>=0.3.10      # OCR for scanned/image-only PDFs (requires tesseract system binary)
+pdf2image>=1.16.0        # Converts scanned PDF pages to images for OCR
+
+# String matching for entity resolution
+rapidfuzz>=3.0
+
+# SQL database drivers — run_sql_query engine routing (tool_factory.py).
+# Self-contained / pure-Python drivers; no system client libraries needed.
+# PostgreSQL uses psycopg (see the Postgres backend note near the top).
+pymssql>=2.3.13          # SQL Server (bundles FreeTDS)
+pymysql>=1.2.0           # MySQL / MariaDB
+oracledb>=4.0.2          # Oracle (thin mode — no Oracle client install)
+
+# Optional: for testing
+pytest>=7.0
+# Optional integration (not on public PyPI): the TypeSafe (Jev) System One SDK. Imported
+# lazily by jev_router_provider with an LLM-router fallback, so it is NOT installed by
+# default. Uncomment / `pip install typesafe-sdk` to enable the native Jev client.
+# typesafe-sdk
