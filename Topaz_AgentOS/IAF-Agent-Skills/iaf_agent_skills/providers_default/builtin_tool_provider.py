@@ -65,11 +65,12 @@ class BuiltinToolProvider:
             get_entity_hint=get_entity_hint,
         )
 
-    def create_invoke_skill_tool(self, router: Any, agent_factory_fn: Callable, current_depth: int) -> Any:
+    def create_invoke_skill_tool(self, router: Any, agent_factory_fn: Callable, current_depth: int, parent_agent: Any = None) -> Any:
         return create_invoke_skill_tool(
             router=router,
             agent_factory_fn=agent_factory_fn,
             current_depth=current_depth,
+            parent_agent=parent_agent,
         )
 
     def create_invoke_plan_tool(
@@ -89,8 +90,8 @@ class BuiltinToolProvider:
     def create_create_plan_tool(self, agent: Any, llm: Any, router: Any) -> Any:
         return create_create_plan_tool(agent=agent, llm=llm, router=router)
 
-    def load_skill_tools(self, skill_path: Path, agent_root: Any = None) -> list[Any]:
-        return load_skill_tools(skill_path, agent_root=agent_root)
+    def load_skill_tools(self, skill_path: Path, agent_root: Any = None, env_extra: Any = None) -> list[Any]:
+        return load_skill_tools(skill_path, agent_root=agent_root, env_extra=env_extra)
 
     def health(self) -> dict[str, Any]:
         return {"provider": self.name, "status": "ok"}

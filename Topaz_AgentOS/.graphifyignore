@@ -1,0 +1,34 @@
+# graphify scope for this repository (gitignore syntax; merged with .gitignore).
+#
+# The default build covers first-party Python/JS code only:
+#   agent_os/  IAF-Agent-Skills/  IAF-Agent-Studio/
+# That is a pure AST pass (no LLM, no token cost). Docs and tenant content need semantic
+# extraction, which does cost tokens: remove a line below only when you want that.
+
+# demo / release / generated copies of the code
+R2R_demo/
+_excluded_from_release/
+graphify-out/
+graphify-out-clean/
+IAF-Agent-Studio/graphify-out-clean/
+
+# not part of the runtime code graph
+.github/
+frontend/
+model_training/
+partner_adapters/
+rl_capture/
+templates/
+onboarding/
+ops/
+scripts/
+iaf_agentos/
+
+# prose, markup, config and tenant data (semantic extraction, costs tokens)
+docs/
+enterprise_root/
+*.md
+*.txt
+*.html
+*.yaml
+*.yml

@@ -5,6 +5,14 @@ and Protocols that external adapters can implement without importing the full
 AgentPro engine.
 """
 
+from .graph_source import (
+    FileGraphQuery,
+    GraphEdge,
+    GraphNode,
+    GraphSnapshot,
+    GraphSourceAdapter,
+    HierarchyQuery,
+)
 from .host import (
     EvidenceSink,
     MissionRuntimeBridge,
@@ -49,4 +57,10 @@ __all__ = [
     "BACKEND_SQLITE",
     "BACKEND_POSTGRES",
     "VALID_BACKENDS",
+    "GraphSourceAdapter",
+    "GraphSnapshot",
+    "GraphNode",
+    "GraphEdge",
+    "HierarchyQuery",
+    "FileGraphQuery",
 ]

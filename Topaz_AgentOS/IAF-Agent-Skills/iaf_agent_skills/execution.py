@@ -872,6 +872,7 @@ class SupervisorEngine:
         self.create_agent = agent_factory
         self.worker_results: Dict[str, str] = {}
         self.approval_pending = None  # HITL: propagated from child worker
+        self.paused_child_agent = None  # HITL: the worker that paused (retained so its held call can be mirrored/resumed)
     
     def run(
         self,
@@ -916,10 +917,10 @@ class SupervisorEngine:
                 result = worker.run(specific_task, skill_name=skill_name)
                 hitl = getattr(worker, 'approval_pending', None)
                 logger.debug(f"✅ Worker '{skill_name}' completed")
-                return skill_name, result, hitl
+                return skill_name, result, hitl, worker
             except Exception as e:
                 logger.debug(f"❌ Worker '{skill_name}' failed: {e}")
-                return skill_name, f"Error: {str(e)}", None
+                return skill_name, f"Error: {str(e)}", None, None
 
         with concurrent.futures.ThreadPoolExecutor(
             max_workers=len(valid_workers),
@@ -927,11 +928,13 @@ class SupervisorEngine:
         ) as pool:
             futures = {pool.submit(run_worker, w): w['name'] for w in valid_workers}
             for future in concurrent.futures.as_completed(futures):
-                skill_name, result, hitl = future.result()
+                skill_name, result, hitl, worker = future.result()
                 self.worker_results[skill_name] = result
-                # HITL: propagate any approval from any worker
+                # HITL: propagate the FIRST worker approval; retain that worker so the parent
+                # can mirror its held call (pending_action/pending_tool_call) and resume it.
                 if hitl and not self.approval_pending:
                     self.approval_pending = hitl
+                    self.paused_child_agent = worker
                     logger.debug(f"⏸️ Worker '{skill_name}' paused for HITL approval")
 
         # Aggregate results
@@ -1032,6 +1035,12 @@ class OrchestratorEngine:
         self.step_log: List[OrchestratorStep] = []   # immutable: append-only
         self._skill_names     = {s["name"] for s in available_skills}
         self._session_ctx     = session_ctx or {}     # user_id, tenant_id, agent_id, session_id
+        # HITL: a delegated child step can pause for human approval. Capture it so the manager
+        # loop HALTS (never synthesises past an unapproved action) and the parent SkillAgent can
+        # surface/resume it. Read by SkillAgent._run_orchestrator.
+        self.approval_pending   = None
+        self.paused_child_agent = None
+        self.paused_step        = None
 
 
     def run(self, goal: str) -> str:
@@ -1059,6 +1068,17 @@ class OrchestratorEngine:
             # action == "call_skill"
             step_num += 1
             self._execute_step(step_num, decision)
+
+            # HITL: a child step paused for approval — halt the loop. Do NOT call _decide /
+            # _synthesize again, or the manager would narrate an answer built on an action the
+            # user has not approved. The parent surfaces the approval and resumes.
+            if self.approval_pending:
+                self.emit_status("Paused — awaiting human approval")
+                reason = self.approval_pending.get("reason", "approval required") \
+                    if isinstance(self.approval_pending, dict) else "approval required"
+                logger.debug("⏸️  Orchestrator paused at step %d — %s", step_num, reason)
+                return (f"Paused after {len(self.step_log)} step(s): a delegated action needs human "
+                        f"approval before the orchestration can continue — {reason}")
 
         # Reached max_steps — synthesise with whatever we have
         logger.debug(f"⚠️ Orchestrator hit max_steps={self.max_steps} — synthesising")
@@ -1170,6 +1190,12 @@ class OrchestratorEngine:
             duration_ms    = int((time.time() - t0) * 1000)
             success        = True
             child_trace_id = getattr(child, "_last_trace_id", "")
+            # HITL: if the child paused for human approval, retain it (first pause wins) so run()
+            # can halt the loop and the parent can mirror/resume the held call.
+            if getattr(child, "approval_pending", None) and self.approval_pending is None:
+                self.approval_pending   = child.approval_pending
+                self.paused_child_agent = child
+                self.paused_step        = step_num
             logger.debug(
                 f"  ✅ Step {step_num} done | {skill_name} | {duration_ms}ms",
             )

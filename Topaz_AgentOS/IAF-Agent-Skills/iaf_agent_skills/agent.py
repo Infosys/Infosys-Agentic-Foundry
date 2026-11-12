@@ -43,7 +43,7 @@ from .approval_rules import evaluate_rules, compile_rules_to_prompt, escalate_ur
 from .execution import WorkflowEngine, ParallelEngine, SupervisorEngine, OrchestratorEngine, Step, StepResult, ExecutionMode, get_execution_mode
 from .planner import PlannerEngine
 from .trace_callback import TraceToolCallback
-from .tool_governance import govern_tool_batch, govern_tool_call, MCP_FP_UNAVAILABLE
+from .tool_governance import govern_tool_batch, govern_tool_call, mirror_child_pause, MCP_FP_UNAVAILABLE
 from .tool_gating import tool_allowed_for_skill
 from . import cancellation as _run_cancel
 from .hook_approval import set_hook_approval, wants_hitl, wants_retry, build_hook_approval
@@ -251,6 +251,11 @@ def _resolve_native_max_iterations(config: dict | None, env: dict | None = None,
         return max(1, int(raw or default))
     except Exception:
         return max(1, int(default or 8))
+
+
+# Bundled tools that read registered graph connections. A tool provider that cannot carry the
+# caller's graph denylist (see SkillAgent._load_bundled_tools) must not serve these.
+_GRAPH_READING_TOOLS = frozenset({"graph_query"})
 
 
 def _skill_path_is_personal(skill_path, agent_root) -> bool:
@@ -615,17 +620,31 @@ class SkillAgent:
         (``import_state`` repopulates ``self.current_skill``) or the recorded
         skill on the pending action / tool call.
         """
+        # Prefer the skill RECORDED ON THE HELD CALL over the session agent's current_skill.
+        # For a normal resume these are the same (governance doesn't stamp a skill, so the
+        # held call has none and we fall through to current_skill). For a DELEGATED pause the
+        # mirror stamps the child's skill on the held call, and it must win — otherwise the
+        # resume scopes credentials / kernel current-skill / the MCP attestation to the
+        # parent skill instead of the delegated one the action was reviewed under. (#3)
         skill = (
-            getattr(self, "current_skill", None)
+            (getattr(self, "pending_tool_call", None) or {}).get("skill")
             or (getattr(self, "pending_action", None) or {}).get("skill")
-            or (getattr(self, "pending_tool_call", None) or {}).get("skill")
+            or getattr(self, "current_skill", None)
         )
         if not skill:
             return
         try:
+            _prev_skill = getattr(self, "current_skill", None)
             self.current_skill = skill
             if getattr(self, "kernel", None) is not None:
                 self.kernel.current_skill = skill
+            # Changing current_skill alone is not enough: self.agent still holds the compiled
+            # LangGraph agent built for _prev_skill (parent's prompt + tools). run() reuses it
+            # when `skill_name == self.current_skill and self.agent is not None`, so a later
+            # request routed to this restored skill would be served by the parent's graph.
+            # Invalidate the cache so the next run rebuilds for the restored skill. (round-6 #5)
+            if skill != _prev_skill:
+                self.agent = None
         except Exception:
             logger.debug("Could not restore kernel current_skill on resume", exc_info=True)
 
@@ -880,6 +899,10 @@ class SkillAgent:
             "__PENDING__"             — when a call is intercepted (pending_tool_call set)
         """
         collected = list(messages)
+        # A nested invoke_skill may mirror a delegated child's HITL pause onto us DURING tool
+        # execution (below). Remember whether we were already paused so we only halt on a pause
+        # that appeared in THIS turn.
+        _had_pending_at_start = getattr(self, "pending_tool_call", None) is not None
 
         try:
             for chunk in self.agent.stream({"messages": messages}, config, stream_mode="updates"):
@@ -933,6 +956,14 @@ class SkillAgent:
                             )
 
                     collected.extend(tool_msgs)
+
+                    # A nested invoke_skill just ran and may have mirrored a delegated child's
+                    # HITL pause onto us. Halt the loop so the approval surfaces, exactly as a
+                    # direct interception would — otherwise we'd keep reasoning past an action
+                    # the user hasn't approved. (delegated HITL)
+                    if not _had_pending_at_start and getattr(self, "pending_tool_call", None) is not None:
+                        logger.info("Stream intercept: halting — delegated child HITL pause mirrored onto session agent")
+                        return "__PENDING__"
 
         except _run_cancel.RunCancelled:
             raise
@@ -1238,11 +1269,22 @@ Return valid JSON only — no markdown fences:
                     content=content,
                 )
 
+        # A delegated child (invoke_skill) that pauses for HITL mirrors its pause onto
+        # this session agent (pending_tool_call). That arrives as a tool result, so the
+        # native loop halts on it via this check (parity with the LangGraph path's
+        # __PENDING__ halt). Baseline the "already pending" state so only a NEW mirrored
+        # pause stops the loop.
+        _pending_before_native = getattr(self, "pending_tool_call", None) is not None
+
+        def _check_delegated_pause() -> bool:
+            return (not _pending_before_native) and getattr(self, "pending_tool_call", None) is not None
+
         result = runtime.run(
             messages=messages,
             config=config,
             govern_batch=_govern,
             record_tool_result=_record_tool_result,
+            check_delegated_pause=_check_delegated_pause,
         )
         self._last_native_react_turn = runtime.last_turn.to_safe_dict() if runtime.last_turn else {}
         if result == "__PENDING__" and getattr(runtime, "pending_resume", None):
@@ -1350,6 +1392,31 @@ Return valid JSON only — no markdown fences:
                             f"'{_scope_skill}' could not be verified unchanged since approval "
                             f"(it changed, or the attestation was unavailable). Please re-run the "
                             f"action and approve it again."
+                        )
+                # If the currently-bound react tools belong to a DIFFERENT skill than this
+                # held call's scope — the hallmark of a delegated pause resumed on the
+                # session agent — rebuild for the held call's skill FIRST, so the delegated
+                # skill's own tool runs instead of a same-named tool from the parent's skill.
+                # Normal resumes have _bound_skill == _scope_skill, so this is a no-op. (#3)
+                _bound_skill = getattr(self, "_react_tools_skill", None)
+                if _scope_skill and _bound_skill is not None and _bound_skill != _scope_skill:
+                    try:
+                        self._create_agent(_scope_skill)
+                        logger.info(
+                            "Rebuilt tools for delegated skill '%s' (was bound to '%s') to resume held call '%s'",
+                            _scope_skill, _bound_skill, tool_name,
+                        )
+                    except Exception:
+                        # ABORT — do not fall through to the stale (parent-skill) tool map. A
+                        # same-named parent tool would otherwise execute under the wrong scope,
+                        # which is exactly what the approval was NOT for. (round-6 #1)
+                        logger.warning(
+                            "Could not rebuild tools for delegated skill '%s' while resuming '%s' — aborting approval",
+                            _scope_skill, tool_name, exc_info=True,
+                        )
+                        return (
+                            f"❌ Approval not executed: could not load the tools for delegated skill "
+                            f"'{_scope_skill}'. Please re-run the action and approve it again."
                         )
                 tool = self._tool_by_name_map().get(tool_name)
                 if tool is None and _scope_skill:
@@ -1490,10 +1557,16 @@ Return valid JSON only — no markdown fences:
             _edit = edited_content if str((tool_call or {}).get("id") or "") in held_ids else ""
             return self._execute_held_tool_call(tool_call, _edit)
 
+        # Pending was just cleared above, so any pending_tool_call appearing during the
+        # continuation is a fresh delegated-child HITL pause mirrored onto this agent —
+        # halt the native loop on it (same parity as the primary run path).
+        def _check_delegated_pause() -> bool:
+            return getattr(self, "pending_tool_call", None) is not None
+
         try:
             result = runtime.resume_and_continue(
                 config=None, govern_batch=_govern, record_tool_result=_record,
-                execute_held=_execute_held,
+                execute_held=_execute_held, check_delegated_pause=_check_delegated_pause,
             )
         except Exception as e:
             self._clear_pending_state()
@@ -1695,6 +1768,92 @@ Return valid JSON only — no markdown fences:
         except Exception as exc:
             logger.warning("Entitlement check failed for %s:%s action=%s: %s", resource_type, resource_id, action, exc)
             return False
+
+    def _governed_graphs(self) -> list:
+        """Registered graph connections, when external-access governance is on; else [].
+
+        Decided from the kernel's flag when it has one (SafeKernel) and from the same
+        environment switch the kernel reads otherwise (RemoteKernelRuntime has no such
+        attribute, and must not be mistaken for "governance off")."""
+        kernel = self.kernel
+        enabled = getattr(kernel, "external_access_enabled", None)
+        if enabled is None:
+            enabled = os.getenv("EXTERNAL_ACCESS_ENABLED", os.getenv("ENTITLEMENTS_ENABLED", "false")).lower() == "true"
+        if not enabled:
+            return []
+        from agent_os.external_access import list_external_resources
+        return [r for r in list_external_resources(kernel.tenant_root) if r.type == "graph"]
+
+    def _graph_denylist_env(self, skill_name: str) -> dict:
+        """Env for bundled skill tools: the graph folders THIS caller may not read.
+
+        A bundled tool runs as a subprocess with no caller identity, so it cannot make the
+        per-connection check the runtime (and the taxonomy preview) make on
+        ``external:graph.<id>``. The agent holds the caller's entitlement checker, so it
+        resolves the answer here and hands the tool the denied set (``IAF_DENIED_GRAPHS``,
+        a JSON list of ``shared/graphs/<name>`` folders; ``["*"]`` = all). Governance off, or
+        no registered file-backed graph connections -> empty (nothing to enforce).
+
+        Called on every tool run (see ``_load_bundled_tools``), so a revoked grant takes effect
+        on the next call rather than the next time the agent is rebuilt."""
+        try:
+            graphs = self._governed_graphs()
+            if not graphs:
+                return {}
+            if not getattr(self, "entitlement_checker", None):
+                # Governance is on but nobody bound a principal: fail closed, like MCP above.
+                return {"IAF_DENIED_GRAPHS": json.dumps(["*"])}
+            kernel_check = getattr(self.kernel, "_external_resource_allowed", None)
+            denied = []
+            for res in graphs:
+                ctx = {"skill": skill_name}
+                if callable(kernel_check):          # SafeKernel: same decision, plus its audit trail
+                    allowed = kernel_check(res, "access", ctx)
+                else:                               # e.g. RemoteKernelRuntime: the agent's own context
+                    allowed = self._entitlement_allowed("access", res.resource_type, res.resource_id, ctx)
+                if allowed:
+                    continue
+                # "." and empty segments name the same file, so drop them before matching.
+                parts = [p for p in str((res.metadata or {}).get("path", "") or "").split("/") if p not in ("", ".")]
+                if len(parts) == 4 and parts[:2] == ["shared", "graphs"] and parts[3] == "graph.json":
+                    denied.append(parts[2])
+            return {"IAF_DENIED_GRAPHS": json.dumps(sorted(set(denied)))} if denied else {}
+        except Exception as exc:   # fail closed: if we cannot tell, deny every graph for this call
+            logger.warning("graph access check failed (%s); denying all graphs for this call", exc)
+            return {"IAF_DENIED_GRAPHS": json.dumps(["*"])}
+
+    def _load_bundled_tools(self, skill, skill_name: str) -> list:
+        """Load a skill's bundled tools through the active ToolProvider.
+
+        The provider gets ``env_extra`` as a callable so the caller's graph access is resolved
+        on each run. Older providers that predate ``env_extra`` / ``agent_root`` still load
+        (their other tools are unaffected), but cannot carry the denylist, so while graph
+        governance is on they do not get tools that read graphs."""
+        agent_root = str(getattr(self.kernel, "agent_root", "") or "")
+        variants = (
+            {"agent_root": agent_root, "env_extra": lambda: self._graph_denylist_env(skill_name)},
+            {"agent_root": agent_root},
+            {},
+        )
+        for i, kwargs in enumerate(variants):
+            try:
+                bundled = self.tool_provider.load_skill_tools(skill.path, **kwargs)
+            except TypeError as exc:
+                msg = str(exc)
+                if "unexpected keyword argument" in msg and ("agent_root" in msg or "env_extra" in msg):
+                    continue
+                raise
+            if i == 0:
+                return bundled
+            try:
+                governed = bool(self._governed_graphs())
+            except Exception:
+                governed = True
+            kept = [t for t in bundled if not governed or getattr(t, "name", "") not in _GRAPH_READING_TOOLS]
+            if len(kept) != len(bundled):
+                logger.warning("Tool provider cannot pass per-caller graph access; withholding graph tools for '%s'", skill_name)
+            return kept
+        return []
 
     def _assert_skill_entitled(self, skill_name: str, action: str = "use"):
         if not self._entitlement_allowed(action, "skill", skill_name, {"user_id": self.user_id}):
@@ -3783,24 +3942,67 @@ Types: rule | preference | correction | exception | workaround | fact | pattern
                         "skill '%s' (%s)", skill_name, skill.path,
                     )
                 else:
-                    _agent_root = str(getattr(self.kernel, "agent_root", "") or "")
-                    try:
-                        bundled = self.tool_provider.load_skill_tools(
-                            skill.path,
-                            agent_root=_agent_root,
-                        )
-                    except TypeError as exc:
-                        # Back-compat: some ToolProviders don't accept the agent_root kwarg.
-                        msg = str(exc)
-                        if "agent_root" in msg and "unexpected keyword argument" in msg:
-                            bundled = self.tool_provider.load_skill_tools(skill.path)
-                        else:
-                            raise
+                    bundled = self._load_bundled_tools(skill, skill_name)
                     if bundled:
-                        bundled = [
-                            t for t in bundled
-                            if self._entitlement_allowed("use", "tool", getattr(t, "name", ""), {"skill": skill_name})
-                        ]
+                        # A skill's bundled tools are an intrinsic part of the skill:
+                        # anyone entitled to USE the skill already runs this author-
+                        # provided code when the skill executes, so the tools ride on
+                        # the skill's entitlement. We still honour an explicit per-tool
+                        # grant (so a bundled tool that happens to share a governed
+                        # built-in name keeps that grant), but fall back to the
+                        # skill-level entitlement instead of denying custom tools that
+                        # were never in the built-in `tools.dev` allowlist.
+                        _skill_usable = self._entitlement_allowed(
+                            "use", "skill", skill_name, {"user_id": self.user_id}
+                        )
+
+                        # Decision accessor (when the checker exposes one) lets us tell a
+                        # mere "no matching rule" default-deny from an EXPLICIT deny or a real
+                        # authorization failure (provider unavailable, invalid policy). The
+                        # skill-level fallback is FAIL-CLOSED: it rides on the skill only for a
+                        # confirmed default-deny, never for an explicit deny or an auth error.
+                        _decide = getattr(self.entitlement_checker, "decide", None)
+
+                        def _tool_fallback_ok(name: str) -> bool:
+                            # Permit the skill-level fallback only when the tool denial is a
+                            # confirmed no-rule default-deny. A missing decision accessor, an
+                            # exception, an explicit deny (metadata.effect == "deny"), or any
+                            # other matched_policy (provider_unavailable / invalid_policy / an
+                            # allow that somehow slipped the explicit-grant check) → fail closed.
+                            if not _decide:
+                                return False
+                            try:
+                                d = _decide("use", "tool", name, {"skill": skill_name})
+                            except Exception:
+                                return False
+                            if d is None:
+                                return False
+                            md = getattr(d, "metadata", {}) or {}
+                            return bool(
+                                not getattr(d, "allowed", False)
+                                and md.get("effect") != "deny"
+                                and getattr(d, "matched_policy", "") == "default_deny"
+                            )
+
+                        def _bundled_allowed(_t) -> bool:
+                            name = getattr(_t, "name", "")
+                            # An explicit per-tool grant always wins (e.g. a bundled tool that
+                            # shares a governed built-in name keeps its grant).
+                            if self._entitlement_allowed("use", "tool", name, {"skill": skill_name}):
+                                return True
+                            # Otherwise the tool rides on the skill's entitlement — but only when
+                            # the skill is usable AND the tool denial is a confirmed default-deny.
+                            if not _skill_usable:
+                                return False
+                            return _tool_fallback_ok(name)
+
+                        _denied = [getattr(t, "name", "") for t in bundled if not _bundled_allowed(t)]
+                        if _denied:
+                            logger.warning(
+                                "Bundled tool(s) withheld by entitlements for skill '%s': %s",
+                                skill_name, _denied,
+                            )
+                        bundled = [t for t in bundled if _bundled_allowed(t)]
                         tools.extend(bundled)
                         logger.info("Loaded %d bundled tool(s) for skill '%s': %s", len(bundled), skill_name, [t.name for t in bundled])
             
@@ -3993,11 +4195,39 @@ Types: rule | preference | correction | exception | workaround | fact | pattern
                 return child
 
             if "invoke_skill" in allowed_tools:
-                tools.append(self.tool_provider.create_invoke_skill_tool(
-                    router=self.router,
-                    agent_factory_fn=_child_agent_factory,
-                    current_depth=_depth,
-                ))
+                _mk_invoke = self.tool_provider.create_invoke_skill_tool
+                # Compatibility: `parent_agent` (the session agent a delegated child's HITL
+                # pause mirrors onto) was added after the original 3-arg ToolProvider
+                # contract. Pass it only when the provider's signature accepts it, so a
+                # partner provider still on the old contract doesn't raise TypeError — it
+                # just doesn't get the parent-mirror surface (delegation still runs).
+                _accepts_parent = True
+                try:
+                    import inspect as _inspect
+                    _params = _inspect.signature(_mk_invoke).parameters
+                    _accepts_parent = ("parent_agent" in _params) or any(
+                        p.kind == _inspect.Parameter.VAR_KEYWORD for p in _params.values()
+                    )
+                except (TypeError, ValueError):
+                    _accepts_parent = False  # uninspectable callable — stay on the safe 3-arg call
+                if _accepts_parent:
+                    _skill_tool = _mk_invoke(
+                        router=self.router,
+                        agent_factory_fn=_child_agent_factory,
+                        current_depth=_depth,
+                        parent_agent=self,   # so a delegated child's HITL pause surfaces on the session agent
+                    )
+                else:
+                    logger.warning(
+                        "ToolProvider.create_invoke_skill_tool does not accept parent_agent; "
+                        "delegated-HITL pauses will not surface onto the session agent for this provider"
+                    )
+                    _skill_tool = _mk_invoke(
+                        router=self.router,
+                        agent_factory_fn=_child_agent_factory,
+                        current_depth=_depth,
+                    )
+                tools.append(_skill_tool)
                 logger.info("Added invoke_skill tool (depth=%d)", _depth)
 
             if "invoke_plan" in allowed_tools:
@@ -4040,6 +4270,10 @@ Types: rule | preference | correction | exception | workaround | fact | pattern
 
         self._react_system_prompt = system_prompt
         self._react_tools = list(tools)
+        # Record the skill these tools were bound for, so an approval resume of a DELEGATED
+        # held call (scoped to a different skill) can tell the bindings are the wrong skill's
+        # and rebuild, instead of running a same-named parent tool. (#3)
+        self._react_tools_skill = skill_name
         logger.info("Agent created with %d tools: %s", len(tools), [t.name for t in tools])
         return create_react_agent(self.llm, tools, prompt=system_prompt)
     
@@ -5024,13 +5258,24 @@ Types: rule | preference | correction | exception | workaround | fact | pattern
         logger.info("Supervisor delegating to workers: %s", worker_names)
         
         response = engine.run(query, skill.worker_skills, status_callback=emit_status)
-        
-        # HITL: propagate child worker approval to parent agent
+
+        # HITL: propagate a paused child worker's approval to the parent (session) agent.
+        # Mirror the full pause (pending_action/pending_tool_call) from the retained worker so
+        # the UI shows approval buttons and resume can execute the held call — not just the
+        # durable approval_pending record. (delegated HITL)
+        _paused = False
         if getattr(engine, 'approval_pending', None):
             self.approval_pending = engine.approval_pending
-        
+            _paused = True
+            _worker = getattr(engine, 'paused_child_agent', None)
+            if _worker is not None:
+                mirror_child_pause(self, _worker, skill_name=skill.name, task=query)
+
         duration_ms = int((time.time() - start_time) * 1000)
-        response += f"\n\n*Supervisor completed in {duration_ms}ms*"
+        if _paused:
+            response += f"\n\n*Supervisor paused after {duration_ms}ms — awaiting human approval to continue*"
+        else:
+            response += f"\n\n*Supervisor completed in {duration_ms}ms*"
         
         tool_calls_log = [f"delegate: {name}" for name in worker_names]
         
@@ -5122,8 +5367,23 @@ Types: rule | preference | correction | exception | workaround | fact | pattern
 
         response = engine.run(query)
 
+        # HITL: if the manager loop halted because a child paused for approval, surface that
+        # pause on the parent (session) agent and mirror the held call — so the UI shows
+        # approval buttons and resume can execute it — instead of silently reporting
+        # "completed" for an action that never ran. (delegated HITL)
+        _paused = False
+        if getattr(engine, 'approval_pending', None):
+            self.approval_pending = engine.approval_pending
+            _paused = True
+            _child = getattr(engine, 'paused_child_agent', None)
+            if _child is not None:
+                mirror_child_pause(self, _child, skill_name=skill.name, task=query)
+
         duration_ms = int((_time.time() - _start) * 1000)
-        response += f"\n\n*Orchestrator completed in {duration_ms}ms ({len(engine.step_log)} steps)*"
+        if _paused:
+            response += f"\n\n*Orchestrator paused after {duration_ms}ms ({len(engine.step_log)} steps) — awaiting human approval to continue*"
+        else:
+            response += f"\n\n*Orchestrator completed in {duration_ms}ms ({len(engine.step_log)} steps)*"
 
         self.memory.add_to_short_term(role="user",      content=query,    skill=skill.name)
         self.memory.add_to_short_term(role="assistant", content=response, skill=skill.name)

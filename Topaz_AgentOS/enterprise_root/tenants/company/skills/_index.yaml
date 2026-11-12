@@ -332,3 +332,19 @@ skills:
     status: active
     promoted_from: c2770406-80db-484f-8536-8093af3910f3
     promoted_at: '2026-05-14T17:35:48.654238'
+  codebase_graph:
+    description: Answers questions from a published knowledge graph - an uploaded business ontology (what an entity is related to, how two things connect) or a graphify code graph (what a class or function connects to). Read-only.
+    category: platform
+    keywords:
+    - codebase graph
+    - knowledge graph
+    - graphify
+    - call graph
+    - what calls
+    - who calls
+    - depends on
+    - code structure
+    - ontology
+    - ontology graph
+    - uploaded graph
+    - entity relationships

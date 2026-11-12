@@ -2845,6 +2845,25 @@ def _clean_line(s: str, *, max_len: int = 200) -> str:
     return (s or "").replace("\r", " ").replace("\n", " ").strip()[:max_len]
 
 
+_PROVENANCE_KEYS = ("source_connection", "source_engine", "source_root", "imported_at")
+_PROVENANCE_BAD = re.compile(r"[^A-Za-z0-9_.:@/\-]")
+
+
+def _provenance_lines(provenance) -> list:
+    """Frontmatter lines recording where an imported taxonomy came from. Only a
+    fixed key set is written and values are stripped to a safe character class, so
+    caller-supplied provenance cannot add frontmatter keys or break the block."""
+    if not isinstance(provenance, dict):
+        return []
+    out = []
+    for key in _PROVENANCE_KEYS:
+        raw = re.sub(r"\s+", "_", _clean_line(str(provenance.get(key) or ""), max_len=120))
+        val = _PROVENANCE_BAD.sub("", raw)
+        if val:
+            out.append(f"{key}: {_yaml_scalar(val)}")   # quoted when YAML would retype it (2026, true, a date)
+    return out
+
+
 def _yaml_scalar(s: str) -> str:
     """Emit a string as a single-line YAML scalar, quoted only when needed, so
     values like ``HR: Payroll`` or ``true`` can't corrupt or retype the
@@ -2855,7 +2874,7 @@ def _yaml_scalar(s: str) -> str:
     return dumped[len("_:"):].strip()
 
 
-def _build_taxonomy_md(name, description, skills, domains, creator) -> str:
+def _build_taxonomy_md(name, description, skills, domains, creator, provenance=None) -> str:
     """Render a taxonomy .md in the exact shape TaxonomySignalIndex parses."""
     title = _clean_line(name, max_len=120)
     # Reject names that can't be stored verbatim: callers use the ORIGINAL name for
@@ -2880,6 +2899,7 @@ def _build_taxonomy_md(name, description, skills, domains, creator) -> str:
     out = [
         "---",
         fm_text,
+        *_provenance_lines(provenance),
         "---",
         "",
         f"# {title}",
@@ -3107,9 +3127,11 @@ def _rename_taxonomy_ref_in_ec(tenant_id: str, old_rel: str, new_rel: str) -> bo
     return True
 
 
-def _validate_taxonomy_domains(domains) -> set:
+def _validate_taxonomy_domains(domains, *, strict: bool = False) -> set:
     """Validate domains/sections/skills against the skill registry; return the
-    set of skills used. Raises HTTPException on any invalid input."""
+    set of skills used. Raises HTTPException on any invalid input. ``strict``
+    additionally requires EVERY section to carry a skill (imports: a section with a
+    blank tag would otherwise be written as an unroutable node)."""
     if not domains:
         raise HTTPException(400, "Add at least one domain with a section")
     valid = _valid_skill_names()
@@ -3126,6 +3148,8 @@ def _validate_taxonomy_domains(domains) -> set:
             if not _clean_line(s.name, max_len=120):
                 raise HTTPException(400, "Each section needs a name")
             if not (s.skill or "").strip():
+                if strict:
+                    raise HTTPException(422, f"Section '{d.name} / {s.name}' has no skill assigned")
                 raise HTTPException(400, "Each section needs a skill")
             used.add(s.skill)
     used.discard("")
@@ -3355,8 +3379,9 @@ def _import_from_json(content: str, name_override: str, creator: str):
     except Exception:
         raise HTTPException(422, "Invalid taxonomy JSON: bad domains/sections shape")
 
-    used = _validate_taxonomy_domains(domains)   # validates skills against _index.yaml
-    md = _build_taxonomy_md(name, str(doc.get("description") or ""), used, domains, creator)
+    used = _validate_taxonomy_domains(domains, strict=True)   # every section routable; skills checked against _index.yaml
+    md = _build_taxonomy_md(name, str(doc.get("description") or ""), used, domains, creator,
+                            provenance=doc.get("source"))
     return name, md, sorted(used)
 
 
@@ -3412,6 +3437,247 @@ async def taxonomy_import_endpoint(
 
     return {"ok": True, "name": name, "file": f"/shared/contexts/taxonomy/{slug}.md",
             "format": fmt, "skills": skills, "reindex": "started"}
+
+
+# ── Graph import (Neo4j / Neptune) ────────────────────────────────────────────
+# Read-only. Pulls a hierarchy from a REGISTERED graph connection (an
+# external_access.yaml resource with `type: graph`), maps it to the taxonomy shape
+# and returns a draft + loss report + skill suggestions. Nothing is written: the UI
+# commits the reviewed draft through POST /taxonomy-import, so file write, EC
+# registration and re-index stay on the one authoritative path.
+
+class TaxonomyGraphPreviewRequest(BaseModel):
+    connection_id: str
+    # Neo4j / Neptune: root node + hierarchy relationship (validated per engine in the service)
+    root_label: str = ""
+    root_name: str = ""
+    edge_type: str = ""
+    direction: str = "out"
+    name_property: str = "name"
+    description_property: str = ""
+    max_depth: int = 5
+    max_nodes: Optional[int] = None      # None = the engine's default (2000 DB / 5000 file)
+    # graphify (file engine): hierarchy derived from the graph itself
+    mode: str = "community"
+    path_prefix: str = ""
+    domain_depth: int = 2
+    min_size: int = 3
+    max_domains: int = 40
+    taxonomy_name: str = ""
+    description: str = ""
+    tenant_id: str = "company"
+
+
+def _skills_index_entries() -> dict:
+    """name -> {description, keywords, ...} from the active skills _index.yaml."""
+    try:
+        data = yaml.safe_load((SERVER_DIR / SKILLS_PATH / "_index.yaml").read_text(encoding="utf-8")) or {}
+        return {k: (v or {}) for k, v in (data.get("skills") or {}).items()}
+    except Exception:
+        return {}
+
+
+def _tenant_credential_resolver(tenant_id: str):
+    """The credential_resolver bound to THIS tenant, never the deployment tenant's.
+
+    The registry's default resolver is built for the configured ``TENANT_ID``; resolving
+    through it for another tenant could return a same-named credential from the
+    deployment tenant and hand it to the other tenant's graph host. So: an explicit
+    tenant override wins; the default is used only when it already belongs to
+    ``tenant_id``; otherwise a resolver is built over that tenant's own config dir.
+    """
+    from shared.state import capability_registry
+    from shared.config import TENANT_ID
+    from iaf_agent_skills.credential_resolver_adapter import CredentialResolverAdapter
+    default = capability_registry.get("credential_resolver")
+    registration = capability_registry.resolve_registration("credential_resolver", tenant_id=tenant_id)
+    if registration is not default or tenant_id == TENANT_ID:
+        return registration.instance
+    return CredentialResolverAdapter(
+        config_dir=SERVER_DIR / DATA_ROOT / "tenants" / tenant_id / "shared" / "config")
+
+
+def _graph_credential_lookup(tenant_id: str, request: Request):
+    """Credential lookup through the credential_resolver capability bound to the
+    requested tenant, scoped to the taxonomy_graph_import consumer (a credential must
+    list it in `scope`). Fails closed: if no tenant-bound resolver can be built there
+    is no fallback to another tenant's store."""
+    from iaf_agent_skills.graph_import import CONSUMER
+    resolver = _tenant_credential_resolver(tenant_id)
+    accessor = _owner_identity(request)
+
+    def lookup(name: str):
+        return resolver.resolve(name, consumer=CONSUMER, accessor=accessor, purpose="taxonomy graph import")
+    return lookup
+
+
+def _graph_resource_id(connection_id: str) -> str:
+    """`external:graph.x` -> `graph.x`, the id the runtime entitlement check uses."""
+    return connection_id.split(":", 1)[1] if ":" in connection_id else connection_id
+
+
+def _graph_access_allowed(principal, conn) -> bool:
+    """Same decision the runtime external-access path makes: action `access` on the
+    registered resource (`external` / `graph.<id>`), under the caller's own principal."""
+    try:
+        enforce_entitlement(principal, "access", "external", _graph_resource_id(conn.id))
+        return True
+    except HTTPException as exc:
+        if exc.status_code == 403:
+            return False
+        raise
+
+
+@router.get("/taxonomy-graph-connections")
+async def taxonomy_graph_connections_endpoint(
+    request: Request,
+    tenant_id: str = "company",
+    _perm: dict = Depends(require_permission("skills.author")),
+):
+    """Graph connections registered for this tenant (id, label, engine only)."""
+    principal = bind_request_identity(request, tenant_id)[0]
+    from iaf_agent_skills.graph_import import list_connections
+    tenant_root = SERVER_DIR / DATA_ROOT / "tenants" / tenant_id
+    try:
+        # A connection the caller is not entitled to is not listed (nor previewable).
+        conns = [c for c in list_connections(tenant_root) if _graph_access_allowed(principal, c)]
+    except Exception:
+        logger.exception("taxonomy-graph-connections failed")
+        raise HTTPException(500, "An internal error occurred")
+    return {"connections": [c.public() for c in conns]}
+
+
+@router.post("/taxonomy-graph-preview")
+async def taxonomy_graph_preview_endpoint(
+    req: TaxonomyGraphPreviewRequest,
+    request: Request,
+    _perm: dict = Depends(require_permission("skills.author")),
+):
+    """Fetch a hierarchy from a registered Neo4j/Neptune connection and return a
+    taxonomy draft (unassigned skills + suggestions) and a loss report. Writes nothing."""
+    principal = bind_request_identity(request, req.tenant_id)[0]
+    from iaf_agent_skills import graph_import as gi
+
+    tenant_root = SERVER_DIR / DATA_ROOT / "tenants" / req.tenant_id
+    params = req.model_dump(exclude={"connection_id", "tenant_id"})
+    user = _owner_identity(request)
+    try:
+        # Entitlement on the selected resource comes first: before any credential is
+        # resolved or any graph (network or file) is read. `skills.author` alone is not
+        # enough -- tenant policy may deny this resource to this caller.
+        conn = gi.get_connection(tenant_root, req.connection_id)
+        if not _graph_access_allowed(principal, conn):
+            gi.audit(tenant_root, tenant_id=req.tenant_id, user_id=user, action="graph_import_preview",
+                     connection_id=req.connection_id, ok=False, detail="access_denied")
+            raise HTTPException(403, "Access to this graph connection is denied")
+        out = await asyncio.to_thread(
+            gi.preview_taxonomy,
+            tenant_root,
+            connection_id=req.connection_id,
+            params=params,
+            credential_lookup=_graph_credential_lookup(req.tenant_id, request),
+            skills_index=_skills_index_entries(),
+        )
+    except gi.GraphImportError as exc:
+        gi.audit(tenant_root, tenant_id=req.tenant_id, user_id=user, action="graph_import_preview",
+                 connection_id=req.connection_id, ok=False, detail=exc.code)
+        raise HTTPException(exc.status, exc.message)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("taxonomy-graph-preview failed")
+        raise HTTPException(500, "An internal error occurred")
+    gi.audit(tenant_root, tenant_id=req.tenant_id, user_id=user, action="graph_import_preview",
+             connection_id=req.connection_id, ok=True, detail=f"{out['stats']['nodes_fetched']} nodes")
+    return out
+
+
+# ── Graph library: upload a graph / ontology JSON and query it in chat ─────────
+# The file is converted to graphify node-link JSON and written to
+# <tenant>/shared/graphs/<name>/graph.json. The `codebase_graph` skill's `graph_query`
+# tool reads exactly that location, so a published graph is queryable straight away.
+# All conversion/validation lives in iaf_agent_skills.graph_import.graph_store.
+
+class GraphUploadRequest(BaseModel):
+    name: str
+    content: str
+    overwrite: bool = False
+    tenant_id: str = "company"
+
+
+class GraphDeleteRequest(BaseModel):
+    name: str
+    tenant_id: str = "company"
+
+
+def _graph_tenant_root(tenant_id: str) -> Path:
+    return _shared_dir(tenant_id).parent
+
+
+@router.get("/graph-library")
+async def graph_library_endpoint(
+    request: Request,
+    tenant_id: str = "company",
+    _perm: dict = Depends(require_permission("skills.author")),
+):
+    """List the graphs published for this tenant (name, size, node/edge counts)."""
+    bind_request_identity(request, tenant_id)
+    from iaf_agent_skills import graph_import as gi
+    try:
+        return {"graphs": await asyncio.to_thread(gi.list_graphs, _graph_tenant_root(tenant_id))}
+    except Exception:
+        logger.exception("graph-library failed")
+        raise HTTPException(500, "An internal error occurred")
+
+
+@router.post("/graph-upload")
+async def graph_upload_endpoint(
+    req: GraphUploadRequest,
+    request: Request,
+    _perm: dict = Depends(require_permission("skills.author")),
+):
+    """Publish an uploaded graph/ontology JSON (graphify, nodes+edges, triples or a children
+    tree). Returns what was understood (counts, relations, notes about anything skipped)."""
+    bind_request_identity(request, req.tenant_id)
+    from iaf_agent_skills import graph_import as gi
+    tenant_root = _graph_tenant_root(req.tenant_id)
+    user = _owner_identity(request)
+    try:
+        out = await asyncio.to_thread(gi.publish_graph, tenant_root, req.name, req.content,
+                                      overwrite=req.overwrite)
+    except gi.GraphImportError as exc:
+        gi.audit(tenant_root, tenant_id=req.tenant_id, user_id=user, action="graph_upload",
+                 connection_id=req.name, ok=False, detail=exc.code)
+        raise HTTPException(exc.status, exc.message)
+    except Exception:
+        logger.exception("graph-upload failed")
+        raise HTTPException(500, "An internal error occurred")
+    gi.audit(tenant_root, tenant_id=req.tenant_id, user_id=user, action="graph_upload",
+             connection_id=req.name, ok=True, detail=f"{out['nodes']} nodes / {out['edges']} edges ({out['format']})")
+    return {"ok": True, **out}
+
+
+@router.post("/graph-delete")
+async def graph_delete_endpoint(
+    req: GraphDeleteRequest,
+    request: Request,
+    _perm: dict = Depends(require_permission("skills.author")),
+):
+    """Remove a published graph."""
+    bind_request_identity(request, req.tenant_id)
+    from iaf_agent_skills import graph_import as gi
+    tenant_root = _graph_tenant_root(req.tenant_id)
+    user = _owner_identity(request)
+    try:
+        await asyncio.to_thread(gi.delete_graph, tenant_root, req.name)
+    except gi.GraphImportError as exc:
+        raise HTTPException(exc.status, exc.message)
+    except Exception:
+        logger.exception("graph-delete failed")
+        raise HTTPException(500, "An internal error occurred")
+    gi.audit(tenant_root, tenant_id=req.tenant_id, user_id=user, action="graph_delete",
+             connection_id=req.name, ok=True, detail="")
+    return {"ok": True}
 
 
 @router.post("/taxonomy-reindex")

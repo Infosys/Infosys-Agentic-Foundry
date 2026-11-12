@@ -100,11 +100,36 @@ def validate_external_access_doc(doc: dict) -> dict:
         if resource_id and not resource_id.startswith("external:"):
             errors.append(f"{prefix}.id must start with external:")
         resource_type = str(item.get("type", "") or "http")
-        if resource_type not in {"http", "db", "mcp", "cloud", "sharepoint", "other"}:
+        if resource_type not in {"http", "db", "mcp", "cloud", "sharepoint", "graph", "other"}:
             warnings.append(f"{prefix}.type '{resource_type}' is not a standard type")
         for list_field in ("hosts", "paths", "methods", "databases", "allowed_tables", "credentials", "mcp_connections", "context_files", "tools", "owners"):
             if list_field in item and not isinstance(item[list_field], list):
                 errors.append(f"{prefix}.{list_field} must be a list")
+        if resource_type == "graph":
+            # Connection definition for taxonomy graph import. Network engines (neo4j /
+            # neptune) are allowlisted by their single host; the file engine (graphify)
+            # reads a graph.json under the tenant's shared/graphs and has no host.
+            engine = str(item.get("engine", "")).lower()
+            if engine not in {"neo4j", "neptune", "graphify"}:
+                errors.append(f"{prefix}.engine must be 'neo4j', 'neptune' or 'graphify' for graph resources")
+            elif engine == "graphify":
+                gpath = str(item.get("path", ""))
+                # Canonical spelling only: "./" and "//" segments name the same file but would
+                # slip past rules that match on /shared/graphs/<name>/graph.json.
+                segs = gpath.split("/")[1:]
+                if not (gpath.startswith("/shared/graphs/") and gpath.endswith(".json")
+                        and all(s not in ("", ".", "..") for s in segs)):
+                    errors.append(f"{prefix}.path must be /shared/graphs/<name>/graph.json for the graphify engine")
+                if item.get("hosts"):
+                    errors.append(f"{prefix}.hosts must be empty for the graphify engine (it reads a file, not a network host)")
+            else:
+                hosts = item.get("hosts")
+                # A non-list `hosts` is already reported above; don't len() it (an int would
+                # raise TypeError and turn malformed input into an HTTP 500).
+                if not isinstance(hosts, list) or len(hosts) != 1:
+                    errors.append(f"{prefix}.hosts must list exactly one host[:port] for graph resources")
+                if str(item.get("auth", "basic" if engine == "neo4j" else "sigv4")).lower() not in {"basic", "sigv4", "none"}:
+                    errors.append(f"{prefix}.auth must be basic, sigv4 or none")
         # An http resource with no `hosts` would match every host.
         if resource_type == "http" and not (item.get("hosts") or []):
             errors.append(

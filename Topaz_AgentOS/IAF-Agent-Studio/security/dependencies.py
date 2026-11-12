@@ -330,4 +330,11 @@ def make_agent_entitlement_checker(principal: Principal):
         resource = Resource(resource_type, resource_id, tenant_id=principal.tenant_id)
         return provider.check(principal, action, resource, context).allowed
 
+    def _decide(action: str, resource_type: str, resource_id: str, context: dict | None = None):
+        # Full Decision (allowed + matched_policy + metadata), so callers can tell an
+        # explicit deny (metadata.effect == "deny") from a default/no-rule deny.
+        resource = Resource(resource_type, resource_id, tenant_id=principal.tenant_id)
+        return provider.check(principal, action, resource, context)
+
+    _checker.decide = _decide
     return _checker

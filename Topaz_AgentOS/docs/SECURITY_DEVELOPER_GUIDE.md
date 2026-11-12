@@ -451,6 +451,12 @@ Under `unknown_mode=deny`, an unregistered target returns
   be forgotten on the next file.
 - **Register every outbound host** (`hosts` is required — an empty list matches
   everything). Don't relax `EXTERNAL_ACCESS_UNKNOWN_MODE` to make a call work.
+- **Graph databases are registered, never typed.** The taxonomy graph importer reaches
+  Neo4j/Neptune only through a `type: graph` resource in `external_access.yaml` (one host,
+  named credential scoped to `taxonomy_graph_import`). The shared SSRF guard
+  (`agent_os.egress_ssrf`) runs with `allow_private=True` for these entries — private/loopback
+  allowed because the registry is the allowlist; metadata/link-local still refused. Give the
+  identity read-only rights. See `docs/TAXONOMY_GRAPH_IMPORT.md`.
 - **Never test authorisation as `admin`** — admin holds `allow * on *`, so it masks
   every per-item and per-tenant rule. Use a `user`-role account.
 - **A kernel built without `set_entitlement_context` has no governance** — HTTP,

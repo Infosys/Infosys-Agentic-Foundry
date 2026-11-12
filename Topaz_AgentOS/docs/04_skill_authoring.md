@@ -75,6 +75,15 @@ Always call `query_memory` before answering questions about specific vendors or 
 | `steps` | workflow/parallel only | Execution steps (see Execution Modes) |
 | `worker_skills` | supervisor only | Worker skill names |
 
+> **Scope selector = save destination, not a loader.** In the Skill Builder the
+> personal/global scope selector controls *where a save goes* — it does not
+> change which skills are listed. An admin saving a skill as a **personal draft**
+> writes it to their per-user workspace; the draft is real and on disk even if
+> the global list does not show it. Admins see their personal drafts as distinct
+> cards alongside globals. **Publishing a personal draft to global** collapses
+> the two duplicate cards into one: after a successful global publish the
+> now-redundant personal draft is retired (`DELETE /api/personal-skills/{user}/{name}`).
+
 ---
 
 ## Execution Modes

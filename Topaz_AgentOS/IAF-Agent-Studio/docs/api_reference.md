@@ -1797,6 +1797,22 @@ Assess impact of modifying an existing context item.
 ### GET `/api/context-manager/tree`
 Get LLM-clustered tree view of context items (cached 1 hour).
 
+### Taxonomy authoring (Skill Builder ▸ Taxonomy)
+All require `skills.author` and a tenant binding. A taxonomy is a `.md` under `/shared/contexts/taxonomy/`
+(frontmatter `name` = L1, `###` = L2, `####` = L3, `<!-- skill: X -->` = routed skill), registered in
+`Enterprise_Context.md` and re-indexed.
+
+* `POST /api/context-manager/taxonomy-create` / `taxonomy-update` / `taxonomy-delete` — CRUD from the UI wizard.
+* `POST /api/context-manager/taxonomy-import` — import a ready-made `.md` or a JSON doc
+  (`{name, description?, source?, domains:[{name, sections:[{name, skill, activities?}]}]}`). JSON requires a valid skill on **every** section.
+* `POST /api/context-manager/taxonomy-reindex` — force a rebuild of the taxonomy signal index.
+* `GET /api/context-manager/taxonomy-graph-connections` — registered Neo4j/Neptune connections (id, label, engine only).
+* `POST /api/context-manager/taxonomy-graph-preview` — read a hierarchy from a registered graph connection and return a draft taxonomy
+* `GET /api/context-manager/graph-library` — list the graphs published for the tenant (name, node and edge counts). Needs `skills.author`.
+* `POST /api/context-manager/graph-upload` — convert an uploaded graph/ontology JSON and publish it to `shared/graphs/<name>/graph.json` so chat can query it (`{name, content, overwrite}`; 409 if it exists, 422 if unusable, 413 over 16 MB). See `docs/GRAPH_UPLOAD.md`.
+* `POST /api/context-manager/graph-delete` — remove a published graph (`{name}`).
+  with skill suggestions and a loss report. Read-only. See [TAXONOMY_GRAPH_IMPORT.md](../../docs/TAXONOMY_GRAPH_IMPORT.md).
+
 ### POST `/api/context-manager/reindex`
 Force reindex of all context items.
 
@@ -2092,7 +2108,10 @@ List personal skills for a user.
 Save a personal skill draft. The body includes `skill_name`, `skill_md_content`,
 optional `component_html`, and optional `source_scope`/`source_skill_name`
 metadata. When supplied, the component is stored beside the personal `SKILL.md`
-as `component.html`.
+as `component.html`. An optional `tool_scripts` list persists bundled Python tool
+scripts to the draft's `tools/` folder — `null`/omitted preserves the on-disk
+scripts, `[]` removes all, a non-empty list replaces them (unsafe or non-`.py`
+filenames are rejected).
 
 ### GET `/api/personal-skills/{username}/{skill_name}/skill-md`
 Read a personal skill draft's `SKILL.md` content for owner/admin editing.
@@ -2101,7 +2120,10 @@ Read a personal skill draft's `SKILL.md` content for owner/admin editing.
 List personal skill review notifications written after approval or rejection.
 
 ### DELETE `/api/personal-skills/{username}/{skill_name}`
-Delete a personal skill.
+Delete a personal skill. Also used by the Skill Builder's **publish-cleanup**
+flow: after an admin publishes a personal draft to the global library, the UI
+calls this to retire the now-redundant personal draft so the duplicate cards
+collapse into one.
 
 ### POST `/api/personal-skills/{username}/{skill_name}/submit`
 Submit skill for review (promotion to shared skills). If the personal draft has

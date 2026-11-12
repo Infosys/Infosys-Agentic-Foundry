@@ -298,3 +298,5 @@ enterprise_root/tenants/company/skills/defect_classifier/
 /docs/FINANCE_ROUTER_NIMBLE_TRAINING_PLAN.md
 /docs/JEV_API_AGENTOS_KNOWLEDGE.md
 /docs/JEV_GRAPH_V2_MULTIWAY_BRANCHING.md
+# graphify graphs published into a tenant (generated data, can be many MB; see docs/GRAPHIFY.md)
+enterprise_root/**/shared/graphs/

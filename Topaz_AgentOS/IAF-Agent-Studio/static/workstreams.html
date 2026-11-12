@@ -48,7 +48,9 @@ function _getIafUser() {
           let response = await _origFetch(input, init);
           if (response.status === 401 && isApiCall && !isAuthEndpoint) {
               try {
-                  const refresh = await _origFetch('/auth/refresh', { method: 'POST', credentials: 'include' });
+                  const refresh = window.__iafCoordinatedRefresh
+                        ? await window.__iafCoordinatedRefresh()
+                        : await _origFetch('/auth/refresh', { method: 'POST', credentials: 'include' });
                   if (refresh.ok) {
                       const data = await refresh.json();
                       // SEC-6: server updated httponly cookie; no localStorage write needed
@@ -2790,6 +2792,7 @@ window.AgentProPageContext = function() {
 };
 </script>
 <script src="/static/ask-twin.js"></script>
+<script src="/static/auth-refresh.js"></script>
 <script src="/static/session-controls.js"></script>
 </body>
 </html>

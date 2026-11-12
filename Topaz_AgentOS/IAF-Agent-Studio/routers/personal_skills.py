@@ -26,17 +26,19 @@ Endpoints:
 import difflib
 import json
 import logging
+import os
 import re
 import shutil
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import yaml
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
 from shared.config import SERVER_DIR, DATA_ROOT
+from shared.models import ToolScript
 from shared.file_utils import atomic_write_text, atomic_write_json, atomic_write_yaml, locked_rmw_yaml
 from security.dependencies import enforce_entitlement, principal_from_request
 
@@ -121,6 +123,10 @@ class SavePersonalSkillRequest(BaseModel):
     source_scope: str = "new"                  # new | shared | personal | submitted | approved
     source_skill_name: str = ""                # shared skill being edited, if any
     tenant_id: str = "company"
+    # Bundled Python tool scripts. None => preserve on-disk tools/; [] => remove
+    # all; non-empty => replace. (Without this field, tool scripts added in the
+    # personal-skill UI were never written to disk.)
+    tool_scripts: Optional[List[ToolScript]] = None
 
 
 class SubmitSkillRequest(BaseModel):
@@ -148,6 +154,7 @@ async def list_personal_skills(request: Request, username: str, tenant_id: str =
     """List all personal skills for a user, merged with global scope info."""
     _require_own_or_admin(request, username)
     _enforce(request, "read", "skill", f"personal/{username}/*", tenant_id)
+    username = await _reconcile_personal_workspace(request, tenant_id, username)
     personal_path = _personal_skills_path(tenant_id, username)
     index_path = personal_path / "_index.yaml"
 
@@ -187,12 +194,20 @@ async def save_personal_skill(request: Request, username: str, req: SavePersonal
     """
     _require_own_or_admin(request, username)
     _enforce(request, "write", "skill", f"personal/{username}/{req.skill_name}", req.tenant_id)
+    username = await _reconcile_personal_workspace(request, req.tenant_id, username)
     personal_path = _personal_skills_path(req.tenant_id, username)
     skill_dir = personal_path / req.skill_name
 
     # Validate skill name — alphanumeric + underscores only
     if not req.skill_name.replace("_", "").replace("-", "").isalnum():
         raise HTTPException(400, "Skill name must be alphanumeric with underscores/hyphens only")
+
+    # Validate tool filenames UP FRONT, before any skill file is written. Otherwise a bad
+    # filename 400s inside _sync_tool_scripts only AFTER SKILL.md / component.html have been
+    # overwritten, and a brand-new skill is left in an unindexed folder (the index upsert
+    # below never runs). Fail the whole save cleanly before touching disk. (round-4 #2)
+    if req.tool_scripts is not None:
+        _validate_tool_script_filenames(req.tool_scripts)
 
     skill_dir.mkdir(parents=True, exist_ok=True)
     atomic_write_text(skill_dir / "SKILL.md", req.skill_md_content)
@@ -201,6 +216,9 @@ async def save_personal_skill(request: Request, username: str, req: SavePersonal
         if component_html:
             _validate_component_html(component_html)
             atomic_write_text(skill_dir / "component.html", component_html + "\n")
+    # Persist bundled tool scripts. None => leave on-disk tools/ untouched.
+    if req.tool_scripts is not None:
+        _sync_tool_scripts(skill_dir, req.tool_scripts)
 
     # Parse description, keywords, and category from the frontmatter for the index
     description, keywords = _extract_frontmatter_meta(req.skill_md_content, req.skill_name)
@@ -249,6 +267,7 @@ async def get_personal_skill_md(request: Request, username: str, skill_name: str
     if not skill_name.replace("_", "").replace("-", "").isalnum():
         raise HTTPException(400, "Skill name must be alphanumeric with underscores/hyphens only")
 
+    username = await _reconcile_personal_workspace(request, tenant_id, username)
     skill_dir = _personal_skills_path(tenant_id, username) / skill_name
     skill_file = skill_dir / "SKILL.md"
     if not skill_file.exists():
@@ -275,10 +294,22 @@ async def get_personal_skill_md(request: Request, username: str, skill_name: str
             except Exception:
                 pass
 
+    # Return the draft's saved component so the editor can hydrate it on reopen. Without this
+    # the editor falls back to a default template and an unrelated save overwrites the real
+    # component.html (its only copy). None => no component saved. (round-4 #4)
+    component_html = None
+    component_file = skill_dir / "component.html"
+    if component_file.exists():
+        try:
+            component_html = component_file.read_text(encoding="utf-8")
+        except Exception:
+            component_html = None
+
     return {
         "name": frontmatter.get("name", skill_name),
         "description": frontmatter.get("description", ""),
         "version": frontmatter.get("version", "1.0"),
+        "component_html": component_html,
         "execution_mode": frontmatter.get("execution_mode", "react"),
         "profile": frontmatter.get("profile", ""),
         "keywords": frontmatter.get("keywords", frontmatter.get("triggers", [])),
@@ -311,7 +342,8 @@ async def list_personal_skill_notifications(
     """List review notifications written for a user's personal skills."""
     _require_own_or_admin(request, username)
     _enforce(request, "read", "skill", f"personal/{username}/*", tenant_id)
-    notifications_dir = _personal_skills_path(tenant_id, username) / "notifications"
+    fs_user = await _reconcile_personal_workspace(request, tenant_id, username)
+    notifications_dir = _personal_skills_path(tenant_id, fs_user) / "notifications"
     if not notifications_dir.exists():
         return {"notifications": [], "username": username}
 
@@ -393,7 +425,10 @@ async def delete_personal_skill(request: Request, username: str, skill_name: str
     _enforce(request, "delete", "skill", f"personal/{username}/{skill_name}", tenant_id)
     if not skill_name.replace("_", "").replace("-", "").isalnum():
         raise HTTPException(400, "Skill name must be alphanumeric with underscores/hyphens only")
-    personal_path = _personal_skills_path(tenant_id, username)
+    # Filesystem key is canonical; the submission TAG prefix below stays the request
+    # username so cancelling pending submissions keys off the same tag `submit` wrote.
+    fs_user = await _reconcile_personal_workspace(request, tenant_id, username)
+    personal_path = _personal_skills_path(tenant_id, fs_user)
     skill_dir = personal_path / skill_name
 
     if not skill_dir.exists():
@@ -441,7 +476,10 @@ async def submit_skill_for_review(request: Request, username: str, skill_name: s
     _enforce(request, "submit", "skill", f"personal/{username}/{skill_name}", req.tenant_id)
     if not skill_name.replace("_", "").replace("-", "").isalnum():
         raise HTTPException(400, "Skill name must be alphanumeric with underscores/hyphens only")
-    personal_path = _personal_skills_path(req.tenant_id, username)
+    # Copy the submission FROM the canonical workspace folder; the submission_id tag and
+    # submitted_by below keep the request username (identity is separate from the fs key).
+    fs_user = await _reconcile_personal_workspace(request, req.tenant_id, username)
+    personal_path = _personal_skills_path(req.tenant_id, fs_user)
     skill_dir = personal_path / skill_name
     skill_file = skill_dir / "SKILL.md"
 
@@ -564,7 +602,8 @@ async def upload_personal_skill_knowledge(
     if len(content) > KNOWLEDGE_MAX_SIZE:
         raise HTTPException(413, "File exceeds 10 MB limit")
 
-    skill_dir = _personal_skills_path(tenant_id, username) / skill_name
+    fs_user = await _reconcile_personal_workspace(request, tenant_id, username)
+    skill_dir = _personal_skills_path(tenant_id, fs_user) / skill_name
     if not skill_dir.exists():
         raise HTTPException(404, f"Personal skill '{skill_name}' not found for {username}")
 
@@ -593,7 +632,8 @@ async def list_personal_skill_knowledge(
     if not skill_name.replace("_", "").replace("-", "").isalnum():
         raise HTTPException(400, "Skill name must be alphanumeric with underscores/hyphens only")
 
-    knowledge_dir = _personal_skills_path(tenant_id, username) / skill_name / "knowledge"
+    fs_user = await _reconcile_personal_workspace(request, tenant_id, username)
+    knowledge_dir = _personal_skills_path(tenant_id, fs_user) / skill_name / "knowledge"
     if not knowledge_dir.exists():
         return {"files": [], "skill_name": skill_name}
 
@@ -627,7 +667,8 @@ async def delete_personal_skill_knowledge(
     if not filename or not _safe_filename(filename):
         raise HTTPException(400, "Invalid filename")
 
-    target = _personal_skills_path(tenant_id, username) / skill_name / "knowledge" / filename
+    fs_user = await _reconcile_personal_workspace(request, tenant_id, username)
+    target = _personal_skills_path(tenant_id, fs_user) / skill_name / "knowledge" / filename
     if not target.exists():
         raise HTTPException(404, f"Knowledge file '{filename}' not found")
 
@@ -655,6 +696,7 @@ async def save_personal_skill_tool(
     if not filename.endswith(".py"):
         raise HTTPException(400, "Tool script filename must end in .py")
 
+    username = await _reconcile_personal_workspace(request, req.tenant_id, username)
     skill_dir = _personal_skills_path(req.tenant_id, username) / skill_name
     if not skill_dir.exists():
         raise HTTPException(404, f"Personal skill '{skill_name}' not found for {username}")
@@ -681,6 +723,7 @@ async def list_personal_skill_tools(
     if not skill_name.replace("_", "").replace("-", "").isalnum():
         raise HTTPException(400, "Skill name must be alphanumeric with underscores/hyphens only")
 
+    username = await _reconcile_personal_workspace(request, tenant_id, username)
     tools_dir = _personal_skills_path(tenant_id, username) / skill_name / "tools"
     if not tools_dir.exists():
         return {"files": [], "skill_name": skill_name}
@@ -714,6 +757,7 @@ async def delete_personal_skill_tool(
     if not filename.endswith(".py"):
         raise HTTPException(400, "Only .py tool scripts can be deleted via this endpoint")
 
+    username = await _reconcile_personal_workspace(request, tenant_id, username)
     target = _personal_skills_path(tenant_id, username) / skill_name / "tools" / filename
     if not target.exists():
         raise HTTPException(404, f"Tool script '{filename}' not found")
@@ -832,6 +876,11 @@ async def review_skill_submission(request: Request, submission_id: str, req: Rev
 
     skill_name = meta["skill_name"]
     submitted_by = meta["submitted_by"]
+    # The submitter's FILESYSTEM key may be canonical (email) while the submission tag is
+    # the raw username — resolve it so the post-review index + notification writes land in
+    # the folder the submitter actually reads from. (admin context → _canonical_fs_user_id,
+    # not the owner-only reconcile.)
+    fs_submitter = _canonical_fs_user_id(req.tenant_id, submitted_by, meta.get("submitted_by_email") or "")
     preview = _build_submission_preview(req.tenant_id, submission_id)
 
     review = {
@@ -922,7 +971,7 @@ async def review_skill_submission(request: Request, submission_id: str, req: Rev
         except Exception:
             pass
 
-        personal_path = _personal_skills_path(req.tenant_id, submitted_by)
+        personal_path = _personal_skills_path(req.tenant_id, fs_submitter)
         personal_index_path = personal_path / "_index.yaml"
         if personal_index_path.exists():
             _orig = skill_name
@@ -932,7 +981,7 @@ async def review_skill_submission(request: Request, submission_id: str, req: Rev
                 return index
             await locked_rmw_yaml(personal_index_path, _set_approved)
 
-        _write_user_notification(req.tenant_id, submitted_by, skill_name, "approved", req.feedback)
+        _write_user_notification(req.tenant_id, fs_submitter, skill_name, "approved", req.feedback)
 
         logger.info("Skill approved and promoted: %s → global (by admin)", skill_name_registered)
         return {
@@ -948,10 +997,10 @@ async def review_skill_submission(request: Request, submission_id: str, req: Rev
 
     else:
         # Rejected — write notification so user knows
-        _write_user_notification(req.tenant_id, submitted_by, skill_name, "rejected", req.feedback)
+        _write_user_notification(req.tenant_id, fs_submitter, skill_name, "rejected", req.feedback)
 
         # Update personal index scope back to personal (can iterate and resubmit)
-        personal_path = _personal_skills_path(req.tenant_id, submitted_by)
+        personal_path = _personal_skills_path(req.tenant_id, fs_submitter)
         personal_index_path = personal_path / "_index.yaml"
         if personal_index_path.exists():
             _rej = skill_name
@@ -1093,6 +1142,264 @@ def _safe_filename(filename: str) -> bool:
         and "/" not in filename
         and "\\" not in filename
     )
+
+
+def _validate_tool_script_filenames(tool_scripts) -> None:
+    """Raise 400 if any incoming tool-script filename is unsafe or not a ``.py`` file.
+
+    Called BEFORE any skill file is written so an invalid batch fails the save cleanly
+    instead of 400-ing after SKILL.md/component.html are already overwritten. ``_sync_tool_scripts``
+    repeats the same guard as defence-in-depth. (round-4 #2)
+    """
+    for ts in tool_scripts or []:
+        if isinstance(ts, dict):
+            fname = ts.get("filename")
+        else:
+            fname = getattr(ts, "filename", None)
+        fname = (fname or "").strip()
+        if not fname or not fname.endswith(".py") or not _safe_filename(fname):
+            logger.warning("personal skill: rejecting unsafe tool filename %r", fname)
+            raise HTTPException(400, "Tool script filename must be a safe, non-empty .py filename")
+
+
+def _sync_tool_scripts(skill_dir: Path, tool_scripts) -> None:
+    """Persist bundled tool scripts into ``skill_dir/tools/`` and prune removals.
+
+    The caller only invokes this when ``tool_scripts is not None``. ``[]`` clears
+    all scripts; a non-empty list is authoritative. Unsafe or non-``.py``
+    filenames are rejected (no path traversal) so a payload can never write
+    outside ``tools/``.
+    """
+    tools_dir = Path(skill_dir) / "tools"
+    incoming: dict[str, str] = {}
+    for ts in tool_scripts or []:
+        if isinstance(ts, dict):
+            fname, content = ts.get("filename"), ts.get("content")
+        else:
+            fname, content = getattr(ts, "filename", None), getattr(ts, "content", None)
+        fname = (fname or "").strip()
+        content = content or ""
+        # Reject an invalid entry up front rather than silently dropping it: a non-empty
+        # request whose only entries are invalid would otherwise leave ``incoming`` empty
+        # and the prune below would delete EVERY existing script (silent data loss). An
+        # intentional "remove all" is the distinct ``[]`` case, which has no entries here.
+        if not fname or not fname.endswith(".py") or not _safe_filename(fname):
+            logger.warning("personal skill: rejecting unsafe tool filename %r", fname)
+            raise HTTPException(400, "Tool script filename must be a safe, non-empty .py filename")
+        incoming[fname] = content
+
+    if incoming:
+        tools_dir.mkdir(parents=True, exist_ok=True)
+        for fname, content in incoming.items():
+            atomic_write_text(tools_dir / fname, content)
+
+    # Prune any .py no longer present in the incoming set (keeps __init__.py etc.).
+    if tools_dir.is_dir():
+        for existing in tools_dir.glob("*.py"):
+            if existing.name.startswith("__"):
+                continue
+            if existing.name not in incoming:
+                try:
+                    existing.unlink()
+                except OSError:
+                    logger.warning("personal skill: could not prune %s", existing)
+
+
+# ── Personal-workspace reconciliation ──────────────────────────────────────
+# A user's personal folder is keyed by a filesystem id (email or user_id). When
+# that key churned (legacy uuid4 provisioning) a user's drafts could land in an
+# alternate-key folder and go invisible in the UI. microsoft._stable_user_id now
+# stops new churn; the helpers below pull EXISTING alt-key folders into the key
+# the UI uses. They only ever COPY — user data is never deleted.
+_reconciled_workspaces: dict[str, str] = {}
+
+
+def _newest_mtime(path: Path) -> float:
+    """Most recent mtime anywhere under *path* (0.0 if empty/missing)."""
+    newest = 0.0
+    try:
+        for p in path.rglob("*"):
+            try:
+                m = p.stat().st_mtime
+            except OSError:
+                continue
+            if m > newest:
+                newest = m
+    except Exception:
+        pass
+    return newest
+
+
+def _merge_index_entries(dst_index: dict, src_index: dict) -> dict:
+    """Copy skill entries from *src_index* that *dst_index* lacks (no overwrite)."""
+    dst_index.setdefault("skills", {})
+    for sname, meta in (src_index.get("skills") or {}).items():
+        if sname not in dst_index["skills"]:
+            dst_index["skills"][sname] = meta
+    return dst_index
+
+
+async def _merge_personal_dirs(src_skills: Path, dst_skills: Path) -> int:
+    """Copy skill folders from *src_skills* into *dst_skills* (copy-only).
+
+    Folders already present in the destination are left authoritative; the
+    conflicting source copy is backed up under ``dst/_merged_backup/<ts>/``.
+    ``_index.yaml`` entries are merged without overwriting. Returns the number
+    of skill folders newly copied in.
+
+    Raises on any copy/backup/index failure so the caller can decline to mark the
+    workspace reconciled — a swallowed failure would wrongly block the owner's
+    drafts from importing on a later request/restart.
+    """
+    if not src_skills.is_dir() or src_skills.resolve() == dst_skills.resolve():
+        return 0
+    dst_skills.mkdir(parents=True, exist_ok=True)
+    merged = 0
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    for child in src_skills.iterdir():
+        if not child.is_dir() or child.name in ("_merged_backup", "notifications"):
+            continue
+        target = dst_skills / child.name
+        if not target.exists():
+            # Stage into a temp sibling, then atomically promote. A crash mid-copytree
+            # leaves only the dot-prefixed staging dir (never listed as a skill, cleaned
+            # on the next run), not a half-populated authoritative target that the next
+            # reconciliation would trust and mark .reconciled without repairing. (#5)
+            staging = dst_skills / f".{child.name}.tmp-{ts}-{os.getpid()}"
+            if staging.exists():
+                shutil.rmtree(staging, ignore_errors=True)
+            try:
+                shutil.copytree(child, staging)
+                if target.exists():
+                    # Lost a concurrent race — keep the existing authoritative copy.
+                    shutil.rmtree(staging, ignore_errors=True)
+                else:
+                    os.replace(staging, target)  # atomic promote (same filesystem)
+                    merged += 1
+            except Exception:
+                shutil.rmtree(staging, ignore_errors=True)
+                raise
+        else:
+            backup = dst_skills / "_merged_backup" / ts / child.name
+            if not backup.exists():
+                backup.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(child, backup)
+
+    src_idx_path = src_skills / "_index.yaml"
+    dst_idx_path = dst_skills / "_index.yaml"
+    if src_idx_path.exists():
+        src_idx = yaml.safe_load(src_idx_path.read_text(encoding="utf-8")) or {}
+        # Merge through the cross-process lock so a concurrent personal save/delete on
+        # the destination index isn't clobbered by this read/merge/write (copy-only:
+        # _merge_index_entries never overwrites an existing destination entry).
+        await locked_rmw_yaml(dst_idx_path, lambda cur: _merge_index_entries(cur or {}, src_idx))
+    return merged
+
+
+def _canonical_fs_user_id(tenant_id: str, user_id: str, email: str) -> str:
+    """The ONE filesystem user key for this principal — the same key chat/SkillAgent
+    resolve via coerce_filesystem_user_id, so builder/CRUD and execution act on one
+    folder instead of diverging (uid folder vs legacy email folder). Falls back to the
+    given user_id if resolution isn't possible (keeps single-tenant/local unchanged)."""
+    try:
+        from shared.filesystem_identity import coerce_filesystem_user_id
+        return coerce_filesystem_user_id(
+            user_id=user_id,
+            email=email or None,
+            data_root=_enterprise_root(),
+            tenant_id=tenant_id,
+            agent_id="enterprise_agent",
+        ) or user_id
+    except Exception:
+        return user_id
+
+
+async def _reconcile_personal_workspace(request: Request, tenant_id: str, username: str) -> str:
+    """Resolve the canonical personal-workspace key and pull orphaned alt-key folders in.
+
+    Returns the ONE canonical filesystem key (via coerce_filesystem_user_id — the same
+    key chat/SkillAgent use), so builder edits, retirement and execution all act on the
+    same folder. Only the authenticated OWNER's own workspace is reconciled: alt-key
+    folders (the requested key, the principal's email and user_id) are merged into the
+    canonical folder, copy-only. A persistent ``.reconciled`` marker — written only after
+    a clean pass — makes the merge run at most once, so a later delete/retire isn't undone
+    by a restart re-copying an alt-key folder back. An admin viewing ANOTHER user's
+    workspace never merges or marks (and isn't cached, so the owner's own later request
+    still reconciles). Never raises — on any failure it leaves the workspace unmarked so a
+    later request retries, and returns a safe key.
+    """
+    cache_key = f"{tenant_id}/{username}"
+    if cache_key in _reconciled_workspaces:
+        return _reconciled_workspaces[cache_key]
+
+    # Identify the principal; only its OWN workspace is reconciled.
+    try:
+        principal = principal_from_request(request)
+        p_email = (getattr(principal, "email", "") or "").strip()
+        p_uid = (getattr(principal, "user_id", "") or "").strip()
+    except Exception:
+        p_email = p_uid = ""
+
+    is_owner = bool(username) and username in (p_email, p_uid)
+    if not is_owner:
+        # Admin viewing someone else's workspace (or no principal): never merge, mark,
+        # or cache — the owner's own later request must still reconcile. BUT still resolve
+        # the TARGET user's canonical filesystem key, so admin list/read/delete act on the
+        # owner's real folder. Returning the raw key would, after a restart clears the
+        # cache, point admin ops at a stale alt-key (e.g. UUID) folder — 404 or the wrong
+        # drafts — even though the owner saved under the canonical email key. (#6)
+        try:
+            # username may be an email or a uid. coerce_filesystem_user_id can resolve an
+            # email folder only WITH an email hint — for a UUID-addressed admin request it
+            # otherwise can't discover the owner's canonical folder and would fall back to the
+            # stale UUID copy. So resolve the target account through the auth provider first to
+            # recover its email, then choose the filesystem key. (round-6 #6)
+            _email_hint = username if (username and "@" in username) else ""
+            if not _email_hint and username:
+                try:
+                    from auth.factory import get_provider
+                    provider = await get_provider()
+                    target_user = await provider.get_user(username)
+                    _email_hint = (getattr(target_user, "email", "") or "").strip()
+                except Exception:
+                    _email_hint = ""   # provider lookup unavailable — fall back to raw key resolution
+            return _canonical_fs_user_id(tenant_id, username, _email_hint)
+        except Exception:
+            return username
+
+    canonical = _canonical_fs_user_id(tenant_id, p_uid or username, p_email)
+    canonical_cache_key = f"{tenant_id}/{canonical}"
+    try:
+        dst_skills = _personal_skills_path(tenant_id, canonical)
+        marker = dst_skills / ".reconciled"
+        # Already reconciled once (survives restarts): skip the merge so a canonical
+        # deletion isn't resurrected by re-importing an alt-key folder.
+        if marker.exists():
+            _reconciled_workspaces[cache_key] = canonical
+            _reconciled_workspaces[canonical_cache_key] = canonical
+            return canonical
+
+        # Merge every alternate key for THIS principal into the canonical folder.
+        alt_keys = {k for k in (username, p_email, p_uid) if k and k != canonical}
+        for alt in alt_keys:
+            src_skills = _personal_skills_path(tenant_id, alt)
+            if src_skills.is_dir():
+                n = await _merge_personal_dirs(src_skills, dst_skills)
+                if n:
+                    logger.info("reconcile: merged %d skill(s) from '%s' into '%s'", n, alt, canonical)
+
+        # Mark + cache ONLY after a clean eligible pass, so a copy/index failure retries
+        # on the next request/restart instead of permanently blocking the import.
+        dst_skills.mkdir(parents=True, exist_ok=True)
+        marker.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+        _reconciled_workspaces[cache_key] = canonical
+        _reconciled_workspaces[canonical_cache_key] = canonical
+        return canonical
+    except Exception as exc:
+        # Leave unmarked/uncached so a later request retries; return the canonical key so
+        # the request still operates on the execution-aligned folder.
+        logger.warning("reconcile: deferred for %s/%s (will retry): %s", tenant_id, canonical, exc)
+        return canonical
 
 
 def _write_user_notification(tenant_id: str, username: str, skill_name: str, verdict: str, feedback: str):

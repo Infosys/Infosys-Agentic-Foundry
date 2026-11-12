@@ -159,8 +159,14 @@ def _snapshot(skill_md: str, scripts: list[dict], graphs: dict[str, str]) -> dic
     return snap
 
 
-def _normalize_scripts(tool_scripts: Any) -> list[dict]:
-    """Accept pydantic ToolScript objects or dicts → list[{filename, content}]."""
+def _normalize_scripts(tool_scripts: Any) -> Optional[list[dict]]:
+    """Accept pydantic ToolScript objects or dicts → list[{filename, content}].
+
+    Returns ``None`` when the input is ``None`` so callers can tell "the field
+    was not supplied" (preserve on-disk scripts) apart from "[]" (remove all).
+    """
+    if tool_scripts is None:
+        return None
     out: list[dict] = []
     for ts in tool_scripts or []:
         if hasattr(ts, "filename"):
@@ -168,6 +174,20 @@ def _normalize_scripts(tool_scripts: Any) -> list[dict]:
         elif isinstance(ts, dict):
             out.append({"filename": ts.get("filename", ""), "content": ts.get("content", "")})
     return out
+
+
+def _resolve_scripts(skill_dir: Path, tool_scripts: Any) -> list[dict]:
+    """Decide which tool scripts to actually persist.
+
+    ``None`` => preserve whatever is on disk (read the live ``tools/*.py``);
+    ``[]`` => remove all; a non-empty list => replace with that set. This stops
+    a save that omitted ``tool_scripts`` from silently deleting every bundled
+    tool.
+    """
+    normalized = _normalize_scripts(tool_scripts)
+    if normalized is None:
+        return _read_live_tool_scripts(skill_dir)
+    return normalized
 
 
 
@@ -257,7 +277,7 @@ def record_version(
         manifest = {"active": None, "versions": []}
     # Record the immutable creator on first snapshot; never overwrite it later.
     manifest.setdefault("created_by", author or "unknown")
-    scripts = _normalize_scripts(tool_scripts)
+    scripts = _resolve_scripts(skill_dir, tool_scripts)
     graphs = _normalize_graph_files(graph_files)
     vid = _next_id(manifest)
     _vdir(skill_dir).mkdir(parents=True, exist_ok=True)
@@ -342,7 +362,7 @@ def update_active_version(
             email=email, action="create", note=note, version_label=version_label, make_active=True,
             graph_files=graph_files,
         )
-    scripts = _normalize_scripts(tool_scripts)
+    scripts = _resolve_scripts(skill_dir, tool_scripts)
     graphs = _normalize_graph_files(graph_files)
     _write_json(_snapshot_path(skill_dir, active), _snapshot(skill_md, scripts, graphs))
     entry = next((v for v in manifest.get("versions", []) if v["id"] == active), None)

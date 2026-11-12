@@ -41,8 +41,12 @@ class SampleToolProvider:
             get_entity_hint=get_entity_hint,
         )
 
-    def create_invoke_skill_tool(self, router: Any, agent_factory_fn: Callable, current_depth: int) -> Any:
-        return self._default.create_invoke_skill_tool(router, agent_factory_fn, current_depth)
+    def create_invoke_skill_tool(
+        self, router: Any, agent_factory_fn: Callable, current_depth: int, parent_agent: Any = None
+    ) -> Any:
+        return self._default.create_invoke_skill_tool(
+            router, agent_factory_fn, current_depth, parent_agent=parent_agent
+        )
 
     def create_invoke_plan_tool(
         self,

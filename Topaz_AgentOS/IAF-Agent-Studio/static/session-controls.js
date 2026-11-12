@@ -31,6 +31,127 @@
   var LOGOUT_MS = 20 * 60 * 1000;
   var LOGIN_URL = '/static/login.html';
 
+  // ── SEC-7 idle hardening: run-gating, cross-tab activity sync, cross-tab logout (Bugs 1,2,4) ──
+  var activeRuns = 0;
+  var ABSOLUTE_MAX_MS = LOGOUT_MS * 6;      // absolute cap so a wedged run can't hold a session forever
+  var idleSince = Date.now();
+
+  var ACTIVITY_KEY = 'iaf_last_activity';   // cross-tab idle-activity sync (Bug 2)
+  var LOGOUT_KEY = 'iaf_logout';            // cross-tab logout broadcast (Bug 4)
+  var _lastBroadcast = 0;
+  var _applyingRemote = false;
+
+  // Frames that are NOT the user's active agent run: keep-alive pings plus unsolicited
+  // background broadcasts (dashboard snapshots, HITL-queue / task / ingestion / deployment
+  // events) that arrive on an idle page. These must not reset the idle timer or keep sibling
+  // tabs signed in. Genuine run frames (response/status/routing/token/tool_*/text/progress…)
+  // are NOT listed, so they still count — and an unknown type counts too, so a real run is
+  // never force-logged-out by mistake. (#8, preserving Bug 1)
+  // Only UNAMBIGUOUS dashboard data-refresh broadcasts. Deliberately NOT listing hitl_* /
+  // task_* / approval frames: a user's own agent run can legitimately emit those (e.g. a run
+  // pausing on a HITL approval), and ignoring them could let a genuine run time out. Better to
+  // keep an unattended dashboard alive a bit longer than to log a user out mid-run.
+  var IDLE_IGNORE_TYPES = {
+    ping: 1, pong: 1, heartbeat: 1,
+    snapshot: 1, directory: 1, deployment: 1, taxonomy: 1, hierarchy: 1, demo_seeded: 1,
+    item_created: 1, item_updated: 1, items_ingested: 1, overdue_risk: 1, debit_balance: 1
+  };
+
+  // Treat streamed WebSocket frames (agent runs, silent tool output) as activity so a
+  // long, silent run is not force-logged-out mid-task. Wrap window.WebSocket once, globally.
+  function installWsHook() {
+    if (typeof window.WebSocket !== 'function' || window.__iafWsIdleHooked) return;
+    window.__iafWsIdleHooked = true;
+    var NativeWS = window.WebSocket;
+    function WrappedWS(url, protocols) {
+      var ws = protocols === undefined ? new NativeWS(url) : new NativeWS(url, protocols);
+      ws.addEventListener('message', function (ev) {
+        var t;
+        try { t = JSON.parse(ev.data).type; } catch (e) { resetIdle(); return; }  // non-JSON frame — treat as activity
+        // Ignore keep-alive + unsolicited background broadcasts (see IDLE_IGNORE_TYPES);
+        // everything else (the user's streamed run) counts as activity. (#8)
+        if (IDLE_IGNORE_TYPES[t]) return;
+        resetIdle();
+      });
+      return ws;
+    }
+    WrappedWS.prototype = NativeWS.prototype;
+    ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'].forEach(function (k) {
+      try { WrappedWS[k] = NativeWS[k]; } catch (e) {}
+    });
+    window.WebSocket = WrappedWS;
+  }
+  installWsHook();
+
+  function broadcastActivity() {
+    var now = Date.now();
+    if (now - _lastBroadcast < 5000) return;      // throttle writes
+    _lastBroadcast = now;
+    try { localStorage.setItem(ACTIVITY_KEY, String(now)); } catch (e) {}
+  }
+
+  // A remote broadcast resets this tab WITHOUT echoing back (Bug 2).
+  function onRemoteActivity() {
+    _applyingRemote = true;
+    try { resetIdle(); } finally { _applyingRemote = false; }
+  }
+
+  function broadcastLogout() {
+    try { localStorage.setItem(LOGOUT_KEY, String(Date.now())); } catch (e) {}
+  }
+
+  // Another tab already cleared the cookie/IdP session: tear down locally only
+  // (no second /auth/logout — that would double-trigger RP-initiated Keycloak logout).
+  function remoteLogout() {
+    if (loggingOut) return;
+    loggingOut = true;
+    teardownIdle();
+    try { if (window.__iafAuth) window.__iafAuth.clear(); } catch (e) {}
+    window.location.href = (window.__BASE_PATH__ || '') + LOGIN_URL;
+  }
+
+  // Cross-tab run lease: a tab with an active run publishes a short lease so sibling
+  // tabs defer their idle logout too (#9/#10). Bounded — it expires LEASE_MS after the
+  // last write, and the absolute cap below still applies, so a wedged run can't hold on.
+  var RUN_LEASE_KEY = 'iaf_run_lease';
+  var LEASE_MS = 45 * 1000;
+  var _leaseRenewTimer = null;
+  function writeRunLease() { try { localStorage.setItem(RUN_LEASE_KEY, String(Date.now())); } catch (e) {} }
+  function runLeaseActive() {
+    try { return (Date.now() - parseInt(localStorage.getItem(RUN_LEASE_KEY) || '0', 10)) < LEASE_MS; }
+    catch (e) { return false; }
+  }
+  // Renew the lease well within LEASE_MS so a silent run never lets it lapse and a sibling
+  // tab sign both out mid-run (#7). Stops when no run is active or the absolute cap is hit.
+  function startLeaseRenew() {
+    if (_leaseRenewTimer) return;
+    _leaseRenewTimer = setInterval(function () {
+      if (activeRuns <= 0 || (Date.now() - idleSince) >= ABSOLUTE_MAX_MS) { stopLeaseRenew(); return; }
+      writeRunLease();
+    }, 20 * 1000);
+  }
+  function stopLeaseRenew() {
+    if (_leaseRenewTimer) { clearInterval(_leaseRenewTimer); _leaseRenewTimer = null; }
+  }
+
+  // Pages bracket a run (HTTP or WebSocket) with these so it counts as activity across its
+  // whole lifecycle — completion, error and cancellation must all call endRun().
+  function beginRun() { activeRuns++; writeRunLease(); startLeaseRenew(); resetIdle(); }
+  function endRun() { if (activeRuns > 0) activeRuns--; if (activeRuns === 0) stopLeaseRenew(); resetIdle(); }
+
+  // The idle timeout fires this, not logout() directly: defer while a run is in flight
+  // in THIS tab (activeRuns) or ANY tab (the cross-tab lease), bounded by ABSOLUTE_MAX_MS
+  // so a wedged run can't hold the session open forever.
+  function maybeLogout() {
+    if (loggingOut) return;
+    if ((activeRuns > 0 || runLeaseActive()) && (Date.now() - idleSince) < ABSOLUTE_MAX_MS) {
+      if (activeRuns > 0) writeRunLease();   // keep the lease fresh for sibling tabs
+      logoutTimer = setTimeout(maybeLogout, 30 * 1000);   // re-check, don't log out yet
+      return;
+    }
+    logout();
+  }
+
   var STYLE_ID = 'iaf-session-controls-css';
   var CSS = [
     '.iaf-session{position:relative;display:inline-flex;align-items:center;gap:8px;}',
@@ -88,6 +209,11 @@
         if (warnMin > 0 && logoutMin > 0 && warnMin < logoutMin) {
           WARN_MS = warnMin * 60 * 1000;
           LOGOUT_MS = logoutMin * 60 * 1000;
+          // Recompute the run cap from the policy's logout timeout (it was seeded from the
+          // fallback at load). Otherwise a 60-min idle policy would still cap silent runs at
+          // 120 min here while index.html derives 360 min, and the shared logout broadcast
+          // would then sign out the running index tab too. (#8-cap)
+          ABSOLUTE_MAX_MS = LOGOUT_MS * 6;
         }
       })
       .catch(function () { /* keep built-in defaults above */ });
@@ -122,6 +248,7 @@
     // Guard against the idle timer and a user click racing each other.
     if (loggingOut) return;
     loggingOut = true;
+    broadcastLogout();          // sign out every other open tab (Bug 4)
     teardownIdle();
 
     // A hard location.href assignment is not shimmed by shared/base_path.py, so apply window.__BASE_PATH__ here.
@@ -366,18 +493,22 @@
 
   function resetIdle() {
     if (loggingOut) return;
+    idleSince = Date.now();
     if (banner) banner.style.display = 'none';
     clearTimeout(warnTimer);
     clearTimeout(logoutTimer);
     warnTimer = setTimeout(function () {
       if (banner) banner.style.display = 'block';
     }, WARN_MS);
-    logoutTimer = setTimeout(function () { logout(); }, LOGOUT_MS);
+    logoutTimer = setTimeout(maybeLogout, LOGOUT_MS);
+    if (!_applyingRemote) broadcastActivity();   // tell other tabs we're active (Bug 2)
+    if (activeRuns > 0) writeRunLease();          // keep a run lease fresh for sibling tabs (#9)
   }
 
   function teardownIdle() {
     clearTimeout(warnTimer);
     clearTimeout(logoutTimer);
+    stopLeaseRenew();
     idleListenerTargets.forEach(function (t) {
       document.removeEventListener(t, resetIdle);
     });
@@ -391,11 +522,19 @@
       document.addEventListener(evt, resetIdle, { passive: true });
       idleListenerTargets.push(evt);
     });
+    // Cross-tab coordination: another tab's activity resets us (Bug 2); its logout
+    // tears us down locally (Bug 4). storage events fire only in OTHER tabs — no self-echo.
+    window.addEventListener('storage', function (e) {
+      if (!e) return;
+      if (e.key === ACTIVITY_KEY) onRemoteActivity();
+      else if (e.key === LOGOUT_KEY) remoteLogout();
+    });
     resetIdle();
   }
 
 
   function start() {
+    installWsHook();
     injectStyles();
     mountMenu();
     // Install the timer with built-in defaults first, then re-arm if the server returns different values.
@@ -416,5 +555,8 @@
     logout: logout,
     showSessions: openSessions,
     signOutEverywhere: signOutEverywhere,
+    resetIdle: resetIdle,
+    beginRun: beginRun,
+    endRun: endRun,
   };
 })();

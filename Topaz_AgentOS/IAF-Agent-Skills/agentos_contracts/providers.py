@@ -117,8 +117,17 @@ class ToolProvider(Protocol):
     ) -> Any:
         """Create the query-memory tool."""
 
-    def create_invoke_skill_tool(self, router: Any, agent_factory_fn: Callable, current_depth: int) -> Any:
-        """Create the skill delegation tool."""
+    def create_invoke_skill_tool(
+        self, router: Any, agent_factory_fn: Callable, current_depth: int, parent_agent: Any = None
+    ) -> Any:
+        """Create the skill delegation tool.
+
+        ``parent_agent`` (optional, keyword, ``None`` default) is the session agent to
+        surface a delegated child's HITL pause onto. It is keyword-only with a ``None``
+        default so existing providers implementing the prior three-argument contract
+        remain conformant; callers must also tolerate providers that do not accept it
+        (see SkillAgent's compatibility path).
+        """
 
     def create_invoke_plan_tool(
         self,

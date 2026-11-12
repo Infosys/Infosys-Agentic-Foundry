@@ -20,11 +20,12 @@ mappings:
     docs:
       - docs/OPENSHELL_INTEGRATION_DESIGN.md
       - docs/SECURITY_DEVELOPER_GUIDE.md
-    note: "Reusable SSRF guard: scheme allowlist + resolve-once address pinning, rejecting private/loopback/link-local/multicast/reserved/cloud-metadata targets. Consumed by routers/context_manager.py::_fetch_url and intended for the Step 2 egress chokepoint."
+    note: "Reusable SSRF guard: scheme allowlist + resolve-once address pinning, rejecting private/loopback/link-local/multicast/reserved/cloud-metadata targets. Consumed by routers/context_manager.py::_fetch_url and intended for the Step 2 egress chokepoint. allow_private=True (default False) is only for admin-registered targets such as graph-database connections (graph_import/safety.py::check_endpoint); metadata/link-local/multicast/reserved stay blocked."
 
   - code: IAF-Agent-Studio/routers/context_manager.py
     docs:
       - docs/SECURITY_DEVELOPER_GUIDE.md
+      - docs/GRAPH_UPLOAD.md
       - docs/OPENSHELL_INTEGRATION_DESIGN.md
     note: "Two authorisation layers: the router-level require_context_tenant dependency (which tenant may you touch? → 403) and enforce_context_access/can_access_context (which document inside it?). Per-item posture is allow-by-default, restrict-by-folder via context:* allow + context:/shared/contexts/restricted/* deny in the tenant policies.yaml. Update Part 3 of the security guide when the rules, the restricted-folder convention, or the enforcement points change."
 
@@ -168,7 +169,8 @@ mappings:
       - IAF-Agent-Skills/docs/execution_modes.md
       - IAF-Agent-Skills/docs/memory_schema.md
       - IAF-Agent-Skills/docs/HOOK_SYSTEM_DESIGN.md
-    note: "Request lifecycle, session compaction, hook points, memory integration"
+      - docs/TAXONOMY_GRAPH_IMPORT.md
+    note: "Request lifecycle, session compaction, hook points, memory integration. _graph_denylist_env hands bundled skill tools the caller's denied graph folders (IAF_DENIED_GRAPHS); _load_bundled_tools passes it as a per-run callable and withholds graph-reading tools from providers that cannot carry it."
 
   - code: IAF-Agent-Skills/iaf_agent_skills/providers/
     docs:
@@ -303,7 +305,9 @@ mappings:
   - code: agent_os/external_access.py
     docs:
       - agent_os/docs/tools_reference.md
-    note: "db resource model extended: backend/name/schema/allowed_tables/read_only fields; resource_for_database matches named (non-file) resources by name/resource_id so run_sql_query(database='graph') resolves."
+      - docs/TAXONOMY_GRAPH_IMPORT.md
+      - docs/GRAPHIFY.md
+    note: "type: graph resources (engine neo4j|neptune, exactly one host) are the connection registry for taxonomy graph import; validate_external_access_doc enforces engine/host/auth. db resource model extended: backend/name/schema/allowed_tables/read_only fields; resource_for_database matches named (non-file) resources by name/resource_id so run_sql_query(database='graph') resolves."
 
   - code: IAF-Agent-Skills/iaf_agent_skills/entity_guide_seeder.py
     docs:
@@ -1248,7 +1252,8 @@ mappings:
       - docs/04_skill_authoring.md
       - docs/06_memory_and_learning.md
       - IAF-Agent-Studio/docs/api_reference.md
-    note: "Virtual path resolution, context file CRUD, vpath_to_absolute mapping"
+      - docs/TAXONOMY_GRAPH_IMPORT.md
+    note: "Virtual path resolution, context file CRUD, vpath_to_absolute mapping. Taxonomy authoring endpoints (create/update/delete/import/reindex) and the graph import endpoints (taxonomy-graph-connections, taxonomy-graph-preview); JSON import requires a skill on every section."
 
   - code: IAF-Agent-Studio/routers/traces.py
     docs:
@@ -1683,3 +1688,91 @@ mappings:
     docs:
       - docs/CONFIG_REFERENCE.md
     note: "App version single-source-of-truth (resolve_app_version → APP_VERSION from repo-root Version file) and PRIVACY_ACK_* / PRIVACY_NOTICE_* config knobs"
+
+  - code: IAF-Agent-Skills/agentos_contracts/graph_source.py
+    docs:
+      - docs/TAXONOMY_GRAPH_IMPORT.md
+      - docs/GRAPHIFY.md
+    note: "GraphSourceAdapter Protocol + GraphSnapshot/HierarchyQuery dataclasses (neutral hierarchy contract between connectors and the taxonomy mapper)."
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/graph_import/safety.py
+    docs:
+      - docs/TAXONOMY_GRAPH_IMPORT.md
+    note: "Identifier validation (no free-text queries), endpoint check via agent_os.egress_ssrf (allow_private), safe error type. Keep the 'no URLs/credentials in messages' rule."
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/graph_import/cypher_base.py
+    docs:
+      - docs/TAXONOMY_GRAPH_IMPORT.md
+    note: "Level-by-level hierarchy fetch shared by openCypher engines; fixed statement templates; max_nodes/max_depth/truncation semantics."
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/graph_import/neo4j_adapter.py
+    docs:
+      - docs/TAXONOMY_GRAPH_IMPORT.md
+    note: "Neo4j Query API v2 (HTTP) adapter, accessMode READ. Wire format verified against fakes only; see the smoke-test section."
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/graph_import/neptune_adapter.py
+    docs:
+      - docs/TAXONOMY_GRAPH_IMPORT.md
+    note: "Neptune openCypher-over-HTTPS adapter with optional SigV4 (botocore, requirements-graph-import.txt)."
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/graph_import/http_util.py
+    docs:
+      - docs/TAXONOMY_GRAPH_IMPORT.md
+    note: "Redirect-free, size-capped HTTP helper; generic upstream error mapping."
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/graph_import/mapper.py
+    docs:
+      - docs/TAXONOMY_GRAPH_IMPORT.md
+    note: "Deterministic snapshot to taxonomy mapping, loss report kinds, sanitize_text (markdown/frontmatter injection defence)."
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/graph_import/suggest.py
+    docs:
+      - docs/TAXONOMY_GRAPH_IMPORT.md
+    note: "Deterministic TF-IDF skill suggestions against _index.yaml; never assigns a skill."
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/graph_import/service.py
+    docs:
+      - docs/TAXONOMY_GRAPH_IMPORT.md
+      - docs/GRAPHIFY.md
+    note: "Connection registry (external_access type graph), credential resolution (consumer taxonomy_graph_import), preview orchestration, audit to external_access_audit.jsonl."
+
+  - code: IAF-Agent-Studio/static/skill-builder-v2.html
+    docs:
+      - docs/TAXONOMY_GRAPH_IMPORT.md
+      - docs/GRAPH_UPLOAD.md
+    note: "Taxonomy tab 'Add' menu (New / Import / Build from a graph database / Upload an ontology file; hidden without skills.author) and the graph modals (connection pick, preview, per-section skill assignment, commit via /taxonomy-import). Commit stays disabled until every section has a skill. Modal errors use taxGraphModalError, never the page-level taxGraphError pane."
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/graph_import/graphify_adapter.py
+    docs:
+      - docs/GRAPHIFY.md
+      - docs/TAXONOMY_GRAPH_IMPORT.md
+    note: "File engine: reads a graphify graph.json (NetworkX node-link) and derives repo > community|folder > file > symbols. No network/credentials. Mapping filters (rationale nodes, dunders, symbol-less files) and the .graphify_labels.json sidecar are part of the contract; the graphify output format is a third-party contract (tested against 0.9.11)."
+
+  - code: IAF-Agent-Skills/iaf_agent_skills/graph_import/graph_store.py
+    docs:
+      - docs/GRAPH_UPLOAD.md
+    note: "Converts an uploaded graph/ontology JSON (nodes+edges, entities+relationships, triples, children tree, graphify) to graphify node-link format and publishes/lists/deletes <tenant>/shared/graphs/<name>/graph.json. Name pattern + confined path, 16 MB upload cap, node/edge/depth caps, atomic write, no paths in errors. The folder layout and name pattern must match graph_query.py."
+
+  - code: enterprise_root/tenants/company/skills/codebase_graph/SKILL.md
+    docs:
+      - docs/GRAPHIFY.md
+      - docs/GRAPH_UPLOAD.md
+    note: "Read-only Q&A skill over a published graph (uploaded ontology or graphify code graph). Keep the answer-only-from-the-tool rule and the EXTRACTED/INFERRED honesty rule. Keywords are deliberately specific: generic phrases would steal routing from other skills."
+
+  - code: enterprise_root/tenants/company/skills/codebase_graph/tools/graph_query.py
+    docs:
+      - docs/GRAPHIFY.md
+      - docs/GRAPH_UPLOAD.md
+      - docs/TAXONOMY_GRAPH_IMPORT.md
+    note: "stdlib-only subprocess tool (stdin JSON -> stdout JSON). Graph looked up by name under <tenant>/shared/graphs, name pattern-checked and path confined (the labels sidecar too, size-capped); never writes; errors never leak paths; no traceback on malformed input. Reply must stay under skill_tool_loader.STDOUT_CAP (10 KB): fit() shrinks lists and flags truncated rather than cutting JSON. explain/path results carry id+file+location for citations. A test asserts the script contains no write/network primitives. Graph folders listed in IAF_DENIED_GRAPHS (set by the agent for this caller) are refused with the same message as a missing graph."
+
+  - code: .graphifyignore
+    docs:
+      - docs/GRAPHIFY.md
+      - .claude/skills/graphify/SKILL.md
+    note: "Scopes graphify builds to first-party code (agent_os, IAF-Agent-Skills, IAF-Agent-Studio) so a build is a pure AST pass with no token cost. Re-verify with graphify.detect after editing (expect document=0)."
+
+  - code: .claude/skills/graphify/SKILL.md
+    docs:
+      - docs/GRAPHIFY.md
+    note: "Project /graphify skill: AgentOS conventions (scope, build/refresh, publish into a tenant, taxonomy import, codebase_graph skill). Only list graphify CLI commands that exist in `graphify --help`."

@@ -1546,7 +1546,7 @@ If results above are thin (<3), grep the files above with different keyword vari
 
 
 
-def create_invoke_skill_tool(router, agent_factory_fn: Callable, current_depth: int):
+def create_invoke_skill_tool(router, agent_factory_fn: Callable, current_depth: int, parent_agent=None):
     """
     Create the invoke_skill tool for cross-skill delegation inside the ReAct loop.
 
@@ -1622,6 +1622,21 @@ def create_invoke_skill_tool(router, agent_factory_fn: Callable, current_depth: 
                 skip_memory=True,   # Children skip memory ops for speed
                 light_mode=True,    # Skip heavy context loading
             )
+
+            # Delegated HITL: if the child paused for human approval, mirror that pause onto
+            # the parent (the session agent the UI reads) and return a halt notice. Otherwise
+            # the child's held tool call is discarded and the parent just reads "awaiting
+            # approval" as text and keeps looping — the approval buttons never appear.
+            if parent_agent is not None:
+                try:
+                    from .tool_governance import mirror_child_pause  # lazy: keep module standalone-loadable
+                    _notice = mirror_child_pause(parent_agent, child_agent, skill_name=skill_name, task=task)
+                    if _notice:
+                        logger.info("invoke_skill [depth=%d]: child '%s' paused for HITL — mirrored to parent",
+                                    current_depth, skill_name)
+                        return _notice
+                except Exception as _merr:
+                    logger.warning("invoke_skill: failed to mirror child HITL pause: %s", _merr)
 
             # Truncate long results to stay within token budget
             if isinstance(result, tuple):

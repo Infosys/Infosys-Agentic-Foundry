@@ -1,0 +1,4 @@
+# Optional extras for taxonomy graph import (docs/TAXONOMY_GRAPH_IMPORT.md).
+# Neo4j needs nothing beyond the core requirements (HTTP Query API over httpx).
+# botocore is only needed to sign Neptune requests with IAM SigV4 (auth: sigv4).
+botocore>=1.35,<2.0

@@ -89,8 +89,16 @@ class NativeReactRuntime:
         config: dict[str, Any] | None,
         govern_batch: Callable[[list[dict[str, Any]]], list[Any]],
         record_tool_result: Callable[[dict[str, Any], str], None] | None = None,
+        check_delegated_pause: Callable[[], bool] | None = None,
     ) -> dict[str, list[Any]] | str:
-        """Run a complete native React loop and return LangGraph-compatible output."""
+        """Run a complete native React loop and return LangGraph-compatible output.
+
+        ``check_delegated_pause`` (optional): called after each tool batch executes. When
+        it returns True a delegated child (invoke_skill) paused for HITL and mirrored its
+        pause onto the session agent — the loop halts so it can't run past an unapproved
+        action. The LangGraph path has the equivalent check; this gives the native loop
+        parity.
+        """
         if not self.tools:
             raise ReactRuntimeUnavailable("Native React runtime requires at least one tool")
 
@@ -99,9 +107,13 @@ class NativeReactRuntime:
             current_messages.append(SystemMessage(content=self.system_prompt))
         current_messages.extend(list(messages))
         collected: list[Any] = list(messages)
-        return self._loop(current_messages, collected, config, govern_batch, record_tool_result)
+        return self._loop(
+            current_messages, collected, config, govern_batch, record_tool_result,
+            check_delegated_pause=check_delegated_pause,
+        )
 
-    def _loop(self, current_messages, collected, config, govern_batch, record_tool_result):
+    def _loop(self, current_messages, collected, config, govern_batch, record_tool_result,
+              check_delegated_pause=None):
         """The governed React loop body — shared by run() and resume_and_continue()."""
         model = self._bind_model(self.tools)
         from ..model_registry import llm_model_name as _llm_model_name, llm_base_url as _llm_base_url
@@ -166,6 +178,20 @@ class NativeReactRuntime:
                 collected.append(tool_message)
                 current_messages.append(tool_message)
 
+                # Check IMMEDIATELY after each tool, not after the whole batch. A delegated
+                # child (invoke_skill) that paused for HITL mirrored its pause onto the
+                # session agent — and that pause arrives as a normal tool RESULT (the halt
+                # notice), not a govern decision, so the pending-batch check above won't
+                # catch it. Halting here (mid-batch) stops any FURTHER tool in the same
+                # batch from running: a second invoke_skill would pause too, and
+                # mirror_child_pause's first-pause-wins guard would silently discard its
+                # held call. No pending_resume — the held child call resumes via the agent's
+                # standard approval path (resume_approved_tool_call → _execute_held_tool_call),
+                # not a native-turn continuation. (round-6 #2)
+                if check_delegated_pause is not None and check_delegated_pause():
+                    self.pending_resume = None
+                    return "__PENDING__"
+
         exhausted = ReactRuntimeUnavailable(
             f"Native React runtime reached max_iterations={self.max_iterations} before a final answer"
         )
@@ -188,7 +214,8 @@ class NativeReactRuntime:
             return model.bind(**self.model_kwargs)
         return model
 
-    def resume_and_continue(self, *, config, govern_batch, record_tool_result=None, execute_held=None):
+    def resume_and_continue(self, *, config, govern_batch, record_tool_result=None, execute_held=None,
+                            check_delegated_pause=None):
         """Resume a paused turn after approval: execute the previously-blocked tool
         call(s) directly (approval already granted — bypass the gate), then re-enter the
         governed loop so the model can finish the task (and pause again if a NEW call is
@@ -220,7 +247,17 @@ class NativeReactRuntime:
                 record_tool_result(tool_call, str(tool_message.content))
             collected.append(tool_message)
             current_messages.append(tool_message)
-        return self._loop(current_messages, collected, config, govern_batch, record_tool_result)
+        # An approved held invoke_skill call can itself create a NEW delegated pause. Surface
+        # it BEFORE re-entering the model loop — otherwise the model could return a final
+        # answer and _resume_native_turn would clear the fresh pending without surfacing it.
+        # (round-6 #3)
+        if check_delegated_pause is not None and check_delegated_pause():
+            self.pending_resume = None
+            return "__PENDING__"
+        return self._loop(
+            current_messages, collected, config, govern_batch, record_tool_result,
+            check_delegated_pause=check_delegated_pause,
+        )
 
     def _execute_tool_call(self, tool_call: dict[str, Any], *, config: dict[str, Any] | None) -> ToolMessage:
         tool_name = str(tool_call.get("name") or "")

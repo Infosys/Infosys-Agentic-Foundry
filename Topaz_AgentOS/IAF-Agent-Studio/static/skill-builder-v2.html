@@ -539,11 +539,14 @@ function _getIafUser() {
             let response = await _origFetch(input, init);
             if (response.status === 401 && isApiCall && !isAuthEndpoint) {
                 try {
-                    const refresh = await _origFetch("/auth/refresh", { method: "POST", credentials: "include" });
+                    const refresh = window.__iafCoordinatedRefresh
+                        ? await window.__iafCoordinatedRefresh()
+                        : await _origFetch("/auth/refresh", { method: "POST", credentials: "include" });
                     if (refresh.ok) {
-                        const data = await refresh.json();
-                        // SEC-6: server updated httponly cookie; no localStorage write needed
-                        init.headers = Object.assign({}, init.headers, { "Authorization": "Bearer " + data.access_token });
+                        const data = await refresh.json().catch(() => ({}));
+                        // SEC-6: server updated httponly cookie; no localStorage write needed.
+                        // Guard: the cross-tab dedup path returns {} (no token) — don't send "Bearer undefined".
+                        if (data && data.access_token) init.headers = Object.assign({}, init.headers, { "Authorization": "Bearer " + data.access_token });
                         response = await _origFetch(input, init);
                     } else {
                         // SEC-6: stale tokens cleaned up at interceptor init
@@ -848,10 +851,10 @@ function _getIafUser() {
                 <template x-for="i in 8"><div class="skeleton h-36 rounded-xl"></div></template>
             </div>
             <div x-show="!skillsLoading" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 slide-up">
-                <template x-for="sk in filteredSkills" :key="sk.name">
-                    <div @click="editSkill(sk.name)"
-                         @keydown.enter.prevent="editSkill(sk.name)"
-                         @keydown.space.prevent="editSkill(sk.name)"
+                <template x-for="sk in filteredSkills" :key="(sk._scope || 'shared') + ':' + sk.name">
+                    <div @click="editSkill(sk.name, sk._scope)"
+                         @keydown.enter.prevent="editSkill(sk.name, sk._scope)"
+                         @keydown.space.prevent="editSkill(sk.name, sk._scope)"
                          role="button" tabindex="0"
                          :aria-label="'Edit skill ' + sk.name + (sk.description ? ': ' + sk.description : '')"
                          class="bg-dark-900 border border-dark-700 rounded-xl p-4 cursor-pointer card-hover relative group">
@@ -1104,7 +1107,7 @@ function _getIafUser() {
                         <span>🕘</span> Versions
                     </button>
                     <!-- Unsaved-changes hint (shown only while editing an existing skill) -->
-                    <span x-show="editingName && isDirty" class="text-[10px] text-amber-400/80 flex items-center gap-1" title="You have unsaved changes">● unsaved</span>
+                    <span x-show="editingName && (isDirty || componentIsDirty)" class="text-[10px] text-amber-400/80 flex items-center gap-1" title="You have unsaved changes">● unsaved</span>
                     <!-- TC-130: admin save scope — Public (live, all users) vs Private draft -->
                     <select x-show="can('skills.author')" x-model="adminSaveScope"
                             title="Public publishes to all users/tenants; Private keeps the draft to you"
@@ -1128,8 +1131,8 @@ function _getIafUser() {
                          The button is always clickable; saveSkill() enforces the
                          same guards below and gives visible feedback via toasts. -->
                     <button x-show="!editorReadOnly" @click="saveSkill()"
-                            :title="(editingName && !isDirty) ? 'No changes to save' : ''"
-                            :class="(validationErrors.length > 0 || editorSourceScope === 'submitted' || editorSourceScope === 'approved' || (editingName && !isDirty)) ? 'opacity-40 cursor-not-allowed bg-dark-800 border-dark-700 text-gray-500' : (editorSourceScope === 'update_proposal' ? 'bg-blue-700/30 border-blue-500/40 text-blue-200 hover:bg-blue-700/50' : 'bg-accent/15 border-accent/30 text-accent-light hover:border-accent/50 hover:bg-accent/25')"
+                            :title="(editingName && !isDirty && !componentIsDirty) ? 'No changes to save' : ''"
+                            :class="(validationErrors.length > 0 || editorSourceScope === 'submitted' || editorSourceScope === 'approved' || (editingName && !isDirty && !componentIsDirty)) ? 'opacity-40 cursor-not-allowed bg-dark-800 border-dark-700 text-gray-500' : (editorSourceScope === 'update_proposal' ? 'bg-blue-700/30 border-blue-500/40 text-blue-200 hover:bg-blue-700/50' : 'bg-accent/15 border-accent/30 text-accent-light hover:border-accent/50 hover:bg-accent/25')"
                             class="px-4 py-1.5 text-xs border rounded-lg transition font-medium">
                         <span x-text="editingName ? (can('skills.author') && adminSaveScope === 'draft' ? '💾 Save draft' : '💾 Save') : (can('skills.author') && adminSaveScope === 'draft' ? '📝 Save draft' : '✨ Create')"></span>
                     </button>
@@ -3113,8 +3116,8 @@ function _getIafUser() {
                         <span class="text-sm">Indexing taxonomy signal…</span>
                     </div>
                 </template>
-                <template x-if="taxGraphError && !taxGraphLoading">
-                    <div class="flex-1 flex items-center justify-center text-red-400 text-sm" x-text="taxGraphError"></div>
+                <template x-if="taxGraphError && !taxGraphLoading && !taxGraph">
+                    <div class="flex-1 flex items-center justify-center text-red-400 text-sm px-6 text-center" x-text="taxGraphError"></div>
                 </template>
 
                 <template x-if="taxGraph && !taxGraphLoading">
@@ -3122,22 +3125,57 @@ function _getIafUser() {
                     <div class="flex flex-1 overflow-hidden tax-graph-root">
 
                         <!-- ── ZONE A: Taxonomy selector + Domain cards ── -->
-                        <div class="w-52 flex-shrink-0 border-r border-dark-700 flex flex-col overflow-hidden">
+                        <div class="w-64 flex-shrink-0 border-r border-dark-700 bg-dark-900/40 flex flex-col overflow-hidden">
 
-                            <!-- Taxonomy tab pills -->
-                            <div class="flex items-center gap-1 p-2 border-b border-dark-700 flex-shrink-0">
-                                <template x-for="(tax, ti) in taxGraph.taxonomies" :key="tax.name">
-                                    <button @click="taxActiveTaxIdx = ti; taxActiveSection = null; taxRouteResults = []"
-                                            class="flex-1 py-1.5 text-[10px] font-semibold rounded transition truncate"
-                                            :style="taxActiveTaxIdx === ti ? 'background:' + taxTaxColor(ti) + '22; color:' + taxTaxColor(ti) + '; border: 1px solid ' + taxTaxColor(ti) + '44' : 'color: #6b7280; border: 1px solid transparent'"
-                                            x-text="taxShortName(tax.name)"></button>
-                                </template>
-                                <button @click="openTaxCreate()"
-                                        class="flex-shrink-0 px-2 py-1.5 text-[10px] font-semibold rounded border border-dashed border-dark-500 text-gray-400 hover:text-accent-light hover:border-accent/50 transition"
-                                        title="Create a new taxonomy tab">+ New</button>
-                                <button @click="taxImportOpen = true"
-                                        class="flex-shrink-0 px-2 py-1.5 text-[10px] font-semibold rounded border border-dashed border-dark-500 text-gray-400 hover:text-accent-light hover:border-accent/50 transition"
-                                        title="Import an existing taxonomy .md file">Import</button>
+                            <!-- Taxonomy tabs + Add menu -->
+                            <div class="relative border-b border-dark-700 flex-shrink-0 p-2" x-data="{addOpen:false}" @click.outside="addOpen=false" @keydown.escape.window="addOpen=false">
+                                <div class="flex items-start gap-1.5">
+                                    <div class="flex flex-1 flex-wrap items-center gap-1 min-w-0">
+                                        <template x-for="(tax, ti) in taxGraph.taxonomies" :key="tax.name">
+                                            <button @click="taxActiveTaxIdx = ti; taxActiveSection = null; taxRouteResults = []"
+                                                    class="flex-1 min-w-[4.5rem] py-1.5 text-[10px] font-semibold rounded transition truncate"
+                                                    :style="taxActiveTaxIdx === ti ? 'background:' + taxTaxColor(ti) + '22; color:' + taxTaxColor(ti) + '; border: 1px solid ' + taxTaxColor(ti) + '44' : 'color: #6b7280; border: 1px solid transparent'"
+                                                    x-text="taxShortName(tax.name)"></button>
+                                        </template>
+                                    </div>
+                                    <button x-show="can('skills.author')" @click="addOpen = !addOpen"
+                                            class="flex-shrink-0 px-2.5 py-1.5 text-[11px] font-semibold rounded border border-accent/40 bg-accent/15 text-accent-light hover:bg-accent/25 transition flex items-center gap-1"
+                                            title="Add a taxonomy, or publish a graph for chat">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+                                        Add
+                                        <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/></svg>
+                                    </button>
+                                </div>
+
+                                <div x-show="addOpen" x-cloak
+                                     class="absolute left-2 right-2 top-full mt-1 z-30 rounded-lg border border-dark-600 bg-dark-900 shadow-2xl p-1.5 max-h-[80vh] overflow-y-auto scroll-thin">
+                                    <div class="px-2 pt-1 pb-1 text-[9px] font-bold uppercase tracking-wider text-gray-500">Taxonomy · routes requests to skills</div>
+                                    <button @click="addOpen=false; openTaxCreate()" class="w-full text-left px-2 py-2 rounded-md hover:bg-dark-800 transition">
+                                        <span class="text-xs font-semibold text-gray-100">New taxonomy</span>
+                                        <p class="text-[10px] text-gray-500 leading-snug mt-0.5">Build one by hand: domains, sections and the skill that handles each.</p>
+                                    </button>
+                                    <button @click="addOpen=false; taxImportOpen = true" class="w-full text-left px-2 py-2 rounded-md hover:bg-dark-800 transition">
+                                        <span class="text-xs font-semibold text-gray-100">Import a taxonomy file</span>
+                                        <p class="text-[10px] text-gray-500 leading-snug mt-0.5">A taxonomy <code>.md</code> or <code>.json</code> you already have. It becomes a new tab.</p>
+                                    </button>
+                                    <button @click="addOpen=false; openTaxGraphImport()" class="w-full text-left px-2 py-2 rounded-md hover:bg-dark-800 transition">
+                                        <div class="flex items-center gap-1.5 flex-wrap">
+                                            <span class="text-xs font-semibold text-gray-100">Build from a graph database</span>
+                                            <span class="text-[9px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300">Neo4j</span>
+                                            <span class="text-[9px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300">graphify</span>
+                                        </div>
+                                        <p class="text-[10px] text-gray-500 leading-snug mt-0.5">Read a hierarchy from a graph connection an admin registered, then assign a skill to each section.</p>
+                                    </button>
+                                    <div class="my-1 border-t border-dark-700"></div>
+                                    <div class="px-2 pt-1 pb-1 text-[9px] font-bold uppercase tracking-wider text-gray-500">Knowledge graph · answers questions in chat</div>
+                                    <button @click="addOpen=false; openGraphUpload()" class="w-full text-left px-2 py-2 rounded-md hover:bg-dark-800 transition">
+                                        <div class="flex items-center gap-1.5 flex-wrap">
+                                            <span class="text-xs font-semibold text-gray-100">Upload an ontology / graph file</span>
+                                            <span class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">.json</span>
+                                        </div>
+                                        <p class="text-[10px] text-gray-500 leading-snug mt-0.5">Publish your own ontology so <code>@codebase_graph</code> can answer from it. No database needed, and no taxonomy is created.</p>
+                                    </button>
+                                </div>
                             </div>
 
                             <!-- Import Taxonomy modal -->
@@ -3166,8 +3204,170 @@ function _getIafUser() {
                                 </div>
                             </div>
 
+                            <!-- Upload graph / ontology modal: publish a .json so chat can answer from it -->
+                            <div x-show="graphUploadOpen" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" @click.self="graphUploadOpen=false">
+                                <div class="bg-dark-900 border border-dark-700 rounded-xl w-full max-w-xl p-5 max-h-[90vh] overflow-y-auto scroll-thin">
+                                    <div class="flex items-center justify-between mb-3">
+                                        <h3 class="text-sm font-semibold text-gray-100">Upload a graph or ontology (.json)</h3>
+                                        <button @click="graphUploadOpen=false" class="text-gray-500 hover:text-gray-300">✕</button>
+                                    </div>
+                                    <div class="mb-3 rounded-lg border border-emerald-500/25 bg-emerald-500/5 p-3 text-[11px] leading-relaxed text-gray-300">
+                                        <div><strong class="text-emerald-300">For asking questions in chat.</strong> Your file is published as a read-only knowledge graph that the <code>@codebase_graph</code> skill can search, explain and trace paths through.</div>
+                                        <div class="mt-1 text-gray-400">It does <strong>not</strong> create a taxonomy and does not connect to Neo4j. To build a taxonomy from a graph database, use
+                                            <button type="button" @click="graphUploadOpen=false; openTaxGraphImport()" class="text-accent-light hover:underline">Build from a graph database</button>.</div>
+                                    </div>
+                                    <details class="mb-3 text-[11px] text-gray-400">
+                                        <summary class="cursor-pointer text-gray-300">Accepted file formats (max 16 MB)</summary>
+                                        <ul class="mt-2 ml-4 list-disc space-y-0.5">
+                                            <li><strong class="text-gray-300">Ontology:</strong> <code>{ "entities": [{id, name, type, description}], "relationships": [{from, to, type}] }</code></li>
+                                            <li><strong class="text-gray-300">Nodes and edges:</strong> <code>{ "nodes": [...], "edges": [...] }</code> (<code>links</code>, <code>source</code>/<code>target</code> also work)</li>
+                                            <li><strong class="text-gray-300">Triples:</strong> a list of <code>{subject, predicate, object}</code></li>
+                                            <li><strong class="text-gray-300">Tree:</strong> <code>{ "name": "...", "children": [...] }</code></li>
+                                            <li><strong class="text-gray-300">graphify:</strong> a <code>graph.json</code> from graphify</li>
+                                        </ul>
+                                        <p class="mt-1.5">The format is detected automatically and reported back after upload.</p>
+                                    </details>
+                                    <div class="space-y-3">
+                                        <input type="file" accept=".json,application/json" @change="graphUploadFile($event)"
+                                               class="block w-full text-xs text-gray-400 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:bg-dark-700 file:text-gray-200 hover:file:bg-dark-600">
+                                        <input x-model="graphUploadForm.name" placeholder="Graph name (letters, digits, _ or -), e.g. it_ops_ontology"
+                                               class="w-full bg-dark-800 border border-dark-700 rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-accent/40">
+                                        <label class="flex items-center gap-2 text-xs text-gray-400"><input type="checkbox" x-model="graphUploadForm.overwrite"> Replace it if a graph with this name already exists</label>
+                                    </div>
+                                    <div x-show="graphUploadResult" class="mt-3 border border-emerald-500/30 bg-emerald-500/5 rounded-lg p-3 text-[11px] text-gray-300 space-y-1">
+                                        <div><strong class="text-emerald-400">Published.</strong>
+                                            <span x-text="graphUploadResult && (graphUploadResult.nodes + ' nodes · ' + graphUploadResult.edges + ' edges · read as ' + graphUploadResult.format)"></span></div>
+                                        <template x-for="(n, ni) in (graphUploadResult ? graphUploadResult.notes : [])" :key="ni"><div class="text-amber-300" x-text="'• ' + n"></div></template>
+                                        <div class="text-gray-400">Ask in chat, for example: <em x-text="'@codebase_graph what is ' + graphUploadExample() + ' related to?'"></em></div>
+                                    </div>
+                                    <div class="flex items-center justify-end gap-2 mt-4">
+                                        <span x-show="graphUploadError" x-text="graphUploadError" class="text-xs text-red-400 mr-auto"></span>
+                                        <button @click="graphUploadOpen=false" class="px-3 py-1.5 text-xs text-gray-400 hover:text-gray-200">Close</button>
+                                        <button @click="uploadGraph()" :disabled="graphUploadSaving"
+                                                class="px-4 py-1.5 text-xs font-semibold rounded-lg bg-accent/20 text-accent-light border border-accent/30 hover:bg-accent/30 transition"
+                                                x-text="graphUploadSaving ? 'Uploading…' : 'Upload & Publish'"></button>
+                                    </div>
+                                    <div class="mt-4 border-t border-dark-700 pt-3">
+                                        <div class="text-[11px] font-semibold text-gray-400 mb-2">Published graphs</div>
+                                        <div x-show="!graphLibrary.length" class="text-[11px] text-gray-500">None yet.</div>
+                                        <template x-for="g in graphLibrary" :key="g.name">
+                                            <div class="flex items-center gap-2 py-1 text-[11px] text-gray-300">
+                                                <span class="font-mono text-gray-100" x-text="g.name"></span>
+                                                <span class="text-gray-500" x-text="g.error ? g.error : (g.nodes + ' nodes · ' + g.edges + ' edges')"></span>
+                                                <button @click="deleteGraph(g.name)" class="ml-auto text-red-400 hover:text-red-300">Delete</button>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Import from graph modal (Neo4j / graphify) -->
+                            <div x-show="taxGraphImportOpen" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" @click.self="taxGraphImportOpen=false">
+                                <div class="bg-dark-900 border border-dark-700 rounded-xl w-full max-w-3xl max-h-[90vh] flex flex-col p-5">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <h3 class="text-sm font-semibold text-gray-100">Build taxonomy from a graph (Neo4j)</h3>
+                                        <button @click="taxGraphImportOpen=false" class="text-gray-500 hover:text-gray-300">✕</button>
+                                    </div>
+                                    <div class="mb-3 rounded-lg border border-sky-500/25 bg-sky-500/5 p-3 text-[11px] leading-relaxed text-gray-300">
+                                        <div><strong class="text-sky-300">For building a routing taxonomy.</strong> Reads a hierarchy from a graph connection an admin registered (Neo4j, or a graphify file). A graph has no skill information, so each section needs a skill before it can be imported. Nothing is saved until you press Import.</div>
+                                        <div class="mt-1 text-gray-400">Have an ontology <code>.json</code> file and just want to ask questions about it in chat? Use
+                                            <button type="button" @click="taxGraphImportOpen=false; openGraphUpload()" class="text-accent-light hover:underline">Upload an ontology / graph file</button>.</div>
+                                    </div>
+
+                                    <div x-show="taxGraphModalError && !taxGraphConns.length" class="text-xs text-red-400 mb-3" x-text="taxGraphModalError"></div>
+                                    <div x-show="!taxGraphConns.length && !taxGraphModalError" class="text-xs text-amber-400 mb-3">No graph connections are registered. An admin adds one as an External access resource with <code>type: graph</code> (see docs/TAXONOMY_GRAPH_IMPORT.md).</div>
+
+                                    <div class="grid grid-cols-2 gap-2 mb-2" x-show="taxGraphConns.length">
+                                        <select x-model="taxGraphForm.connection_id" class="col-span-2 bg-dark-800 border border-dark-700 rounded px-2 py-1.5 text-xs text-gray-200 outline-none focus:border-accent/40">
+                                            <option value="">Connection…</option>
+                                            <template x-for="c in taxGraphConns" :key="c.id"><option :value="c.id" x-text="(c.label || c.id) + ' · ' + c.engine"></option></template>
+                                        </select>
+                                        <!-- Graph database (Neo4j): root node + hierarchy relationship -->
+                                        <template x-if="taxGraphEngine() !== 'graphify'">
+                                        <div class="col-span-2 grid grid-cols-2 gap-2">
+                                        <input x-model="taxGraphForm.root_label" placeholder="Root node label, e.g. Domain" class="bg-dark-800 border border-dark-700 rounded px-2 py-1.5 text-xs text-gray-200 outline-none focus:border-accent/40">
+                                        <input x-model="taxGraphForm.root_name" placeholder="Root node name, e.g. Enterprise Ops" class="bg-dark-800 border border-dark-700 rounded px-2 py-1.5 text-xs text-gray-200 outline-none focus:border-accent/40">
+                                        <input x-model="taxGraphForm.edge_type" placeholder="Hierarchy relationship, e.g. PARENT_OF" class="bg-dark-800 border border-dark-700 rounded px-2 py-1.5 text-xs text-gray-200 outline-none focus:border-accent/40">
+                                        <select x-model="taxGraphForm.direction" class="bg-dark-800 border border-dark-700 rounded px-2 py-1.5 text-xs text-gray-200 outline-none focus:border-accent/40">
+                                            <option value="out">Edge points parent → child</option>
+                                            <option value="in">Edge points child → parent (e.g. BROADER)</option>
+                                        </select>
+                                        <input x-model="taxGraphForm.name_property" placeholder="Name property (default: name)" class="bg-dark-800 border border-dark-700 rounded px-2 py-1.5 text-xs text-gray-200 outline-none focus:border-accent/40">
+                                        <input x-model="taxGraphForm.description_property" placeholder="Description property (optional)" class="bg-dark-800 border border-dark-700 rounded px-2 py-1.5 text-xs text-gray-200 outline-none focus:border-accent/40">
+                                        </div>
+                                        </template>
+                                        <!-- graphify code graph: hierarchy is derived from the graph itself -->
+                                        <template x-if="taxGraphEngine() === 'graphify'">
+                                        <div class="col-span-2 grid grid-cols-2 gap-2">
+                                        <select x-model="taxGraphForm.mode" class="bg-dark-800 border border-dark-700 rounded px-2 py-1.5 text-xs text-gray-200 outline-none focus:border-accent/40">
+                                            <option value="community">Group by graph communities</option>
+                                            <option value="path">Group by folder</option>
+                                        </select>
+                                        <input x-model="taxGraphForm.path_prefix" placeholder="Only under folder (optional), e.g. IAF-Agent-Studio" class="bg-dark-800 border border-dark-700 rounded px-2 py-1.5 text-xs text-gray-200 outline-none focus:border-accent/40">
+                                        <input type="number" min="1" max="200" x-model.number="taxGraphForm.max_domains" title="Keep the N largest domains" placeholder="Max domains (default 40)" class="bg-dark-800 border border-dark-700 rounded px-2 py-1.5 text-xs text-gray-200 outline-none focus:border-accent/40">
+                                        <input type="number" min="1" max="6" x-model.number="taxGraphForm.domain_depth" x-show="taxGraphForm.mode === 'path'" title="Folder levels per domain" placeholder="Folder levels per domain (default 2)" class="bg-dark-800 border border-dark-700 rounded px-2 py-1.5 text-xs text-gray-200 outline-none focus:border-accent/40">
+                                        <input type="number" min="1" x-model.number="taxGraphForm.min_size" x-show="taxGraphForm.mode === 'community'" title="Ignore communities smaller than this" placeholder="Min community size (default 3)" class="bg-dark-800 border border-dark-700 rounded px-2 py-1.5 text-xs text-gray-200 outline-none focus:border-accent/40">
+                                        </div>
+                                        </template>
+                                        <input x-model="taxGraphForm.taxonomy_name" placeholder="Taxonomy name (optional — default: root name / connection label)" class="col-span-2 bg-dark-800 border border-dark-700 rounded px-2 py-1.5 text-xs text-gray-200 outline-none focus:border-accent/40">
+                                    </div>
+                                    <div class="flex items-center gap-2 mb-2" x-show="taxGraphConns.length">
+                                        <button @click="previewTaxGraph()" :disabled="taxGraphLoadingPreview"
+                                                class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-dark-700 text-gray-200 hover:bg-dark-600 transition"
+                                                x-text="taxGraphLoadingPreview ? 'Reading graph…' : (taxGraphDraft ? 'Re-run preview' : 'Preview')"></button>
+                                        <span x-show="taxGraphModalError" x-text="taxGraphModalError" class="text-xs text-red-400"></span>
+                                    </div>
+
+                                    <!-- Draft: stats, loss report, skill assignment -->
+                                    <div x-show="taxGraphDraft" class="flex-1 overflow-y-auto scroll-thin border border-dark-700 rounded-lg p-3 space-y-3">
+                                        <div class="text-[11px] text-gray-400" x-show="taxGraphDraft">
+                                            <span x-text="taxGraphDraft && taxGraphDraft.stats.domains"></span> domains ·
+                                            <span x-text="taxGraphDraft && taxGraphDraft.stats.sections"></span> sections ·
+                                            <span x-text="taxGraphDraft && taxGraphDraft.stats.nodes_fetched"></span> nodes read ·
+                                            <strong :class="taxGraphUnassigned() ? 'text-amber-400' : 'text-emerald-400'" x-text="taxGraphUnassigned() + ' without a skill'"></strong>
+                                            <button x-show="taxGraphUnassigned()" @click="acceptTaxGraphSuggestions()" class="ml-3 text-accent-light hover:underline">Accept all suggestions</button>
+                                        </div>
+                                        <details x-show="taxGraphDraft && taxGraphDraft.loss.length" class="text-[11px] text-amber-300">
+                                            <summary class="cursor-pointer">Not carried over exactly (<span x-text="taxGraphDraft && taxGraphDraft.loss.length"></span>)</summary>
+                                            <ul class="mt-1 space-y-0.5 text-gray-400">
+                                                <template x-for="(l, li) in (taxGraphDraft ? taxGraphDraft.loss : [])" :key="li">
+                                                    <li><span class="text-amber-400" x-text="l.kind.replace('_',' ')"></span> — <span x-text="l.node"></span> <span x-text="l.detail"></span></li>
+                                                </template>
+                                            </ul>
+                                        </details>
+                                        <template x-for="(dom, di) in (taxGraphDraft ? taxGraphDraft.domains : [])" :key="di">
+                                            <div>
+                                                <div class="text-xs font-semibold text-gray-200 mb-1" x-text="dom.name"></div>
+                                                <template x-for="(sec, si) in dom.sections" :key="si">
+                                                    <div class="flex items-center gap-2 pl-3 py-0.5">
+                                                        <span class="flex-1 text-xs text-gray-300 truncate" x-text="sec.name" :title="(sec.activities || []).join(', ')"></span>
+                                                        <template x-for="sg in (sec.suggestions || [])" :key="sg.skill">
+                                                            <button @click="sec.skill = sg.skill" class="text-[10px] px-1.5 py-0.5 rounded border border-dark-600 text-gray-400 hover:text-accent-light hover:border-accent/40"
+                                                                    :title="'match score ' + sg.score" x-text="sg.skill"></button>
+                                                        </template>
+                                                        <select x-model="sec.skill" class="bg-dark-800 border rounded px-2 py-1 text-xs text-gray-200 outline-none"
+                                                                :class="sec.skill ? 'border-dark-700' : 'border-amber-500/60'">
+                                                            <option value="">skill…</option>
+                                                            <template x-for="sn in allSkillNames" :key="sn"><option :value="sn" x-text="sn"></option></template>
+                                                        </select>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </template>
+                                    </div>
+
+                                    <div class="flex items-center justify-end gap-2 mt-3">
+                                        <span x-show="taxGraphCommitError" x-text="taxGraphCommitError" class="text-xs text-red-400 mr-auto"></span>
+                                        <button @click="taxGraphImportOpen=false" class="px-3 py-1.5 text-xs text-gray-400 hover:text-gray-200">Cancel</button>
+                                        <button @click="commitTaxGraph()" :disabled="!taxGraphDraft || taxGraphUnassigned() > 0 || taxGraphCommitting"
+                                                class="px-4 py-1.5 text-xs font-semibold rounded-lg bg-accent/20 text-accent-light border border-accent/30 hover:bg-accent/30 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                                                x-text="taxGraphCommitting ? 'Importing…' : 'Import & Index'"></button>
+                                    </div>
+                                </div>
+                            </div>
+
                             <!-- Active taxonomy actions -->
-                            <div x-show="(taxGraph.taxonomies || []).length" class="flex items-center gap-3 px-2 py-1 border-b border-dark-700 flex-shrink-0">
+                            <div x-show="(taxGraph.taxonomies || []).length && can('skills.author')" class="flex items-center gap-3 px-3 py-1.5 border-b border-dark-700 flex-shrink-0">
                                 <button @click="openTaxEdit()" class="text-[10px] text-gray-400 hover:text-accent-light transition" title="Edit the selected taxonomy">Edit</button>
                                 <button @click="deleteTaxonomy()" class="text-[10px] text-gray-400 hover:text-red-400 transition" title="Delete the selected taxonomy">Delete</button>
                             </div>
@@ -3272,11 +3472,11 @@ function _getIafUser() {
                         </div>
 
                         <!-- ── ZONE B: L3 Section cards (main canvas) ── -->
-                        <div class="flex-1 overflow-y-auto scroll-thin p-4">
+                        <div class="flex-1 min-w-0 overflow-y-auto scroll-thin p-4">
 
                             <!-- No domain selected -->
                             <template x-if="!taxActiveDomain">
-                                <div class="h-full flex flex-col items-center justify-center text-center gap-4">
+                                <div class="h-full min-h-[16rem] flex flex-col items-center justify-center text-center gap-4 rounded-xl border border-dashed border-dark-700 bg-dark-900/30 px-6">
                                     <div class="opacity-10">
                                         <svg class="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
                                     </div>
@@ -3383,7 +3583,7 @@ function _getIafUser() {
                         </div>
 
                         <!-- ── ZONE C: Routing Simulator ── -->
-                        <div class="w-72 flex-shrink-0 border-l border-dark-700 flex flex-col overflow-hidden">
+                        <div class="w-72 flex-shrink-0 border-l border-dark-700 bg-dark-900/40 flex flex-col overflow-hidden">
 
                             <!-- Simulator header -->
                             <div class="px-4 py-3 border-b border-dark-700 flex-shrink-0">
@@ -8782,6 +8982,22 @@ function skillStudio() {
         taxImportSaving: false,
         taxImportError: '',
         taxImportForm: { name: '', content: '' },
+        graphUploadOpen: false,        // Upload graph / ontology modal visible
+        graphUploadSaving: false,
+        graphUploadError: '',
+        graphUploadForm: { name: '', content: '', overwrite: false },
+        graphUploadResult: null,       // what the server understood from the last upload
+        graphLibrary: [],              // graphs published for this tenant
+        taxGraphImportOpen: false,     // Import-from-graph modal visible
+        taxGraphConns: [],             // registered graph connections (id/label/engine)
+        taxGraphForm: { connection_id: '', root_label: '', root_name: '', edge_type: '', direction: 'out',
+                        name_property: 'name', description_property: '', taxonomy_name: '',
+                        mode: 'community', path_prefix: '', max_domains: 40, domain_depth: 2, min_size: 3 },
+        taxGraphDraft: null,           // preview result (domains/loss/provenance)
+        taxGraphLoadingPreview: false,
+        taxGraphCommitting: false,
+        taxGraphModalError: '',        // errors inside the graph-import modal (never the page-level pane)
+        taxGraphCommitError: '',
         taxActiveTaxIdx: 0,            // selected taxonomy index (tab)
         taxActiveDomain: null,         // selected domain name
         taxActiveSection: null,        // selected L3 section name
@@ -9360,6 +9576,7 @@ function skillStudio() {
         componentDrafting: false,
         componentHtml: '',
         _savedComponentHtml: null,   // last loaded/saved component.html — null when nothing loaded yet
+        _hadSavedComponent: false,   // true when the draft already had a persisted component on open (#4)
         componentName: '',            // '' = default component.html; else components/<name>.html
         componentList: [],            // discovered components for this skill
         componentInstruction: '',
@@ -9639,7 +9856,11 @@ function skillStudio() {
                 // self_evolution is a platform internal — hide from the skill list.
                 // general is kept visible so it can be used as a target in workflow steps.
                 const SYSTEM_SKILLS = ['self_evolution'];
-                let globalSkills = (skillsRes.skills || []).filter(s => !SYSTEM_SKILLS.includes(s.name));
+                // #9: GET /api/skills also appends the caller's personal-only skills (with a
+                // `scope` field). Keep only shared/global rows here so personal drafts aren't
+                // duplicated and a scope-less personal row can't open a nonexistent global skill.
+                let globalSkills = (skillsRes.skills || []).filter(s =>
+                    !SYSTEM_SKILLS.includes(s.name) && (!s.scope || s.scope === 'shared'));
                 this.allSkillNames = (namesRes.names || []).map(n => typeof n === 'object' ? n.name : n).filter(n => !SYSTEM_SKILLS.includes(n));
                 // Capture category metadata for the editor dropdown
                 this.categoryLabels = skillsRes.category_labels || {};
@@ -9648,7 +9869,8 @@ function skillStudio() {
                 // For non-admin users: also load personal skills and merge
                 if (uid && !isAdmin) {
                     try {
-                        const personalRes = await fetch(`/api/personal-skills/${uid}`).then(r => r.ok ? r.json() : null);
+                        const _tid = this.currentUser?.tenant_id || 'company';
+                        const personalRes = await fetch(`/api/personal-skills/${uid}?tenant_id=${encodeURIComponent(_tid)}`).then(r => r.ok ? r.json() : null);
                         if (personalRes) {
                             const personalSkills = (personalRes.skills || []).map(s => ({ ...s, _scope: s.scope || 'personal' }));
                             // Merge: personal skills shadow global ones with same name
@@ -9658,6 +9880,17 @@ function skillStudio() {
                         } else {
                             this.skills = globalSkills;
                         }
+                    } catch (_) {
+                        this.skills = globalSkills;
+                    }
+                } else if (uid && isAdmin) {
+                    // Admins save edits as personal drafts; surface those as DISTINCT cards
+                    // (not shadowing globals) so a draft doesn't look "lost" after a relogin. (Doc-3)
+                    try {
+                        const _tid = this.currentUser?.tenant_id || 'company';
+                        const personalRes = await fetch(`/api/personal-skills/${uid}?tenant_id=${encodeURIComponent(_tid)}`).then(r => r.ok ? r.json() : null);
+                        const drafts = ((personalRes && personalRes.skills) || []).map(s => ({ ...s, _scope: s.scope || 'personal' }));
+                        this.skills = globalSkills.concat(drafts);
                     } catch (_) {
                         this.skills = globalSkills;
                     }
@@ -9994,10 +10227,13 @@ function skillStudio() {
                 const uid = this.currentUser?.user_id;
 
                 let d;
-                // Non-admin users: load personal skills from personal API
-                const isPersonalScope = !isAdmin && uid && ['personal','rejected','submitted','update_proposal','approved'].includes(skillScope);
+                // Load from the personal API for ANY draft scope (both roles), via the single
+                // shared predicate so load / knowledge / component / delete never diverge.
+                // Global cards ('shared'/undefined) use /api/skills.
+                const isPersonalScope = this._scopeIsPersonal(skillScope);
                 if (isPersonalScope) {
-                    const res = await fetch(`/api/personal-skills/${uid}/${name}/skill-md`);
+                    const _tid = this.currentUser?.tenant_id || 'company';
+                    const res = await fetch(`/api/personal-skills/${uid}/${name}/skill-md?tenant_id=${encodeURIComponent(_tid)}`);
                     if (!res.ok) throw new Error('Personal skill not found');
                     const raw = await res.json();
                     d = raw.skill || raw;
@@ -10050,6 +10286,7 @@ function skillStudio() {
                 };
                 this.graphValidation = null;
                 this.editingName = name;
+                this._personalToolsSynced = false;   // #12: allow one authoritative tool-script mirror for this open
                 // Find status from list
                 const found = this.skills.find(s => s.name === name);
                 this.editorStatus = found?.status || 'active';
@@ -10057,6 +10294,14 @@ function skillStudio() {
                 this.editorOpenSections = { prompt: true, tools: true, connections: true, info: true, preview: false };
                 this.testResults = [];
                 this.resetComponentEditor();
+                // Hydrate the draft's saved component (the personal skill-md read returns
+                // component_html) so reopening it and then saving an unrelated edit can't
+                // overwrite the real component.html with a default template. (#4)
+                if (d.component_html && String(d.component_html).trim()) {
+                    this.componentHtml = d.component_html;
+                    this._savedComponentHtml = d.component_html;
+                    this._hadSavedComponent = true;
+                }
                 // Baseline for the dirty check — the freshly loaded skill is "clean".
                 this._savedFingerprint = this._editorFingerprint();
                 this.currentPage = 'editor';
@@ -10174,7 +10419,7 @@ function skillStudio() {
                 this.showToast('warning', 'Locked', `This skill is ${this.editorSourceScope} and can't be edited here.`);
                 return;
             }
-            if (this.editingName && !this.isDirty) {
+            if (this.editingName && !this.isDirty && !this.componentIsDirty) {
                 this.showToast('info', 'No changes', 'Nothing to save yet — make an edit first.');
                 return;
             }
@@ -10216,8 +10461,9 @@ function skillStudio() {
                 steps, worker_skills: f.worker_skills.filter(w => w.name), tools: f.tools || ['shell'],
                 category: f.category || 'platform',
             };
-            // Include tool_scripts if any exist
-            if (f.tool_scripts && f.tool_scripts.length > 0) {
+            // Always send tool_scripts when it's an array so the backend can distinguish
+            // "remove all" ([]) from "preserve on-disk" (field omitted / None). (§4c)
+            if (Array.isArray(f.tool_scripts)) {
                 payload.tool_scripts = f.tool_scripts.map(ts => ({ filename: ts.filename, content: ts.content }));
             }
             // Include connections if any exist
@@ -10257,6 +10503,9 @@ function skillStudio() {
                 // Captured before editingName is set below — used to pin a brand-new
                 // skill to the front of the list once loadSkills() reloads it.
                 const wasNewSkill = !this.editingName;
+                // Doc-3 publish-cleanup: remember if we started from a personal draft, so a
+                // successful GLOBAL publish can retire the now-redundant draft afterwards.
+                const wasPersonalSource = this.editorSourceScope === 'personal';
                 // TC-130: an admin save is only global when they explicitly choose it,
                 // and a global publish requires an explicit blast-radius confirmation.
                 const saveGlobal = isAdmin && this.adminSaveScope !== 'draft';
@@ -10268,10 +10517,19 @@ function skillStudio() {
                 this._versionModalConfirmed = false;
                 let url, method;
                 if (saveGlobal) {
-                    method = this.editingName ? 'PUT' : 'POST';
-                    url = this.editingName ? `/api/skills/${this.editingName}` : '/api/skills';
+                    // A personal-only draft has editingName set but may have NO global copy;
+                    // keying PUT on editingName would update a non-existent skill -> 404. Decide
+                    // from whether we're editing AND a SHARED (global) card of this name exists.
+                    // allSkillNames is unusable here: /api/skills/names merges the personal index,
+                    // so a personal-only draft's name would appear and wrongly select PUT. A
+                    // genuinely new skill (no editingName) must POST so the backend rejects a name
+                    // collision and the version/blast-radius confirmation isn't bypassed.
+                    const globalExists = !!this.editingName && (this.skills || []).some(s =>
+                        s.name === f.name && (s._scope || s.scope || 'shared') === 'shared');
+                    method = globalExists ? 'PUT' : 'POST';
+                    url = globalExists ? `/api/skills/${f.name}` : '/api/skills';
                     // Versioning applies only to edits of an existing global skill.
-                    if (this.editingName) {
+                    if (globalExists) {
                         payload.save_mode = this.saveMode || 'current';
                         payload.version_note = this.versionNote || '';
                     }
@@ -10286,18 +10544,26 @@ function skillStudio() {
                     // permissive mode); resolving from currentUser closes both gaps.
                     const tenantId = this.currentUser?.tenant_id || 'company';
                     const skillMdContent = this.generatePreview();
+                    // Send component_html when the draft already had a saved component (preserve /
+                    // update it) OR the user actually edited the component. Skipping it otherwise
+                    // avoids writing an untouched default template over an empty slot, while never
+                    // dropping a real component on an unrelated save. (#4/#5)
+                    const sendComponent = !!(this.componentHtml && this.componentHtml.trim()
+                        && (this._hadSavedComponent || this.componentIsDirty));
                     payload = {
                         skill_name: f.name,
                         skill_md_content: skillMdContent,
-                        component_html: this.componentHtml && this.componentHtml.trim() ? this.componentHtml : undefined,
+                        component_html: sendComponent ? this.componentHtml : undefined,
                         source_scope: this.editorSourceScope,
                         source_skill_name: this.editorSourceScope === 'update_proposal'
                             ? this._updateProposalSourceName
                             : (this.editorSourceScope === 'shared' ? this.editingName : ''),
                         tenant_id: tenantId
                     };
-                    if (this.componentHtml && this.componentHtml.trim()) {
-                        payload.component_html = this.componentHtml;
+                    // §5b: persist bundled tool scripts for personal drafts too, so they are
+                    // written to disk (previously the personal save dropped them).
+                    if (Array.isArray(f.tool_scripts)) {
+                        payload.tool_scripts = f.tool_scripts.map(ts => ({ filename: ts.filename, content: ts.content }));
                     }
                     method = 'POST';
                     url = `/api/personal-skills/${uid}/save`;
@@ -10311,6 +10577,13 @@ function skillStudio() {
                 this.saveMode = 'current';
                 // The just-saved state is now the clean baseline for the dirty check.
                 this._savedFingerprint = this._editorFingerprint();
+                // Only when the save actually carried the component (personal branch) does its
+                // baseline advance — a global main-save doesn't persist the component (that goes
+                // through saveComponentSource), so its dirty state must survive. (#5)
+                if (payload && payload.component_html !== undefined) {
+                    this._savedComponentHtml = this.componentHtml;
+                    this._hadSavedComponent = true;
+                }
                 if (this.showVersionsModal) await this.loadVersions();
                 if (!this.editingName) this.editingName = f.name;
                 // Update scope so knowledge/tools sections and banners react correctly after first save
@@ -10322,7 +10595,103 @@ function skillStudio() {
                     const idx = this.skills.findIndex(s => s.name === f.name);
                     if (idx > 0) this.skills.unshift(this.skills.splice(idx, 1)[0]);
                 }
+                // Doc-3: after publishing a personal draft to global, offer to retire the
+                // redundant personal copy so the duplicate card collapses to one. Only when
+                // the publish actually makes content live — save_mode 'new' creates an
+                // inactive version and leaves the live skill unchanged, so keep the draft.
+                if (saveGlobal && wasPersonalSource && payload.save_mode !== 'new') {
+                    await this._retirePersonalDraftAfterPublish(f.name);
+                }
             } catch (e) { this.showToast('error', 'Save failed', e.message); }
+        },
+
+        /**
+         * Retire the personal draft of a skill that was just published globally so it
+         * isn't listed twice. Confirms first; DELETEs only the personal copy (never the
+         * global skill); flips the editor to the shared scope and reloads. Skips silently
+         * when no personal draft exists, so it never fires for a plain global edit. (Doc-3)
+         */
+        async _retirePersonalDraftAfterPublish(name) {
+            const uid = this.currentUser?.user_id;
+            if (!uid || !name) return;
+            // Use the SAME tenant the save ran under, or the draft is looked up / deleted
+            // in the wrong (default 'company') workspace for other tenants.
+            const tid = this.currentUser?.tenant_id || 'company';
+            const tq = `tenant_id=${encodeURIComponent(tid)}`;
+            // Only act if a personal draft actually exists for this name.
+            let hasDraft = false;
+            try {
+                const r = await fetch(`/api/personal-skills/${uid}?${tq}`, { credentials: 'include' });
+                if (r.ok) {
+                    const d = await r.json();
+                    const list = Array.isArray(d) ? d : (d.skills || d.personal_skills || []);
+                    hasDraft = list.some(s => (s.name || s.skill_name) === name);
+                }
+            } catch (_) { return; }
+            if (!hasDraft) return;
+            // Promote the draft's component to the published global skill BEFORE retiring. The
+            // global publish payload carries SKILL.md, tool scripts and graph data, but NOT the
+            // component — so without this the draft holds the only copy and the delete below would
+            // lose it. Read the draft's saved component and, if present, PUT it to the global
+            // skill's component endpoint. If the read or promotion fails, keep the draft (never
+            // delete while a companion file may be unmigrated). (round-4 #1)
+            try {
+                const sr = await fetch(`/api/personal-skills/${uid}/${encodeURIComponent(name)}/skill-md?${tq}`, { credentials: 'include' });
+                if (!sr.ok) throw new Error('component read failed');
+                const sd = await sr.json();
+                const draftComponent = (sd && (sd.component_html || (sd.skill && sd.skill.component_html))) || '';
+                if (draftComponent && draftComponent.trim()) {
+                    const pr = await fetch(`/api/skills/${encodeURIComponent(name)}/component-source`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ html: draftComponent }),
+                    });
+                    if (!pr.ok) throw new Error('component promotion failed');
+                }
+            } catch (_) {
+                this.editorSourceScope = 'shared';
+                this.showToast('info', 'Draft kept',
+                    `"${name}" was published, but its component couldn't be copied to the global skill — your draft was kept so nothing is lost. Retire it manually once the component is migrated.`);
+                return;
+            }
+            // Data-loss guard: the global publish (plus the component promotion above) transfers
+            // SKILL.md, tool scripts, graph data and component HTML, but NOT the draft's uploaded
+            // knowledge/ files. Check the ACTUAL files on the backend (frontmatter refs are not an
+            // inventory of uploads) and keep the draft if any remain — or if the check fails, keep
+            // it too (never delete on uncertainty). (#3/#5)
+            try {
+                const kr = await fetch(`/api/personal-skills/${uid}/${encodeURIComponent(name)}/knowledge?${tq}`, { credentials: 'include' });
+                if (!kr.ok) throw new Error('knowledge check failed');
+                const kd = await kr.json();
+                const kfiles = (kd && (kd.files || kd.knowledge)) || [];
+                if (kfiles.length) {
+                    this.editorSourceScope = 'shared';
+                    this.showToast('info', 'Draft kept',
+                        `"${name}" was published, but it has ${kfiles.length} knowledge file(s) that aren't copied to the global skill automatically — your draft was kept so nothing is lost. Delete it manually once migrated.`);
+                    return;
+                }
+            } catch (_) {
+                this.editorSourceScope = 'shared';
+                this.showToast('info', 'Draft kept',
+                    `"${name}" was published, but its knowledge files couldn't be verified — the draft was kept to avoid data loss. Remove it manually if it's redundant.`);
+                return;
+            }
+            if (!confirm(`"${name}" is now published globally. Remove your personal draft copy so it isn't listed twice?`)) return;
+            try {
+                const del = await fetch(`/api/personal-skills/${uid}/${encodeURIComponent(name)}?${tq}`, {
+                    method: 'DELETE', credentials: 'include'
+                });
+                if (del.ok) {
+                    this.editorSourceScope = 'shared';
+                    this.showToast('success', '✓ Draft retired', `Personal draft of "${name}" removed.`);
+                    await this.loadSkills();
+                } else {
+                    this.showToast('warning', 'Draft kept', 'Published globally, but the personal draft could not be removed.');
+                }
+            } catch (_) {
+                this.showToast('warning', 'Draft kept', 'Published globally, but the personal draft could not be removed.');
+            }
         },
 
         async addNewCategory() {
@@ -10374,7 +10743,16 @@ function skillStudio() {
                         body: JSON.stringify({
                             skill_name: this.editorForm.name,
                             skill_md_content: this.generatePreview(),
-                            component_html: this.componentHtml && this.componentHtml.trim() ? this.componentHtml : undefined,
+                            // Same gate as the main save: carry the component only if it was
+                            // already saved or actually edited — never an untouched default. (#5)
+                            component_html: (this.componentHtml && this.componentHtml.trim()
+                                && (this._hadSavedComponent || this.componentIsDirty)) ? this.componentHtml : undefined,
+                            // Carry the author's CURRENT bundled tool scripts (same authoritative
+                            // array as the main Save), so the submission snapshots their additions /
+                            // edits / removals instead of the stale on-disk tools directory. (round-6 #7)
+                            tool_scripts: Array.isArray(this.editorForm.tool_scripts)
+                                ? this.editorForm.tool_scripts.map(ts => ({ filename: ts.filename, content: ts.content }))
+                                : undefined,
                             source_scope: this.editorSourceScope,
                             source_skill_name: this.editorSourceScope === 'update_proposal'
                                 ? this._updateProposalSourceName
@@ -10407,14 +10785,20 @@ function skillStudio() {
 
         async deleteSkill() {
             if (!this.editingName || !confirm(`Delete "${this.editingName}"? This cannot be undone.`)) return;
-            const isAdmin = this.can('skills.author');
             const uid = this.currentUser?.user_id;
-            const isPersonal = !isAdmin && uid && ['personal', 'rejected', 'submitted', 'update_proposal'].includes(this.editorSourceScope);
-            const url = isPersonal
-                ? `/api/personal-skills/${uid}/${this.editingName}`
-                : `/api/skills/${this.editingName}`;
+            // Route via the SHARED predicate so delete targets whatever load/knowledge/component
+            // targeted — never a split-brain where the editor shows a draft but Delete removes
+            // the live global skill (or vice versa). Personal deletes carry the workspace tenant.
+            const isPersonal = this._scopeIsPersonal(this.editorSourceScope);
+            let url;
+            if (isPersonal) {
+                const tid = this.currentUser?.tenant_id || 'company';
+                url = `/api/personal-skills/${uid}/${this.editingName}?tenant_id=${encodeURIComponent(tid)}`;
+            } else {
+                url = `/api/skills/${this.editingName}`;
+            }
             try {
-                const res = await fetch(url, { method: 'DELETE' });
+                const res = await fetch(url, { method: 'DELETE', credentials: 'include' });
                 if (!res.ok) { const err = await res.json(); throw new Error(err.detail || 'Delete failed'); }
                 this.showToast('success', '✓ Deleted', this.editingName);
                 this.currentPage = 'skills';
@@ -10630,6 +11014,8 @@ function skillStudio() {
         async runTest() {
             if (!this.testPrompt.trim() || this.testRunning) return;
             this.testRunning = true;
+            // #9: count this (silent, HTTP) test run as activity so a long run isn't logged out.
+            try { window.IafSessionControls && window.IafSessionControls.beginRun && window.IafSessionControls.beginRun(); } catch (e) {}
             try {
                 const res = await fetch(`/api/skills/${this.editingName}/test`, {
                     method: 'POST', headers: {'Content-Type':'application/json'},
@@ -10650,7 +11036,10 @@ function skillStudio() {
                 if (this.testResults.length > 10) this.testResults.pop();
             } catch (e) {
                 this.testResults.unshift({ prompt: this.testPrompt, status: 'error', error: e.message, duration_ms: 0 });
-            } finally { this.testRunning = false; }
+            } finally {
+                this.testRunning = false;
+                try { window.IafSessionControls && window.IafSessionControls.endRun && window.IafSessionControls.endRun(); } catch (e) {}
+            }
         },
 
         // ═══════════════════════════════════════════
@@ -11204,14 +11593,30 @@ function skillStudio() {
         // ═══════════════════════════════════════════
 
         /** Resolve the correct knowledge API base URL based on user role and skill scope */
+        // SINGLE source of truth: does a scope live in the user's PERSONAL workspace? Every
+        // call site that chooses personal-vs-global (editSkill's load, deleteSkill, and the
+        // knowledge/component auxiliary ops) MUST use this, so they can never disagree and
+        // route one op to the draft and another to the live global skill of the same name.
+        // Role-independent: any draft scope routes personal; 'shared'/undefined routes global.
+        _scopeIsPersonal(scope) {
+            if (!this.currentUser?.user_id) return false;
+            return ['personal', 'rejected', 'submitted', 'update_proposal', 'approved'].includes(scope);
+        },
+        // Convenience for the aux ops, which key off the CURRENTLY loaded draft's scope.
+        _isPersonalEditorScope() { return this._scopeIsPersonal(this.editorSourceScope); },
         _knowledgeApiBase() {
-            const isAdmin = this.can('skills.author');
             const uid = this.currentUser?.user_id;
-            const isPersonal = !isAdmin && uid && (this.editorSourceScope === 'personal' || this.editorSourceScope === 'rejected' || this.editorSourceScope === 'update_proposal');
-            if (isPersonal) {
+            if (this._isPersonalEditorScope()) {
                 return `/api/personal-skills/${uid}/${this.editingName}/knowledge`;
             }
             return `/api/skills/${this.editingName}/knowledge`;
+        },
+        // Personal knowledge endpoints are tenant-scoped; global ones ignore it. Appended at
+        // the END of each URL so it survives the /upload and /{filename} path suffixes.
+        _knowledgeTenantQuery() {
+            return this._isPersonalEditorScope()
+                ? `?tenant_id=${encodeURIComponent(this.currentUser?.tenant_id || 'company')}`
+                : '';
         },
 
         /** Load list of knowledge files for the current skill */
@@ -11219,7 +11624,7 @@ function skillStudio() {
             if (!this.editingName) return;
             this.knowledgeLoading = true;
             try {
-                const res = await fetch(this._knowledgeApiBase());
+                const res = await fetch(`${this._knowledgeApiBase()}${this._knowledgeTenantQuery()}`);
                 const data = await res.json();
                 this.knowledgeFiles = data.files || [];
             } catch (e) { console.error('loadKnowledgeFiles:', e); }
@@ -11243,7 +11648,7 @@ function skillStudio() {
                 try {
                     const fd = new FormData();
                     fd.append('file', file);
-                    const res = await fetch(`${this._knowledgeApiBase()}/upload`, { method: 'POST', body: fd });
+                    const res = await fetch(`${this._knowledgeApiBase()}/upload${this._knowledgeTenantQuery()}`, { method: 'POST', body: fd });
                     if (!res.ok) { const err = await res.json(); throw new Error(err.detail || 'Upload failed'); }
                     uploaded++;
                 } catch (e) {
@@ -11261,7 +11666,7 @@ function skillStudio() {
         async deleteKnowledgeFile(filename) {
             if (!confirm(`Delete "${filename}" from knowledge base?`)) return;
             try {
-                const res = await fetch(`${this._knowledgeApiBase()}/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+                const res = await fetch(`${this._knowledgeApiBase()}/${encodeURIComponent(filename)}${this._knowledgeTenantQuery()}`, { method: 'DELETE' });
                 if (!res.ok) { const err = await res.json(); throw new Error(err.detail || 'Delete failed'); }
                 this.showToast('info', 'Removed', filename);
                 await this.loadKnowledgeFiles();
@@ -11279,9 +11684,22 @@ function skillStudio() {
             if (!uid) return;
             this.personalToolScriptsLoading = true;
             try {
-                const res = await fetch(`/api/personal-skills/${uid}/${this.editingName}/tools`);
+                const _tid = this.currentUser?.tenant_id || 'company';
+                const res = await fetch(`/api/personal-skills/${uid}/${this.editingName}/tools?tenant_id=${encodeURIComponent(_tid)}`);
+                // #4: a failed request is NOT an authoritative empty list — bail without
+                // touching editorForm.tool_scripts or the sync flag, else the next main Save
+                // would send [] and delete the on-disk scripts.
+                if (!res.ok) throw new Error('Failed to load personal tool scripts');
                 const data = await res.json();
                 this.personalToolScripts = data.scripts || data.files || [];
+                // §5b: mirror into editorForm.tool_scripts so the main save (which now always
+                // sends tool_scripts) can't drop scripts added via the separate personal panel.
+                // #12: mirror ONCE per opened skill — a later tab switch must not clobber unsaved
+                // modal edits/deletions (editSkill resets _personalToolsSynced on open).
+                if (!this._personalToolsSynced) {
+                    this.editorForm.tool_scripts = this.personalToolScripts.map(ts => ({ filename: ts.filename, content: ts.content }));
+                    this._personalToolsSynced = true;
+                }
             } catch (e) { console.error('loadPersonalToolScripts:', e); }
             finally { this.personalToolScriptsLoading = false; }
         },
@@ -11326,7 +11744,8 @@ if __name__ == "__main__":
             const fname = filename.trim().endsWith('.py') ? filename.trim() : filename.trim() + '.py';
             this.personalToolSaving = true;
             try {
-                const res = await fetch(`/api/personal-skills/${uid}/${this.editingName}/tools/save`, {
+                const _tid = this.currentUser?.tenant_id || 'company';
+                const res = await fetch(`/api/personal-skills/${uid}/${this.editingName}/tools/save?tenant_id=${encodeURIComponent(_tid)}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ filename: fname, content })
@@ -11335,6 +11754,12 @@ if __name__ == "__main__":
                 this.showToast('success', '✓ Saved', fname);
                 this.showPersonalToolEditor = false;
                 await this.loadPersonalToolScripts();
+                // #10: keep the authoritative editor array in sync with this panel save so the
+                // next main Save doesn't revert it. Upsert by filename; leave other entries alone.
+                if (!Array.isArray(this.editorForm.tool_scripts)) this.editorForm.tool_scripts = [];
+                const _i = this.editorForm.tool_scripts.findIndex(ts => ts.filename === fname);
+                if (_i >= 0) this.editorForm.tool_scripts[_i] = { filename: fname, content };
+                else this.editorForm.tool_scripts.push({ filename: fname, content });
             } catch (e) { this.showToast('error', 'Save failed', e.message); }
             finally { this.personalToolSaving = false; }
         },
@@ -11345,10 +11770,15 @@ if __name__ == "__main__":
             const uid = this.currentUser?.user_id;
             if (!uid || !this.editingName) return;
             try {
-                const res = await fetch(`/api/personal-skills/${uid}/${this.editingName}/tools/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+                const _tid = this.currentUser?.tenant_id || 'company';
+                const res = await fetch(`/api/personal-skills/${uid}/${this.editingName}/tools/${encodeURIComponent(filename)}?tenant_id=${encodeURIComponent(_tid)}`, { method: 'DELETE' });
                 if (!res.ok) { const err = await res.json(); throw new Error(err.detail || 'Delete failed'); }
                 this.showToast('info', 'Removed', filename);
                 await this.loadPersonalToolScripts();
+                // #10: keep the authoritative editor array in sync with this panel delete.
+                if (Array.isArray(this.editorForm.tool_scripts)) {
+                    this.editorForm.tool_scripts = this.editorForm.tool_scripts.filter(ts => ts.filename !== filename);
+                }
             } catch (e) { this.showToast('error', 'Error', e.message); }
         },
 
@@ -11364,6 +11794,7 @@ if __name__ == "__main__":
             this.componentDrafting = false;
             this.componentHtml = '';
             this._savedComponentHtml = null;
+            this._hadSavedComponent = false;
             this.componentName = '';
             this.componentList = [];
             this.componentInstruction = '';
@@ -11385,6 +11816,7 @@ if __name__ == "__main__":
 
         async refreshComponentList() {
             if (!this.editingName) { this.componentList = []; return; }
+            if (this._isPersonalEditorScope()) { this.componentList = []; return; }   // no global component list for a draft (#2)
             try {
                 const res = await fetch(`/api/skills/${encodeURIComponent(this.editingName)}/components`);
                 const data = await res.json();
@@ -11401,6 +11833,20 @@ if __name__ == "__main__":
 
         async loadComponentSource() {
             if (!this.editingName) return;
+            if (this._isPersonalEditorScope()) {
+                // No personal component endpoint: don't read the GLOBAL skill's component into a
+                // draft of the same name. A draft's component is edited inline and persisted via
+                // the main Save (component_html). (#2)
+                this.componentLoaded = true;
+                if (!this.componentHtml) this.componentHtml = this.defaultComponentHtml();
+                // Set the dirty baseline only on the FIRST load (still null). Re-running
+                // Load after inline edits must NOT advance the baseline — that would clear
+                // componentIsDirty without persisting, so a component-only Save would report
+                // "No changes" and closing wouldn't warn (silent loss). editSkill seeds the
+                // baseline from a persisted draft component; a later Load keeps it. (#8)
+                if (this._savedComponentHtml === null) this._savedComponentHtml = this.componentHtml;
+                return;
+            }
             this.componentLoading = true;
             try {
                 await this.refreshComponentList();
@@ -11423,6 +11869,15 @@ if __name__ == "__main__":
 
         async saveComponentSource() {
             if (!this.editingName) return;
+            if (this._isPersonalEditorScope()) {
+                // No personal component endpoint: a PUT to /api/skills would modify the LIVE
+                // global skill of the same name. The draft's component is persisted by the main
+                // Save (component_html). Do NOT clear the dirty baseline here — nothing was
+                // written yet, so leave componentIsDirty true until the main Save succeeds, or a
+                // component-only edit would be silently discardable without an unsaved warning. (#5)
+                this.showToast('info', 'Not saved yet', 'Component edits persist when you click Save — draft components publish with the skill.');
+                return;
+            }
             const blocking = this.componentWarnings().filter(w => /cannot|empty/i.test(w));
             if (blocking.length) {
                 this.showToast('error', 'Fix component first', blocking[0]);
@@ -11451,6 +11906,11 @@ if __name__ == "__main__":
 
         async draftComponent() {
             if (!this.editingName) return;
+            if (this._isPersonalEditorScope()) {
+                // Routes through the global skill endpoint — don't run it against a draft. (#2)
+                this.showToast('info', 'Not available on drafts', 'AI component drafting runs against a saved global skill — publish the draft first, or edit the component inline.');
+                return;
+            }
             this.componentDrafting = true;
             try {
                 const res = await fetch(`/api/skills/${encodeURIComponent(this.editingName)}/component-draft${this._componentQuery()}`, {
@@ -11837,7 +12297,7 @@ import sys, json
 TOOL_SPEC = {
     "name": "my_tool",
     "description": "Describe what this tool does",
-    "params": {
+    "parameters": {
         "param1": {"type": "string", "description": "First parameter"}
     }
 }
@@ -12337,6 +12797,194 @@ if __name__ == "__main__":
                 this.taxImportError = 'Import failed: ' + e.message;
             } finally {
                 this.taxImportSaving = false;
+            }
+        },
+
+        async openGraphUpload() {
+            this.graphUploadError = '';
+            this.graphUploadResult = null;
+            this.graphUploadOpen = true;
+            await this.loadGraphLibrary();
+        },
+
+        async loadGraphLibrary() {
+            try {
+                const tenantId = this.currentUser?.tenant_id || 'company';
+                const res = await fetch('/api/context-manager/graph-library?tenant_id=' + encodeURIComponent(tenantId));
+                if (!res.ok) throw new Error(await this._apiErrorText(res));
+                this.graphLibrary = (await res.json()).graphs || [];
+            } catch (e) {
+                this.graphLibrary = [];
+                this.graphUploadError = 'Could not load published graphs: ' + e.message;
+            }
+        },
+
+        graphUploadFile(e) {
+            this.graphUploadForm.content = '';       // never keep the previous file's JSON when this pick is rejected
+            const f = e.target.files && e.target.files[0];
+            if (!f) return;
+            if (f.size > 16 * 1024 * 1024) { this.graphUploadError = 'File is larger than 16 MB'; return; }
+            if (!this.graphUploadForm.name) {
+                this.graphUploadForm.name = f.name.replace(/\.json$/i, '').replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 64);
+            }
+            const r = new FileReader();
+            r.onload = () => { this.graphUploadForm.content = String(r.result || ''); this.graphUploadError = ''; };
+            r.readAsText(f);
+        },
+
+        graphUploadExample() {
+            const r = this.graphUploadResult;
+            return r && r.example ? r.example : 'a node name';
+        },
+
+        async uploadGraph() {
+            this.graphUploadError = '';
+            this.graphUploadResult = null;
+            if (!this.graphUploadForm.content.trim()) { this.graphUploadError = 'Choose a .json file first'; return; }
+            if (!this.graphUploadForm.name.trim()) { this.graphUploadError = 'Give the graph a name'; return; }
+            this.graphUploadSaving = true;
+            try {
+                const res = await fetch('/api/context-manager/graph-upload', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: this.graphUploadForm.name.trim(), content: this.graphUploadForm.content,
+                                           overwrite: !!this.graphUploadForm.overwrite,
+                                           tenant_id: this.currentUser?.tenant_id || 'company' }),
+                });
+                if (!res.ok) {
+                    let msg = await res.text();
+                    try { msg = JSON.parse(msg).detail || msg; } catch (_) {}
+                    throw new Error(msg);
+                }
+                this.graphUploadResult = await res.json();
+                this.showToast('success', 'Graph published', 'Ask about it in chat');
+                this.graphUploadForm = { name: '', content: '', overwrite: false };
+                await this.loadGraphLibrary();
+            } catch (e) {
+                this.graphUploadError = 'Upload failed: ' + e.message;
+            } finally {
+                this.graphUploadSaving = false;
+            }
+        },
+
+        async deleteGraph(name) {
+            if (!confirm("Delete the published graph '" + name + "'?")) return;
+            try {
+                const res = await fetch('/api/context-manager/graph-delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, tenant_id: this.currentUser?.tenant_id || 'company' }),
+                });
+                if (!res.ok) throw new Error(await res.text());
+                await this.loadGraphLibrary();
+            } catch (e) {
+                this.graphUploadError = 'Delete failed: ' + e.message;
+            }
+        },
+
+        async _apiErrorText(res) {
+            // FastAPI errors arrive as {"detail": "..."}; show the sentence, not the JSON.
+            const raw = await res.text();
+            try { const d = JSON.parse(raw).detail; if (typeof d === 'string') return d; } catch (_) {}
+            return raw || ('HTTP ' + res.status);
+        },
+
+        async openTaxGraphImport() {
+            this.taxGraphDraft = null;
+            this.taxGraphModalError = this.taxGraphCommitError = '';
+            this.taxGraphImportOpen = true;
+            try {
+                const res = await fetch('/api/context-manager/taxonomy-graph-connections?tenant_id=company');
+                if (!res.ok) throw new Error(await this._apiErrorText(res));
+                this.taxGraphConns = (await res.json()).connections || [];
+                if (this.taxGraphConns.length === 1) this.taxGraphForm.connection_id = this.taxGraphConns[0].id;
+            } catch (e) {
+                this.taxGraphConns = [];
+                this.taxGraphModalError = 'Could not load graph connections: ' + e.message;
+            }
+        },
+
+        taxGraphEngine() {
+            const c = (this.taxGraphConns || []).find(x => x.id === this.taxGraphForm.connection_id);
+            return c ? c.engine : '';
+        },
+
+        taxGraphUnassigned() {
+            if (!this.taxGraphDraft) return 0;
+            return this.taxGraphDraft.domains.reduce((n, d) => n + d.sections.filter(s => !s.skill).length, 0);
+        },
+
+        acceptTaxGraphSuggestions() {
+            // Explicit user action: fill blank sections with their top-ranked suggestion.
+            (this.taxGraphDraft ? this.taxGraphDraft.domains : []).forEach(d => d.sections.forEach(s => {
+                if (!s.skill && s.suggestions && s.suggestions.length) s.skill = s.suggestions[0].skill;
+            }));
+        },
+
+        async previewTaxGraph() {
+            this.taxGraphModalError = this.taxGraphCommitError = '';
+            // Drop the previous draft first: while the new preview is in flight the old one
+            // (possibly from another connection/root) must not be importable.
+            this.taxGraphDraft = null;
+            const f = this.taxGraphForm;
+            if (!f.connection_id) { this.taxGraphModalError = 'Choose a connection'; return; }
+            if (this.taxGraphEngine() !== 'graphify' && (!f.root_label.trim() || !f.root_name.trim() || !f.edge_type.trim())) {
+                this.taxGraphModalError = 'Fill in root label, root name and relationship';
+                return;
+            }
+            this.taxGraphLoadingPreview = true;
+            const num = (v, d) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : d; };   // cleared inputs arrive as ''
+            try {
+                const res = await fetch('/api/context-manager/taxonomy-graph-preview', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...f, tenant_id: 'company',
+                        max_domains: num(f.max_domains, 40), domain_depth: num(f.domain_depth, 2), min_size: num(f.min_size, 3) }),
+                });
+                if (!res.ok) {
+                    let msg = await res.text();
+                    try { msg = JSON.parse(msg).detail || msg; } catch (_) {}
+                    throw new Error(msg);
+                }
+                this.taxGraphDraft = await res.json();
+            } catch (e) {
+                this.taxGraphDraft = null;
+                this.taxGraphModalError = e.message;
+            } finally {
+                this.taxGraphLoadingPreview = false;
+            }
+        },
+
+        async commitTaxGraph() {
+            const d = this.taxGraphDraft;
+            if (!d || this.taxGraphLoadingPreview || this.taxGraphUnassigned() > 0) return;
+            this.taxGraphCommitError = '';
+            this.taxGraphCommitting = true;
+            try {
+                // Commit through the one authoritative path: the same JSON import the Import modal uses.
+                const doc = {
+                    name: d.name, description: d.description, source: d.provenance,
+                    domains: d.domains.map(x => ({ name: x.name, sections: x.sections.map(s => ({ name: s.name, skill: s.skill, activities: s.activities })) })),
+                };
+                const res = await fetch('/api/context-manager/taxonomy-import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content: JSON.stringify(doc), name: '', tenant_id: 'company' }),
+                });
+                if (!res.ok) {
+                    let msg = await res.text();
+                    try { msg = JSON.parse(msg).detail || msg; } catch (_) {}
+                    throw new Error(msg);
+                }
+                const data = await res.json();
+                this.taxGraphImportOpen = false;
+                this.taxGraphDraft = null;
+                this.showToast('success', 'Taxonomy imported', 'Indexing… the tab will appear shortly');
+                this._pollTaxonomyTab(data.name);
+            } catch (e) {
+                this.taxGraphCommitError = 'Import failed: ' + e.message;
+            } finally {
+                this.taxGraphCommitting = false;
             }
         },
 
@@ -14977,7 +15625,11 @@ if __name__ == "__main__":
                         databases: r.databases || [], credentials: r.credentials || [],
                         mcp_connections: r.mcp_connections || [], context_files: r.context_files || [],
                         tools: r.tools || [], risk: r.risk || 'low', owners: r.owners || [],
-                        metadata: r.metadata || {}
+                        metadata: r.metadata || {},
+                        // Everything the form has no field for (graph: engine/path/auth/database/
+                        // scheme/region, allowed_tables, ...) is carried through untouched so a
+                        // save from the form view cannot strip it.
+                        _extra: Object.fromEntries(Object.entries(r).filter(([k]) => !this._eaKnownKeys().includes(k)))
                     }));
                 } catch (_) { this.eaResources = []; }
             } catch (e) { this.eaStatus = 'Load failed: ' + e.message; this.eaStatusType = 'error'; }
@@ -15030,10 +15682,17 @@ if __name__ == "__main__":
             this.eaExpandedCards[r._uid] = true;
         },
 
+        _eaKnownKeys() {
+            return ['id','label','type','hosts','paths','methods','databases','credentials','mcp_connections',
+                    'context_files','tools','owners','risk'];
+        },
+
         _eaResourcesToYaml() {
             // Build YAML from form state
             const doc = { version: '1.0', resources: this.eaResources.map(r => {
                 const out = { id: r.id, label: r.label, type: r.type };
+                // Preserved settings first, so the form's own fields below always win.
+                if (r._extra) Object.assign(out, r._extra);
                 const lists = ['hosts','paths','methods','databases','credentials','mcp_connections','context_files','tools','owners'];
                 for (const f of lists) { if (r[f] && r[f].length) out[f] = r[f]; }
                 if (r.risk) out.risk = r.risk;
@@ -17007,6 +17666,7 @@ window.addEventListener('message', function(e) {
 });
 </script>
 <!-- SEC-7: shared idle-session timeout + user menu. -->
+<script src="/static/auth-refresh.js"></script>
 <script src="/static/session-controls.js"></script>
 <script src="/static/privacy-gate.js"></script>
 </body>

@@ -87,13 +87,20 @@ def resolve_pinned(host: str, port: int) -> list[str]:
     return seen
 
 
-def assert_safe_url(url: str, *, allow_loopback: bool = False) -> list[str]:
+def assert_safe_url(
+    url: str, *, allow_loopback: bool = False, allow_private: bool = False
+) -> list[str]:
     """Validate `url` for outbound fetching. Returns the pinned address list.
 
     Raises SSRFBlocked with a human-readable reason when the target is unsafe.
 
     allow_loopback: set True only for deliberate self-API calls (the platform's
     own loopback endpoints), never for a user- or model-supplied URL.
+
+    allow_private: also accept RFC1918/ULA *and* loopback addresses. Only for targets
+    that an administrator registered by name (e.g. a graph database in a VPC) --
+    never for a user- or model-supplied URL. Link-local, cloud-metadata, multicast,
+    reserved and unspecified addresses stay blocked regardless.
     """
     parsed = urlparse((url or "").strip())
     scheme = (parsed.scheme or "").lower()
@@ -115,7 +122,9 @@ def assert_safe_url(url: str, *, allow_loopback: bool = False) -> list[str]:
         except ValueError:  # pragma: no cover - getaddrinfo returned a non-IP
             raise SSRFBlocked(f"unparseable resolved address: {addr}") from None
         reason = _address_verdict(ip)
-        if reason == "loopback address" and allow_loopback:
+        if reason == "loopback address" and (allow_loopback or allow_private):
+            continue
+        if reason == "private address" and allow_private:
             continue
         if reason:
             raise SSRFBlocked(f"{host} resolves to {addr} — {reason} is not permitted")

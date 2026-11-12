@@ -85,11 +85,14 @@
             let response = await _origFetch(input, init);
             if (response.status === 401 && isApiCall && !isAuthEndpoint) {
                 try {
-                    const refresh = await _origFetch("/auth/refresh", { method: "POST", credentials: "include" });
+                    const refresh = window.__iafCoordinatedRefresh
+                        ? await window.__iafCoordinatedRefresh()
+                        : await _origFetch("/auth/refresh", { method: "POST", credentials: "include" });
                     if (refresh.ok) {
-                        const data = await refresh.json();
-                        // SEC-6: server updated httponly cookie; no localStorage write needed
-                        init.headers = Object.assign({}, init.headers, { "Authorization": "Bearer " + data.access_token });
+                        const data = await refresh.json().catch(() => ({}));
+                        // SEC-6: server updated httponly cookie; no localStorage write needed.
+                        // Guard: the cross-tab dedup path returns {} (no token) — don't send "Bearer undefined".
+                        if (data && data.access_token) init.headers = Object.assign({}, init.headers, { "Authorization": "Bearer " + data.access_token });
                         response = await _origFetch(input, init);
                     } else {
                         // SEC-6: stale tokens cleaned up at interceptor init
@@ -1862,12 +1865,12 @@
                         this.typingStatus = 'Processing results...';
                         break;
                     case 'response':
-                        this.isTyping = false;
+                        this.isTyping = false; try { window.IafSessionControls && window.IafSessionControls.endRun && window.IafSessionControls.endRun(); } catch (e) {}
                         this.chatMessages.push({ role: 'assistant', content: data.content || data.response || '' });
                         this.$nextTick(() => this.scrollChat());
                         break;
                     case 'error':
-                        this.isTyping = false;
+                        this.isTyping = false; try { window.IafSessionControls && window.IafSessionControls.endRun && window.IafSessionControls.endRun(); } catch (e) {}
                         this.chatMessages.push({ role: 'assistant', content: '❌ ' + (data.message || 'An error occurred') });
                         this.$nextTick(() => this.scrollChat());
                         break;
@@ -1875,7 +1878,7 @@
                         break;
                     default:
                         if (data.content || data.response) {
-                            this.isTyping = false;
+                            this.isTyping = false; try { window.IafSessionControls && window.IafSessionControls.endRun && window.IafSessionControls.endRun(); } catch (e) {}
                             this.chatMessages.push({ role: 'assistant', content: data.content || data.response });
                             this.$nextTick(() => this.scrollChat());
                         }
@@ -1889,6 +1892,7 @@
                 this.chatMessages.push({ role: 'user', content: text });
                 this.chatInput = '';
                 this.isTyping = true;
+                try { window.IafSessionControls && window.IafSessionControls.beginRun && window.IafSessionControls.beginRun(); } catch (e) {}
                 this.typingStatus = 'Thinking...';
                 this.$nextTick(() => this.scrollChat());
 
@@ -1925,11 +1929,11 @@
                         body: JSON.stringify(payload),
                     });
                     const d = await r.json();
-                    this.isTyping = false;
+                    this.isTyping = false; try { window.IafSessionControls && window.IafSessionControls.endRun && window.IafSessionControls.endRun(); } catch (e) {}
                     this.chatMessages.push({ role: 'assistant', content: d.response || d.content || 'No response' });
                     this.$nextTick(() => this.scrollChat());
                 } catch(e) {
-                    this.isTyping = false;
+                    this.isTyping = false; try { window.IafSessionControls && window.IafSessionControls.endRun && window.IafSessionControls.endRun(); } catch (e) {}
                     this.chatMessages.push({ role: 'assistant', content: '❌ Failed to reach agent: ' + e.message });
                     this.$nextTick(() => this.scrollChat());
                 }
@@ -2143,6 +2147,7 @@
     };
     </script>
     <script src="/static/ask-twin.js"></script>
+<script src="/static/auth-refresh.js"></script>
 <script src="/static/session-controls.js"></script>
     <script src="/static/privacy-gate.js"></script>
 </body>

@@ -1268,6 +1268,8 @@
         }
     </style>
 
+    <!-- Coordinated refresh: single-flight + cross-tab lock so parallel 401s don't revoke each other (Bug 3) -->
+    <script src="/static/auth-refresh.js"></script>
     <!-- Auth: auto-inject Bearer token on all API calls + silent refresh on 401 -->
     <script>
     (function() {
@@ -1312,17 +1314,25 @@
             let response = await _origFetch(input, init);
             if (response.status === 401 && isApiCall && !isAuthEndpoint) {
                 try {
-                    const refresh = await _origFetch('/auth/refresh', { method: 'POST', credentials: 'include' });
+                    const refresh = window.__iafCoordinatedRefresh
+                        ? await window.__iafCoordinatedRefresh()
+                        : await _origFetch('/auth/refresh', { method: 'POST', credentials: 'include' });
                     if (refresh.ok) {
                         const rdata = await refresh.json().catch(() => ({}));
                         // Update in-memory + sessionStorage token from refresh response
                         if (rdata.access_token) window.__iafAuth.set(rdata.access_token);
-                        // Rebuild init with refreshed token and retry
+                        // Rebuild retry headers: use the fresh token if we have one, else
+                        // DROP any stale Authorization so the fresh httponly cookie is used.
+                        // (Another tab may have refreshed and cleared our in-memory token;
+                        // the server prefers a non-empty bearer, so a stale one would 401 again.)
+                        var hdrs2 = Object.assign({}, init.headers || {});
                         if (_iafJwt) {
-                            var hdrs2 = Object.assign({}, init.headers || {});
                             hdrs2['Authorization'] = 'Bearer ' + _iafJwt;
-                            init.headers = hdrs2;
+                        } else {
+                            delete hdrs2['Authorization'];
+                            delete hdrs2['authorization'];
                         }
+                        init.headers = hdrs2;
                         response = await _origFetch(input, init);
                     } else {
                         window.__iafAuth.clear();
@@ -4308,6 +4318,7 @@
                 async logout() {
                     if (this._logoutInProgress) return;
                     this._logoutInProgress = true;
+                    try { localStorage.setItem('iaf_logout', String(Date.now())); } catch (e) {}   // sign out other tabs (Bug 4)
                     if (this._idleCleanup) { this._idleCleanup(); this._idleCleanup = null; }
                     // Close WS before the token is invalidated so onclose doesn't
                     // trigger reconnect attempts that log spurious audit events.
@@ -4374,6 +4385,11 @@
                         : 'less than a minute';
                     let warnTimer   = null;
                     let logoutTimer = null;
+                    const ABSOLUTE_MAX_MS = LOGOUT_MS * 6;   // absolute cap so a wedged run can't hold the session forever (Bug 1)
+                    let idleSince = Date.now();
+                    const ACTIVITY_KEY = 'iaf_last_activity';   // cross-tab idle-activity sync (Bug 2)
+                    let _lastBroadcast = 0;
+                    let _applyingRemote = false;
 
                     const banner = document.createElement('div');
                     banner.id = 'idle-warn-banner';
@@ -4388,16 +4404,87 @@
                         banner.style.display = 'none';
                     });
 
+                    const broadcastActivity = () => {
+                        const now = Date.now();
+                        if (now - _lastBroadcast < 5000) return;   // throttle writes
+                        _lastBroadcast = now;
+                        try { localStorage.setItem(ACTIVITY_KEY, String(now)); } catch (e) {}
+                    };
+
+                    // Cross-tab run lease: while this tab runs, publish a short lease so sibling
+                    // tabs defer their idle logout too, instead of one idle tab signing out a
+                    // tab that is mid-run. Bounded — expires LEASE_MS after the last write, and
+                    // the absolute cap still applies. (#9/#10)
+                    const RUN_LEASE_KEY = 'iaf_run_lease';
+                    const LEASE_MS = 45 * 1000;
+                    const writeRunLease = () => { try { localStorage.setItem(RUN_LEASE_KEY, String(Date.now())); } catch (e) {} };
+                    const runLeaseActive = () => {
+                        try { return (Date.now() - parseInt(localStorage.getItem(RUN_LEASE_KEY) || '0', 10)) < LEASE_MS; }
+                        catch (e) { return false; }
+                    };
+
+                    // Idle timeout fires this, not logout() directly: defer while an agent run
+                    // is in flight here (this.isTyping) or in any sibling tab (shared lease),
+                    // bounded by the absolute cap. (Bug 1 / #9,#10)
+                    const maybeLogout = () => {
+                        if (this._logoutInProgress) return;
+                        if ((this.isTyping || runLeaseActive()) && (Date.now() - idleSince) < ABSOLUTE_MAX_MS) {
+                            if (this.isTyping) writeRunLease();   // keep the lease fresh for sibling tabs
+                            logoutTimer = setTimeout(maybeLogout, 30 * 1000);
+                            return;
+                        }
+                        this.logout();
+                    };
+
                     const reset = () => {
+                        idleSince = Date.now();
                         banner.style.display = 'none';
                         clearTimeout(warnTimer);
                         clearTimeout(logoutTimer);
                         warnTimer   = setTimeout(() => { banner.style.display = 'block'; }, WARN_MS);
-                        logoutTimer = setTimeout(() => { this.logout(); }, LOGOUT_MS);
+                        logoutTimer = setTimeout(maybeLogout, LOGOUT_MS);
+                        if (!_applyingRemote) broadcastActivity();   // tell other tabs we're active (Bug 2)
+                        if (this.isTyping) writeRunLease();           // a streaming run keeps the lease fresh (#9)
+                    };
+
+                    // A remote broadcast resets this tab WITHOUT echoing back (Bug 2).
+                    const onRemoteActivity = () => {
+                        _applyingRemote = true;
+                        try { reset(); } finally { _applyingRemote = false; }
+                    };
+
+                    // Another tab logged out: tear down locally only, no second /auth/logout
+                    // (that would double-trigger RP-initiated Keycloak logout). (Bug 4)
+                    const remoteLogout = () => {
+                        if (this._logoutInProgress) return;
+                        this._logoutInProgress = true;
+                        if (this._idleCleanup) { this._idleCleanup(); this._idleCleanup = null; }
+                        clearTimeout(warnTimer);
+                        clearTimeout(logoutTimer);
+                        try { if (this.ws) { this.ws.onclose = null; this.ws.close(); this.ws = null; } } catch (e) {}
+                        if (this._hbInterval) { clearInterval(this._hbInterval); this._hbInterval = null; }
+                        this.authUser = null;
+                        if (window.__iafAuth) window.__iafAuth.clear();
+                        window.location.href = (window.__BASE_PATH__ || '') + '/login';
                     };
 
                     ['mousemove', 'keydown', 'click', 'touchstart', 'scroll'].forEach(e =>
                         document.addEventListener(e, reset, { passive: true }));
+
+                    // Cross-tab coordination (storage events fire only in OTHER tabs — no self-echo).
+                    const _onStorage = (e) => {
+                        if (!e) return;
+                        if (e.key === ACTIVITY_KEY) onRemoteActivity();
+                        else if (e.key === 'iaf_logout') remoteLogout();
+                    };
+                    window.addEventListener('storage', _onStorage);
+
+                    // Renew the run lease on an interval while a chat run is in flight, so a
+                    // silent run (no streamed frames) can't let the 45s lease lapse and a
+                    // sibling tab sign both out mid-run. Bounded by the absolute cap. (#7)
+                    const _leaseRenew = setInterval(() => {
+                        if (this.isTyping && (Date.now() - idleSince) < ABSOLUTE_MAX_MS) writeRunLease();
+                    }, 20 * 1000);
 
                     // Expose so live agent activity (streaming tokens, tool calls,
                     // an in-flight run) can also count as activity — otherwise a
@@ -4408,6 +4495,8 @@
                     this._idleCleanup = () => {
                         clearTimeout(warnTimer);
                         clearTimeout(logoutTimer);
+                        clearInterval(_leaseRenew);
+                        window.removeEventListener('storage', _onStorage);
                         banner.remove();
                         this._idleReset = null;
                     };
@@ -4637,9 +4726,9 @@ Here's an example of interactive UI components:
                         if (data.type === 'ping') { this.ws.send(JSON.stringify({type:'pong'})); return; }
                         if (data.type === 'pong') return;
                         // Real agent activity (routing, tokens, tool calls, response)
-                        // counts as session activity — but NOT the heartbeat above,
+                        // counts as session activity — but NOT keep-alive heartbeats,
                         // so a connected-but-idle tab still eventually times out.
-                        if (this._idleReset) this._idleReset();
+                        if (data.type !== 'heartbeat' && this._idleReset) this._idleReset();
                         this.handleMessage(data);
                     };
                     

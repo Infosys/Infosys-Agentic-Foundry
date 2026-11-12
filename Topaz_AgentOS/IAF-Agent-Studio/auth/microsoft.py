@@ -25,6 +25,17 @@ from auth.identity import IdentityResolutionError, OidcJwksIdentityResolver
 
 logger = logging.getLogger("iaf_server.auth.microsoft")
 
+# Fixed namespace so a given email always maps to the same provisioned user_id.
+# A random uuid4 fallback used to hand the same user a new id every login when
+# the token carried no stable subject, spawning a fresh empty personal folder
+# each time; uuid5(email) is deterministic.
+_IAF_USER_NAMESPACE = uuid.UUID("6f3b0a6e-1d2c-5e4f-8a9b-0c1d2e3f4a5b")
+
+
+def _stable_user_id(email: str) -> str:
+    """Deterministic user_id derived from the email (stable across logins)."""
+    return str(uuid.uuid5(_IAF_USER_NAMESPACE, (email or "").strip().lower()))
+
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -99,7 +110,7 @@ class MicrosoftAuthProvider(AuthProvider):
             )
             return existing, status
 
-        user_id = identity.user_id or str(uuid.uuid4())
+        user_id = identity.user_id or _stable_user_id(email)
         display_name = (
             identity.attributes.get("name")
             or identity.attributes.get("given_name")

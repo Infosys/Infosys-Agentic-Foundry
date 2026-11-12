@@ -51,11 +51,14 @@
             let response = await _origFetch(input, init);
             if (response.status === 401 && isApiCall && !isAuthEndpoint) {
                 try {
-                    const refresh = await _origFetch("/auth/refresh", { method: "POST", credentials: "include" });
+                    const refresh = window.__iafCoordinatedRefresh
+                        ? await window.__iafCoordinatedRefresh()
+                        : await _origFetch("/auth/refresh", { method: "POST", credentials: "include" });
                     if (refresh.ok) {
-                        const data = await refresh.json();
-                        // SEC-6: server updated httponly cookie; no localStorage write needed
-                        init.headers = Object.assign({}, init.headers, { "Authorization": "Bearer " + data.access_token });
+                        const data = await refresh.json().catch(() => ({}));
+                        // SEC-6: server updated httponly cookie; no localStorage write needed.
+                        // Guard: the cross-tab dedup path returns {} (no token) — don't send "Bearer undefined".
+                        if (data && data.access_token) init.headers = Object.assign({}, init.headers, { "Authorization": "Bearer " + data.access_token });
                         response = await _origFetch(input, init);
                     } else {
                         // SEC-6: stale tokens cleaned up at interceptor init
@@ -313,6 +316,7 @@
     };
     </script>
     <script src="/static/ask-twin.js"></script>
+<script src="/static/auth-refresh.js"></script>
 <script src="/static/session-controls.js"></script>
 </body>
 </html>

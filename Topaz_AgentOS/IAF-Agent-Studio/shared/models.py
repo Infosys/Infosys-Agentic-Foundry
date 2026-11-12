@@ -108,7 +108,10 @@ class SkillCreate(BaseModel):
     worker_skills: List[dict] = []  # for supervisor
     tools: List[str] = ["shell"]  # shell, run_sql_query
     business_context: Optional[dict] = None  # domain, process, activities
-    tool_scripts: List[ToolScript] = []  # Bundled Python tool scripts
+    # Bundled Python tool scripts. None => preserve whatever is on disk;
+    # [] => remove all; non-empty => replace. (A bare [] default used to delete
+    # every tools/*.py whenever the UI omitted the field.)
+    tool_scripts: Optional[List[ToolScript]] = None
     connections: List[ConnectionDef] = []  # Skill-level data connections
     mcp_connections: List[dict] = []    # Skill-level MCP servers (stdio/http/sse/registry)
     mcp_tools: List[str] = []           # Optional allowlist filter for discovered MCP tools

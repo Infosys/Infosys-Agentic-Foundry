@@ -204,7 +204,9 @@
                 // non-existent api-prefixed refresh route, so refresh silently never worked
                 // here. Mirrors the working implementation in index.html.
                 try {
-                    const r = await _orig('/auth/refresh', { method: 'POST', credentials: 'include' });
+                    const r = window.__iafCoordinatedRefresh
+                        ? await window.__iafCoordinatedRefresh()
+                        : await _orig('/auth/refresh', { method: 'POST', credentials: 'include' });
                     if (r.ok) { return _orig.call(this, input, init); }
                     else { window.location.href = '/login'; }
                 } catch {}
@@ -905,6 +907,7 @@ window.AgentProPageContext = function() {
 </script>
 <script src="/static/ask-twin.js"></script>
 <!-- SEC-7: shared idle-session timeout + user menu. -->
+<script src="/static/auth-refresh.js"></script>
 <script src="/static/session-controls.js"></script>
 <script src="/static/privacy-gate.js"></script>
 </body>

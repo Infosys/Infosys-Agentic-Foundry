@@ -220,6 +220,78 @@ def _set_stream_intercept_approval(
     }
 
 
+def mirror_child_pause(parent: Any, child: Any, *, skill_name: str = "", task: str = "") -> str | None:
+    """Copy a delegated *child* agent's HITL pause onto the *parent* (session) agent.
+
+    When a skill delegates to another skill (invoke_skill / orchestrator / supervisor)
+    and the child pauses for human approval, that pause lives only on the child object,
+    which is discarded — so the UI (which reads the *session* agent's ``pending_action`` /
+    ``pending_tool_call`` and the durable ``approval_pending``) shows no approval buttons
+    and the held call is lost. Mirroring the three pause fields onto the parent surfaces
+    the approval and lets ``resume_approved_tool_call`` execute the held call on approval.
+
+    First pause wins: if the parent already has a pending approval, this is a no-op so a
+    second delegated pause can't clobber the first. Returns a short notice string for the
+    delegating tool to return (so the ReAct loop halts on an observation), or ``None`` when
+    there was nothing to mirror.
+    """
+    child_tc = getattr(child, "pending_tool_call", None)
+    child_pa = getattr(child, "pending_action", None)
+    child_ap = getattr(child, "approval_pending", None)
+    if not (child_tc or child_pa or child_ap):
+        return None
+    # Don't overwrite a pause the parent already surfaced (first pause wins).
+    if getattr(parent, "pending_tool_call", None) or getattr(parent, "pending_action", None):
+        return None
+    if child_tc is not None:
+        parent.pending_tool_call = child_tc
+    if child_pa is not None:
+        parent.pending_action = child_pa
+    if child_ap is not None:
+        parent.approval_pending = child_ap
+    # Record the CHILD's skill on the mirrored pause. On approval the resume runs on the
+    # parent/session agent, which would otherwise scope the held call to the PARENT's skill
+    # (kernel current-skill, scope-restricted credentials, and the MCP-config attestation,
+    # which the child stamped against ITS skill — a parent-skill comparison fails closed).
+    # Stamping the delegated skill lets _restore_kernel_skill + _execute_held_tool_call
+    # scope the held call to the context it was actually reviewed under. (#3)
+    _child_skill = getattr(child, "current_skill", None) or (skill_name or None)
+    if _child_skill and isinstance(getattr(parent, "pending_tool_call", None), dict) \
+            and not parent.pending_tool_call.get("skill"):
+        try:
+            parent.pending_tool_call["skill"] = _child_skill
+        except Exception:
+            pass
+    # The inline approval card + dashboard read pending_action. A child that paused on a
+    # write/dangerous call carries pending_tool_call + approval_pending but may not have the
+    # legacy pending_action built yet — build it on the parent from the mirrored call so the
+    # approval surfaces everywhere, not only in Command Center.
+    if getattr(parent, "pending_action", None) is None and getattr(parent, "pending_tool_call", None) is not None:
+        _builder = getattr(parent, "_build_stream_intercept_pending", None)
+        if callable(_builder):
+            try:
+                _builder(skill_name)
+            except Exception:
+                pass
+    # Carry the delegated skill onto pending_action too (its resume scope restore reads it).
+    if _child_skill and isinstance(getattr(parent, "pending_action", None), dict) \
+            and not parent.pending_action.get("skill"):
+        try:
+            parent.pending_action["skill"] = _child_skill
+        except Exception:
+            pass
+    reason = ""
+    if isinstance(child_pa, dict):
+        reason = child_pa.get("reason") or child_pa.get("operation") or ""
+    elif isinstance(child_ap, dict):
+        reason = child_ap.get("reason", "")
+    return (
+        f"⏸️ Delegated skill '{skill_name or 'worker'}' needs human approval before it "
+        f"can continue{(': ' + str(reason)) if reason else ''}. Awaiting your decision — the "
+        f"action has NOT run yet."
+    )
+
+
 def govern_tool_call(agent: Any, tool_call: dict[str, Any], *, source: str) -> ToolGovernanceDecision:
     """Apply the existing pre-tool governance sequence to one structured tool call."""
     _run_cancel.check_cancelled()
