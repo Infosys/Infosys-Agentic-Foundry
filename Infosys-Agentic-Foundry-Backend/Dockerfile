@@ -1,7 +1,6 @@
 # --- STAGE 1: The Builder ---
 # This stage installs dependencies in a clean environment.
-#FROM python:3.12-slim
-FROM infyartifactory.jfrog.io/infyagenticrepo/python:3.12-slim
+FROM python:3.12-slim
 
 # Set the working directory
 WORKDIR /app
@@ -26,16 +25,16 @@ RUN useradd --no-create-home --shell /bin/false appuser
 
 # --- STAGE 2: The Final Production Image ---
 # This stage creates the small, final image that will be deployed.
-#FROM python:3.11-slim
+FROM python:3.12-slim
 
 # Create a non-root user for better security.
-#RUN useradd --create-home appuser
-#WORKDIR /home/appuser/app
-#USER appuser
+RUN useradd --create-home appuser
+WORKDIR /home/appuser/app
+USER appuser
 
 # Copy the installed dependencies from the builder stage.
 # This copies the entire site-packages directory into the final image.
-#COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 
 # Copy your backend application code.
 COPY . .
